@@ -15,6 +15,113 @@ const GOLD = "#D4A64A", GREEN = "#6FA98C", TEXT = "#F2EFE9";
 const MUTE = "#9BB3AD", FAINT = "#7C948E";
 const HERE_API_KEY = "-ZUX_FxV-ok4896M-TXR2aqAShTd04KfYRqS_3_JGAM";
 
+/* ---------- Saudi Arabia cities & districts ---------- */
+const SAUDI_CITIES = {
+  Riyadh: ["Al Olaya", "Al Malaz", "Al Naseem", "Al Yasmin", "King Fahd District", "Al Sulimaniyah", "Diriyah", "Al Rawdah"],
+  Jeddah: ["Al Balad", "Al Hamra", "Al Rawdah", "Al Salamah", "Al Zahra", "Obhur", "Al Faisaliyah"],
+  Dammam: ["Al Faisaliyah", "Al Shati", "Al Adamah", "Al Manar", "Uhud District"],
+  Makkah: ["Al Aziziyah", "Al Awali", "Al Naseem", "Ajyad", "Al Shubaikah"],
+  Madinah: ["Al Haram", "Quba", "Al Aziziyah", "Al Salam", "Al Naqa"],
+  Khobar: ["Al Aqrabiyah", "Al Thuqbah", "Al Ulaya", "Al Rakah", "Al Bandariyah"],
+  Taif: ["Al Hawiyah", "Shubra", "Al Salamah", "Al Faisaliyah"],
+  Abha: ["Al Manhal", "Al Sad", "Al Numais", "Al Warood"],
+  Tabuk: ["Al Wajh Road", "Al Muruj", "Al Nahdah", "Sharma"],
+  Qassim: ["Buraidah Center", "Unaizah", "Al Rass", "Al Bukayriyah"],
+  Jubail: ["Al Fanateer", "Al Huwaylat", "Al Deffi", "Al Jalmoodah"],
+  Yanbu: ["Yanbu Al Bahr", "Yanbu Al Sinaiyah", "Al Sharaf"],
+  Najran: ["Al Ma'athah", "Al Fahd", "Al Nasseem"],
+  Hail: ["Al Salam", "Al Wadi", "Al Nafal"],
+  Jazan: ["Al Rawdah", "Al Safa", "Al Muntazah"],
+  "Al Kharj": ["Al Nasim", "Al Salhiyah", "Al Rowaidah"],
+  Buraidah: ["Al Faysaliyah", "King Fahd", "Al Iskan"],
+  "Khamis Mushait": ["Al Sad", "Al Nahdah", "Al Sharaf"],
+  Hofuf: ["Al Muthanna", "Al Rakah", "Al Naseem"],
+  Sakaka: ["Al Nakheel", "Al Wasat", "Al Sharqi"],
+};
+const SAUDI_CITY_LIST = Object.keys(SAUDI_CITIES);
+
+/* ---------- geolocation helper ---------- */
+function detectLocation({ onStart, onSuccess, onError }) {
+  if (!navigator.geolocation) {
+    onError && onError("Geolocation isn't supported on this browser.");
+    return;
+  }
+  onStart && onStart();
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const { latitude, longitude } = pos.coords;
+      try {
+        const res = await fetch(
+          `https://revgeocode.search.hereapi.com/v1/revgeocode?at=${latitude},${longitude}&lang=en-US&apiKey=${HERE_API_KEY}`
+        );
+        if (!res.ok) {
+          const errBody = await res.text();
+          console.error("HERE reverse geocode failed:", res.status, errBody);
+          onSuccess && onSuccess({ lat: latitude, lng: longitude, label: `${latitude.toFixed(4)}, ${longitude.toFixed(4)} (address lookup failed)` });
+          return;
+        }
+        const data = await res.json();
+        const label = data?.items?.[0]?.address?.label || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+        onSuccess && onSuccess({ lat: latitude, lng: longitude, label });
+      } catch (e) {
+        console.error("Reverse geocode error:", e);
+        onSuccess && onSuccess({ lat: latitude, lng: longitude, label: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` });
+      }
+    },
+    (err) => {
+      const messages = {
+        1: "Location permission denied — allow location access for this site in your browser settings.",
+        2: "Your location is unavailable right now — try again.",
+        3: "Location request timed out — try again.",
+      };
+      onError && onError(messages[err.code] || "Couldn't get your location.");
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+/* ---------- language system ---------- */
+const TRANSLATIONS = {
+  en: {
+    tagline: "One app. Every way to move, earn, and deliver.",
+    whereTo: "Where to?",
+    bookRideNow: "Book a ride now",
+    services: "Services",
+    available: "available",
+    home: "Home", activity: "Activity", wallet: "Wallet", profile: "Profile",
+    ride: "Ride", cityRides: "City rides",
+    airport: "Airport", transfers: "Transfers",
+    intercity: "Intercity", cityToCity: "City to city",
+    rentals: "Rentals", rentACar: "Rent a car",
+    marketplace: "Marketplace", buySell: "Buy & sell",
+    food: "Food", delivery: "Delivery",
+    logistics: "Logistics", sendParcels: "Send parcels",
+    jobs: "Jobs", driveEarn: "Drive & earn",
+    fleet: "Fleet", manageCars: "Manage cars",
+    useMyLocation: "Use my current location",
+    detecting: "Detecting location…",
+  },
+  ar: {
+    tagline: "تطبيق واحد. كل وسيلة للتنقل والعمل والتوصيل.",
+    whereTo: "إلى أين؟",
+    bookRideNow: "احجز رحلة الآن",
+    services: "الخدمات",
+    available: "متاحة",
+    home: "الرئيسية", activity: "النشاط", wallet: "المحفظة", profile: "الملف",
+    ride: "رحلة", cityRides: "رحلات داخل المدينة",
+    airport: "المطار", transfers: "نقل",
+    intercity: "بين المدن", cityToCity: "من مدينة لمدينة",
+    rentals: "تأجير", rentACar: "استأجر سيارة",
+    marketplace: "السوق", buySell: "بيع وشراء",
+    food: "طعام", delivery: "توصيل",
+    logistics: "لوجستيات", sendParcels: "إرسال طرود",
+    jobs: "وظائف", driveEarn: "قد واربح",
+    fleet: "الأسطول", manageCars: "إدارة السيارات",
+    useMyLocation: "استخدم موقعي الحالي",
+    detecting: "جارٍ تحديد الموقع…",
+  },
+};
+
 function Header({ title, onBack, right }) {
   return (
     <div className="flex items-center justify-between px-5 pt-6 pb-4">
@@ -31,50 +138,59 @@ function Header({ title, onBack, right }) {
 
 /* ---------- HOME ---------- */
 const SERVICES = [
-  { id: "ride", label: "Ride", sub: "City rides", icon: Car },
-  { id: "airport", label: "Airport", sub: "Transfers", icon: Plane },
-  { id: "intercity", label: "Intercity", sub: "City to city", icon: MapPinned },
-  { id: "rentals", label: "Rentals", sub: "Rent a car", icon: Key },
-  { id: "market", label: "Marketplace", sub: "Buy & sell", icon: ShoppingBag },
-  { id: "food", label: "Food", sub: "Delivery", icon: UtensilsCrossed },
-  { id: "logistics", label: "Logistics", sub: "Send parcels", icon: Truck },
-  { id: "jobs", label: "Jobs", sub: "Drive & earn", icon: Briefcase },
-  { id: "fleet", label: "Fleet", sub: "Manage cars", icon: Users },
+  { id: "ride", label: "Ride", sub: "City rides", subKey: "cityRides", icon: Car },
+  { id: "airport", label: "Airport", sub: "Transfers", subKey: "transfers", icon: Plane },
+  { id: "intercity", label: "Intercity", sub: "City to city", subKey: "cityToCity", icon: MapPinned },
+  { id: "rentals", label: "Rentals", sub: "Rent a car", subKey: "rentACar", icon: Key },
+  { id: "market", label: "Marketplace", sub: "Buy & sell", subKey: "buySell", icon: ShoppingBag },
+  { id: "food", label: "Food", sub: "Delivery", subKey: "delivery", icon: UtensilsCrossed },
+  { id: "logistics", label: "Logistics", sub: "Send parcels", subKey: "sendParcels", icon: Truck },
+  { id: "jobs", label: "Jobs", sub: "Drive & earn", subKey: "driveEarn", icon: Briefcase },
+  { id: "fleet", label: "Fleet", sub: "Manage cars", subKey: "manageCars", icon: Users },
 ];
 
-function Home({ navigate }) {
+function Home({ navigate, lang, setLang, t }) {
   return (
-    <div className="pb-4" style={{ color: TEXT }}>
+    <div className="pb-4" style={{ color: TEXT }} dir={lang === "ar" ? "rtl" : "ltr"}>
       <div className="flex items-center justify-between px-5 pt-6 pb-2">
         <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}><Menu size={18} color={TEXT} /></button>
         <div className="text-[10px] uppercase" style={{ color: GREEN, letterSpacing: "0.25em" }}>Riyadh, Saudi Arabia</div>
-        <button className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
-          <Bell size={17} color={TEXT} /><span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setLang(lang === "en" ? "ar" : "en")}
+            className="px-2.5 h-9 rounded-full flex items-center justify-center text-[11px] font-semibold"
+            style={{ background: CARD, color: GOLD }}
+          >
+            {lang === "en" ? "AR" : "EN"}
+          </button>
+          <button className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
+            <Bell size={17} color={TEXT} /><span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />
+          </button>
+        </div>
       </div>
       <div className="px-5 pt-4 pb-6">
         <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 34, fontWeight: 700, letterSpacing: "-0.02em" }}>
           سيارة<span style={{ color: GOLD }}>Drive</span>
         </h1>
-        <p className="mt-2 text-sm" style={{ color: MUTE }}>One app. Every way to move, earn, and deliver.</p>
+        <p className="mt-2 text-sm" style={{ color: MUTE }}>{t("tagline")}</p>
       </div>
       <div className="px-5 mb-6">
         <div className="relative rounded-2xl p-5 overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <div className="relative flex items-center justify-between">
             <div>
-              <p className="text-xs" style={{ color: MUTE }}>Where to?</p>
-              <p className="text-lg font-semibold mt-1">Book a ride now</p>
+              <p className="text-xs" style={{ color: MUTE }}>{t("whereTo")}</p>
+              <p className="text-lg font-semibold mt-1">{t("bookRideNow")}</p>
             </div>
             <button onClick={() => navigate("ride")} className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}>
-              <ChevronRight size={20} color={BG} />
+              <ChevronRight size={20} color={BG} style={{ transform: lang === "ar" ? "rotate(180deg)" : "none" }} />
             </button>
           </div>
         </div>
       </div>
       <div className="px-5">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold">Services</h2>
-          <span className="text-xs" style={{ color: GREEN }}>{SERVICES.length} available</span>
+          <h2 className="text-sm font-semibold">{t("services")}</h2>
+          <span className="text-xs" style={{ color: GREEN }}>{SERVICES.length} {t("available")}</span>
         </div>
         <div className="grid grid-cols-3 gap-3">
           {SERVICES.map((s) => {
@@ -82,7 +198,7 @@ function Home({ navigate }) {
             return (
               <button key={s.id} onClick={() => navigate(s.id)} className="flex flex-col items-start gap-2 rounded-xl p-3 text-left active:scale-95" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "rgba(212,166,74,0.12)" }}><Icon size={18} color={GOLD} /></div>
-                <div><p className="text-xs font-semibold leading-tight">{s.label}</p><p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{s.sub}</p></div>
+                <div><p className="text-xs font-semibold leading-tight">{t(s.id === "market" ? "marketplace" : s.id)}</p><p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{t(s.subKey)}</p></div>
               </button>
             );
           })}
@@ -103,7 +219,18 @@ function RideBooking({ goBack }) {
   const [dropoff, setDropoff] = useState("");
   const [stage, setStage] = useState("input");
   const [selectedType, setSelectedType] = useState("economy");
+  const [locating, setLocating] = useState(false);
+  const [locError, setLocError] = useState("");
   const chosen = RIDE_TYPES.find((r) => r.id === selectedType);
+
+  function useMyLocation() {
+    detectLocation({
+      onStart: () => { setLocating(true); setLocError(""); },
+      onSuccess: ({ label }) => { setPickup(label); setLocating(false); },
+      onError: (msg) => { setLocating(false); setLocError(msg); },
+    });
+  }
+
   return (
     <div style={{ color: TEXT }}>
       <Header title="Book a ride" onBack={goBack} />
@@ -121,6 +248,10 @@ function RideBooking({ goBack }) {
             <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} placeholder="Where to?" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
           </div>
         </div>
+        <button onClick={useMyLocation} disabled={locating} className="w-full mt-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(212,166,74,0.12)", color: GOLD }}>
+          <Navigation size={13} className={locating ? "animate-pulse" : ""} /> {locating ? "Detecting location…" : "Use my current location"}
+        </button>
+        {locError && <p className="text-[11px] text-center mt-2" style={{ color: "#C0755B" }}>{locError}</p>}
         {stage === "input" && (
           <button onClick={() => dropoff.trim() && setStage("choose")} disabled={!dropoff.trim()} className="w-full mt-4 rounded-full py-3 text-sm font-semibold" style={{ background: dropoff.trim() ? GOLD : BORDER, color: dropoff.trim() ? BG : "#5C736D" }}>
             Find rides
@@ -166,7 +297,16 @@ function DriverApp({ goBack }) {
   const [online, setOnline] = useState(false);
   const [request, setRequest] = useState(null);
   const [tripState, setTripState] = useState("idle");
-  const driverLoc = { lat: 24.7136, lng: 46.6753 };
+  const [driverLoc, setDriverLoc] = useState({ lat: 24.7136, lng: 46.6753 });
+  const [locLabel, setLocLabel] = useState("Riyadh (default)");
+  const [locError, setLocError] = useState("");
+
+  useEffect(() => {
+    detectLocation({
+      onSuccess: ({ lat, lng, label }) => { setDriverLoc({ lat, lng }); setLocLabel(label); },
+      onError: (msg) => setLocError(msg),
+    });
+  }, []);
 
   useEffect(() => {
     function loadScript(src) {
@@ -216,6 +356,8 @@ function DriverApp({ goBack }) {
         {mapStatus === "loading" && <div className="absolute inset-0 flex items-center justify-center" style={{ background: CARD }}><Navigation size={20} color={GOLD} /></div>}
         {mapStatus === "error" && <div className="absolute inset-0 flex items-center justify-center px-6 text-center" style={{ background: CARD }}><p className="text-[11px]" style={{ color: FAINT }}>Map blocked in this preview — will work on sayyaradrive.com</p></div>}
       </div>
+      <p className="px-5 mt-2 text-[11px] flex items-center gap-1" style={{ color: FAINT }}><Navigation size={11} color={GREEN} /> {locLabel}</p>
+      {locError && <p className="px-5 mt-1 text-[11px]" style={{ color: "#C0755B" }}>{locError}</p>}
       {online && !request && tripState === "idle" && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>You're online — waiting for requests…</p>}
       {!online && <p className="text-sm text-center mt-6" style={{ color: FAINT }}>Go online to start receiving ride requests.</p>}
       {request && tripState === "idle" && (
@@ -248,15 +390,29 @@ function DriverApp({ goBack }) {
 /* ---------- AIRPORT ---------- */
 const AIRPORTS = ["King Khalid International (RUH)", "King Abdulaziz International (JED)", "King Fahd International (DMM)"];
 const AIRPORT_VEHICLES = [{ id: "sedan", label: "Sedan", seats: "1-3", bags: 2, price: 85 }, { id: "suv", label: "SUV", seats: "1-5", bags: 4, price: 130 }, { id: "van", label: "Van", seats: "1-8", bags: 8, price: 190 }];
+const AIRPORT_CITY = { [AIRPORTS[0]]: "Riyadh", [AIRPORTS[1]]: "Jeddah", [AIRPORTS[2]]: "Dammam" };
 function AirportTransfer({ goBack }) {
   const [direction, setDirection] = useState("to");
   const [airport, setAirport] = useState(AIRPORTS[0]);
+  const [district, setDistrict] = useState(SAUDI_CITIES[AIRPORT_CITY[AIRPORTS[0]]][0]);
   const [address, setAddress] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [locError, setLocError] = useState("");
   const [date, setDate] = useState(""); const [time, setTime] = useState("");
   const [stage, setStage] = useState("input");
   const [vehicle, setVehicle] = useState("sedan");
   const chosen = AIRPORT_VEHICLES.find((v) => v.id === vehicle);
-  const can = address.trim() && date && time;
+  const can = date && time;
+  const cityForAirport = AIRPORT_CITY[airport];
+
+  function useMyLocation() {
+    detectLocation({
+      onStart: () => { setLocating(true); setLocError(""); },
+      onSuccess: ({ label }) => { setAddress(label); setLocating(false); },
+      onError: (msg) => { setLocating(false); setLocError(msg); },
+    });
+  }
+
   return (
     <div style={{ color: TEXT }}>
       <Header title="Airport transfer" onBack={goBack} />
@@ -266,18 +422,28 @@ function AirportTransfer({ goBack }) {
             <button onClick={() => setDirection("to")} className="flex-1 flex items-center justify-center gap-2 rounded-full py-2 text-xs font-semibold" style={{ background: direction === "to" ? GOLD : "transparent", color: direction === "to" ? BG : MUTE }}><PlaneTakeoff size={13} /> To airport</button>
             <button onClick={() => setDirection("from")} className="flex-1 flex items-center justify-center gap-2 rounded-full py-2 text-xs font-semibold" style={{ background: direction === "from" ? GOLD : "transparent", color: direction === "from" ? BG : MUTE }}><PlaneLanding size={13} /> From airport</button>
           </div>
-          <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="rounded-2xl px-4 py-2 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
               <Plane size={15} color={GOLD} />
-              <select value={airport} onChange={(e) => setAirport(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
+              <select value={airport} onChange={(e) => { setAirport(e.target.value); setDistrict(SAUDI_CITIES[AIRPORT_CITY[e.target.value]][0]); }} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
                 {AIRPORTS.map((a) => <option key={a} style={{ background: CARD }}>{a}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+              <MapPin size={15} color={GREEN} />
+              <select value={district} onChange={(e) => setDistrict(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
+                {SAUDI_CITIES[cityForAirport].map((d) => <option key={d} style={{ background: CARD }}>{d}, {cityForAirport}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-3 py-3">
               <ChevronRight size={15} color={GREEN} />
-              <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Building / street (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
             </div>
           </div>
+          <button onClick={useMyLocation} disabled={locating} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(212,166,74,0.12)", color: GOLD }}>
+            <Navigation size={13} className={locating ? "animate-pulse" : ""} /> {locating ? "Detecting location…" : "Use my current location"}
+          </button>
+          {locError && <p className="text-[11px] text-center mb-3" style={{ color: "#C0755B" }}>{locError}</p>}
           <div className="flex gap-3 mb-6">
             <div className="flex-1 flex items-center gap-2 rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Calendar size={14} color={GOLD} /><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-transparent outline-none text-xs w-full" style={{ color: TEXT }} /></div>
             <div className="flex-1 flex items-center gap-2 rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Clock size={14} color={GOLD} /><input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="bg-transparent outline-none text-xs w-full" style={{ color: TEXT }} /></div>
@@ -313,7 +479,7 @@ function AirportTransfer({ goBack }) {
 }
 
 /* ---------- INTERCITY ---------- */
-const CITIES = ["Riyadh", "Jeddah", "Dammam", "Makkah", "Madinah", "Khobar", "Taif", "Abha", "Tabuk", "Qassim"];
+const CITIES = SAUDI_CITY_LIST;
 const INTERCITY_OPTIONS = [{ id: "shared", label: "Shared seat", sub: "Share with others", price: 120 }, { id: "private", label: "Private car", sub: "Full car", price: 480 }, { id: "private_suv", label: "Private SUV", sub: "Full SUV", price: 650 }];
 function IntercityRide({ goBack }) {
   const [from, setFrom] = useState("Riyadh"); const [to, setTo] = useState("Jeddah");
@@ -366,6 +532,8 @@ function IntercityRide({ goBack }) {
 /* ---------- CAR RENTAL ---------- */
 const CARS = [{ id: "eco", label: "Economy", model: "Hyundai Accent", price: 95 }, { id: "sedan", label: "Sedan", model: "Toyota Camry", price: 145 }, { id: "suv", label: "SUV", model: "Toyota Fortuner", price: 220 }, { id: "luxury", label: "Luxury", model: "Lexus ES", price: 380 }];
 function CarRental({ goBack }) {
+  const [city, setCity] = useState("Riyadh");
+  const [district, setDistrict] = useState(SAUDI_CITIES["Riyadh"][0]);
   const [pickupDate, setPickupDate] = useState(""); const [returnDate, setReturnDate] = useState("");
   const [stage, setStage] = useState("input"); const [carId, setCarId] = useState("sedan");
   const chosen = CARS.find((c) => c.id === carId);
@@ -376,6 +544,20 @@ function CarRental({ goBack }) {
       <Header title="Car rental" onBack={goBack} />
       {stage === "input" && (
         <div className="px-5">
+          <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+              <MapPin size={14} color={GREEN} />
+              <select value={city} onChange={(e) => { setCity(e.target.value); setDistrict(SAUDI_CITIES[e.target.value][0]); }} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
+                {SAUDI_CITY_LIST.map((c) => <option key={c} style={{ background: CARD }}>{c}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-3 py-3">
+              <MapPin size={14} color={GOLD} />
+              <select value={district} onChange={(e) => setDistrict(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
+                {SAUDI_CITIES[city].map((d) => <option key={d} style={{ background: CARD }}>{d}</option>)}
+              </select>
+            </div>
+          </div>
           <div className="rounded-2xl px-4 py-2 mb-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><Calendar size={14} color={GREEN} /><input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
             <div className="flex items-center gap-3 py-3"><Calendar size={14} color={GOLD} /><input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
@@ -385,7 +567,7 @@ function CarRental({ goBack }) {
       )}
       {stage === "choose" && (
         <div className="px-5">
-          <p className="text-xs mb-3" style={{ color: FAINT }}>{pickupDate} → {returnDate} · {days} day{days > 1 ? "s" : ""}</p>
+          <p className="text-xs mb-3" style={{ color: FAINT }}>{district}, {city} · {pickupDate} → {returnDate} · {days} day{days > 1 ? "s" : ""}</p>
           <div className="flex flex-col gap-2">
             {CARS.map((c) => {
               const isSel = carId === c.id;
@@ -413,7 +595,20 @@ function CarRental({ goBack }) {
 
 /* ---------- MARKETPLACE ---------- */
 const CATEGORIES = ["All", "Cars", "Electronics", "Furniture", "Fashion", "Spare parts"];
-const LISTINGS = [{ id: 1, title: "Toyota Camry 2021", price: 62000, category: "Cars", location: "Riyadh", tag: "Featured" }, { id: 2, title: "iPhone 15 Pro, 256GB", price: 3400, category: "Electronics", location: "Jeddah", tag: null }, { id: 3, title: "3-seat sofa, grey", price: 950, category: "Furniture", location: "Dammam", tag: null }, { id: 4, title: "Nike Air Max, size 43", price: 220, category: "Fashion", location: "Riyadh", tag: null }, { id: 5, title: "Car tires set (4)", price: 800, category: "Spare parts", location: "Khobar", tag: "New" }];
+const LISTINGS = [
+  { id: 1, title: "Toyota Camry 2021", price: 62000, category: "Cars", location: "Riyadh", tag: "Featured" },
+  { id: 2, title: "iPhone 15 Pro, 256GB", price: 3400, category: "Electronics", location: "Jeddah", tag: null },
+  { id: 3, title: "3-seat sofa, grey", price: 950, category: "Furniture", location: "Dammam", tag: null },
+  { id: 4, title: "Nike Air Max, size 43", price: 220, category: "Fashion", location: "Riyadh", tag: null },
+  { id: 5, title: "Car tires set (4)", price: 800, category: "Spare parts", location: "Khobar", tag: "New" },
+  { id: 6, title: "Hyundai Elantra 2020", price: 41000, category: "Cars", location: "Makkah", tag: null },
+  { id: 7, title: "Samsung 55\" Smart TV", price: 1600, category: "Electronics", location: "Madinah", tag: "New" },
+  { id: 8, title: "Dining table + 6 chairs", price: 1200, category: "Furniture", location: "Taif", tag: null },
+  { id: 9, title: "Men's Thobe, size L", price: 90, category: "Fashion", location: "Abha", tag: null },
+  { id: 10, title: "Car battery, 70Ah", price: 260, category: "Spare parts", location: "Jubail", tag: null },
+  { id: 11, title: "GMC Yukon 2019", price: 118000, category: "Cars", location: "Dammam", tag: "Featured" },
+  { id: 12, title: "MacBook Air M2", price: 4200, category: "Electronics", location: "Riyadh", tag: null },
+];
 function Marketplace({ goBack }) {
   const [category, setCategory] = useState("All"); const [query, setQuery] = useState("");
   const filtered = LISTINGS.filter((l) => (category === "All" || l.category === category) && l.title.toLowerCase().includes(query.toLowerCase()));
@@ -437,8 +632,24 @@ function Marketplace({ goBack }) {
 }
 
 /* ---------- FOOD DELIVERY ---------- */
-const RESTAURANTS = [{ id: 1, name: "Najd Kitchen", cuisine: "Arabic", rating: 4.7, eta: "25-35 min" }, { id: 2, name: "Burger Point", cuisine: "Fast food", rating: 4.4, eta: "15-25 min" }, { id: 3, name: "Green Bowl", cuisine: "Healthy", rating: 4.8, eta: "20-30 min" }];
-const MENU = { 1: [{ id: "m1", name: "Kabsa Chicken", price: 42 }, { id: "m2", name: "Mandi Lamb", price: 58 }], 2: [{ id: "m4", name: "Classic Beef Burger", price: 28 }, { id: "m5", name: "Fries", price: 12 }], 3: [{ id: "m7", name: "Grilled Chicken Bowl", price: 34 }] };
+const RESTAURANTS = [
+  { id: 1, name: "Najd Kitchen", cuisine: "Arabic", rating: 4.7, eta: "25-35 min" },
+  { id: 2, name: "Burger Point", cuisine: "Fast food", rating: 4.4, eta: "15-25 min" },
+  { id: 3, name: "Green Bowl", cuisine: "Healthy", rating: 4.8, eta: "20-30 min" },
+  { id: 4, name: "Sweet Dates", cuisine: "Desserts", rating: 4.6, eta: "20-30 min" },
+  { id: 5, name: "Qahwa House", cuisine: "Cafe", rating: 4.5, eta: "10-20 min" },
+  { id: 6, name: "Al Baik Express", cuisine: "Fast food", rating: 4.9, eta: "15-20 min" },
+  { id: 7, name: "Mandi House", cuisine: "Arabic", rating: 4.7, eta: "30-40 min" },
+];
+const MENU = {
+  1: [{ id: "m1", name: "Kabsa Chicken", price: 42 }, { id: "m2", name: "Mandi Lamb", price: 58 }, { id: "m3", name: "Grilled Mixed Platter", price: 65 }],
+  2: [{ id: "m4", name: "Classic Beef Burger", price: 28 }, { id: "m5", name: "Fries", price: 12 }, { id: "m6", name: "Chicken Crispy Burger", price: 26 }],
+  3: [{ id: "m7", name: "Grilled Chicken Bowl", price: 34 }, { id: "m8", name: "Quinoa Salad", price: 30 }],
+  4: [{ id: "m9", name: "Kunafa Slice", price: 18 }, { id: "m10", name: "Date Cake", price: 15 }],
+  5: [{ id: "m11", name: "Arabic Coffee (pot)", price: 20 }, { id: "m12", name: "Cardamom Latte", price: 16 }],
+  6: [{ id: "m13", name: "Broasted Chicken Meal", price: 24 }, { id: "m14", name: "Garlic Sauce Extra", price: 5 }],
+  7: [{ id: "m15", name: "Mandi Chicken", price: 45 }, { id: "m16", name: "Mandi Lamb (large)", price: 78 }],
+};
 function FoodDelivery({ goBack }) {
   const [openRestaurant, setOpenRestaurant] = useState(null);
   const [cart, setCart] = useState({}); const [stage, setStage] = useState("browse");
@@ -537,7 +748,15 @@ function Logistics({ goBack }) {
 }
 
 /* ---------- JOBS ---------- */
-const JOBS = [{ id: 1, title: "Ride-hailing Driver", location: "Riyadh", pay: "Up to 8,000 SAR/mo" }, { id: 2, title: "Food Delivery Rider", location: "Jeddah", pay: "Per-order + bonuses" }, { id: 3, title: "Customer Support Agent", location: "Riyadh", pay: "5,500 SAR/mo" }];
+const JOBS = [
+  { id: 1, title: "Ride-hailing Driver", location: "Riyadh", pay: "Up to 8,000 SAR/mo" },
+  { id: 2, title: "Food Delivery Rider", location: "Jeddah", pay: "Per-order + bonuses" },
+  { id: 3, title: "Customer Support Agent", location: "Riyadh", pay: "5,500 SAR/mo" },
+  { id: 4, title: "Airport Transfer Driver", location: "Dammam", pay: "Up to 9,500 SAR/mo" },
+  { id: 5, title: "Fleet Operations Coordinator", location: "Riyadh", pay: "7,000 SAR/mo" },
+  { id: 6, title: "Intercity Driver", location: "Makkah", pay: "Per-trip + fuel bonus" },
+  { id: 7, title: "Warehouse Logistics Staff", location: "Jubail", pay: "6,000 SAR/mo" },
+];
 function JobsPortal({ goBack }) {
   const [applyJob, setApplyJob] = useState(null);
   const [form, setForm] = useState({ name: "", phone: "", city: "" });
@@ -583,7 +802,14 @@ function JobsPortal({ goBack }) {
 
 /* ---------- FLEET ---------- */
 const STATUS_META = { active: { label: "On trip", color: GREEN }, idle: { label: "Idle", color: GOLD }, maintenance: { label: "Maintenance", color: "#C0755B" } };
-const INITIAL_FLEET = [{ id: 1, plate: "RUH 4021", model: "Toyota Camry", driver: "Faisal A.", status: "active" }, { id: 2, plate: "RUH 7788", model: "Hyundai Accent", driver: "Omar K.", status: "idle" }, { id: 3, plate: "JED 3390", model: "Toyota Fortuner", driver: "Sami R.", status: "maintenance" }];
+const INITIAL_FLEET = [
+  { id: 1, plate: "RUH 4021", model: "Toyota Camry", driver: "Faisal A.", status: "active" },
+  { id: 2, plate: "RUH 7788", model: "Hyundai Accent", driver: "Omar K.", status: "idle" },
+  { id: 3, plate: "JED 3390", model: "Toyota Fortuner", driver: "Sami R.", status: "maintenance" },
+  { id: 4, plate: "DMM 1156", model: "Lexus ES", driver: "Hussain M.", status: "active" },
+  { id: 5, plate: "RUH 9021", model: "Toyota Camry", driver: "Unassigned", status: "idle" },
+  { id: 6, plate: "MKH 2287", model: "GMC Yukon", driver: "Bandar S.", status: "active" },
+];
 function FleetManagement({ goBack }) {
   const [fleet, setFleet] = useState(INITIAL_FLEET);
   function cycleStatus(id) { const order = ["idle", "active", "maintenance"]; setFleet((f) => f.map((c) => c.id === id ? { ...c, status: order[(order.indexOf(c.status) + 1) % order.length] } : c)); }
@@ -643,7 +869,12 @@ function Profile({ goBack, navigate }) {
 
 /* ---------- ACTIVITY ---------- */
 const TYPE_META = { ride: { icon: Car, label: "Ride" }, airport: { icon: Plane, label: "Airport transfer" } };
-const TRIPS = [{ id: 1, type: "ride", date: "Jul 8, 2026", from: "Al Olaya Street", to: "King Fahd Rd", fare: 24 }, { id: 2, type: "airport", date: "Jul 5, 2026", from: "Home", to: "RUH Airport", fare: 85 }];
+const TRIPS = [
+  { id: 1, type: "ride", date: "Jul 8, 2026", from: "Al Olaya Street", to: "King Fahd Rd", fare: 24 },
+  { id: 2, type: "airport", date: "Jul 5, 2026", from: "Home", to: "RUH Airport", fare: 85 },
+  { id: 3, type: "ride", date: "Jul 3, 2026", from: "Al Malaz", to: "Panorama Mall", fare: 19 },
+  { id: 4, type: "airport", date: "Jun 29, 2026", from: "JED Airport", to: "Al Hamra", fare: 62 },
+];
 function TripHistory({ goBack }) {
   const totalSpent = TRIPS.reduce((s, t) => s + t.fare, 0);
   return (
@@ -793,18 +1024,18 @@ function AIAssistant({ onClose }) {
 
 /* ---------- BOTTOM NAV ---------- */
 const TABS = [
-  { id: "home", label: "Home" },
-  { id: "activity", label: "Activity" },
-  { id: "wallet", label: "Wallet" },
-  { id: "profile", label: "Profile" },
+  { id: "home", key: "home" },
+  { id: "activity", key: "activity" },
+  { id: "wallet", key: "wallet" },
+  { id: "profile", key: "profile" },
 ];
-function BottomNav({ screen, navigate }) {
+function BottomNav({ screen, navigate, t }) {
   return (
     <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md flex justify-around items-center py-3 px-5" style={{ background: "#0F211E", borderTop: `1px solid ${BORDER}` }}>
-      {TABS.map((t) => (
-        <button key={t.id} onClick={() => navigate(t.id)} className="flex flex-col items-center gap-1" style={{ color: screen === t.id ? GOLD : "#6C847E" }}>
-          <div className="w-1.5 h-1.5 rounded-full" style={{ background: screen === t.id ? GOLD : "transparent" }} />
-          <span className="text-[10px] font-medium">{t.label}</span>
+      {TABS.map((tab) => (
+        <button key={tab.id} onClick={() => navigate(tab.id)} className="flex flex-col items-center gap-1" style={{ color: screen === tab.id ? GOLD : "#6C847E" }}>
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background: screen === tab.id ? GOLD : "transparent" }} />
+          <span className="text-[10px] font-medium">{t ? t(tab.key) : tab.key}</span>
         </button>
       ))}
     </div>
@@ -982,7 +1213,9 @@ const TAB_SCREENS = ["home", "activity", "wallet", "profile"];
 export default function SayyaraDriveApp() {
   const [history, setHistory] = useState(["home"]);
   const [showAI, setShowAI] = useState(false);
+  const [lang, setLang] = useState("en");
   const screen = history[history.length - 1];
+  const t = (key) => TRANSLATIONS[lang][key] || key;
 
   function navigate(next) {
     if (TAB_SCREENS.includes(next)) setHistory([next]);
@@ -995,7 +1228,7 @@ export default function SayyaraDriveApp() {
   const isTab = TAB_SCREENS.includes(screen);
 
   const SCREEN_MAP = {
-    home: <Home navigate={navigate} />,
+    home: <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />,
     ride: <RideBooking goBack={goBack} />,
     driver: <DriverApp goBack={goBack} />,
     airport: <AirportTransfer goBack={goBack} />,
@@ -1028,9 +1261,8 @@ export default function SayyaraDriveApp() {
 
         {showAI && <AIAssistant onClose={() => setShowAI(false)} />}
 
-        {isTab && <BottomNav screen={screen} navigate={navigate} />}
+        {isTab && <BottomNav screen={screen} navigate={navigate} t={t} />}
       </div>
     </div>
   );
 }
-
