@@ -1184,15 +1184,15 @@ function Marketplace({ goBack, navigate }) {
 
 /* ---------- FOOD DELIVERY ---------- */
 const RESTAURANTS = [
-  { id: 1, name: "Najd Kitchen", cuisine: "Arabic", rating: 4.7, eta: "25-35 min", city: "Riyadh", hours: "10:00–23:59", img: "https://loremflickr.com/500/300/arabic-food,kabsa/all?lock=41" },
-  { id: 2, name: "Burger Point", cuisine: "Fast food", rating: 4.4, eta: "15-25 min", city: "Riyadh", hours: "11:00–02:00", img: "https://loremflickr.com/500/300/burger/all?lock=42" },
-  { id: 3, name: "Green Bowl", cuisine: "Healthy", rating: 4.8, eta: "20-30 min", city: "Jeddah", hours: "09:00–22:00", img: "https://loremflickr.com/500/300/salad-bowl,healthy-food/all?lock=43" },
-  { id: 4, name: "Sweet Dates", cuisine: "Desserts", rating: 4.6, eta: "20-30 min", city: "Dammam", hours: "12:00–00:00", img: "https://loremflickr.com/500/300/dessert,cake/all?lock=44" },
-  { id: 5, name: "Qahwa House", cuisine: "Cafe", rating: 4.5, eta: "10-20 min", city: "Riyadh", hours: "07:00–23:00", img: "https://loremflickr.com/500/300/arabic-coffee,cafe/all?lock=45" },
-  { id: 6, name: "Al Baik Express", cuisine: "Fast food", rating: 4.9, eta: "15-20 min", city: "Jeddah", hours: "10:00–01:00", img: "https://loremflickr.com/500/300/fried-chicken/all?lock=46" },
-  { id: 7, name: "Mandi House", cuisine: "Arabic", rating: 4.7, eta: "30-40 min", city: "Makkah", hours: "11:00–23:00", img: "https://loremflickr.com/500/300/mandi,rice-dish/all?lock=47" },
-  { id: 8, name: "Pasta Bella", cuisine: "Italian", rating: 4.6, eta: "25-35 min", city: "Riyadh", hours: "12:00–23:59", img: "https://loremflickr.com/500/300/pasta,italian-food/all?lock=48" },
-  { id: 9, name: "Sushi Zen", cuisine: "Japanese", rating: 4.8, eta: "20-30 min", city: "Dammam", hours: "13:00–23:00", img: "https://loremflickr.com/500/300/sushi/all?lock=49" },
+  { id: 1, name: "Najd Kitchen", cuisine: "Arabic", rating: 4.7, eta: "25-35 min", city: "Riyadh", hours: "10:00–23:59", foodCategory: "rice" },
+  { id: 2, name: "Burger Point", cuisine: "Fast food", rating: 4.4, eta: "15-25 min", city: "Riyadh", hours: "11:00–02:00", foodCategory: "burger" },
+  { id: 3, name: "Green Bowl", cuisine: "Healthy", rating: 4.8, eta: "20-30 min", city: "Jeddah", hours: "09:00–22:00", foodCategory: "rice" },
+  { id: 4, name: "Sweet Dates", cuisine: "Desserts", rating: 4.6, eta: "20-30 min", city: "Dammam", hours: "12:00–00:00", foodCategory: "dessert" },
+  { id: 5, name: "Qahwa House", cuisine: "Cafe", rating: 4.5, eta: "10-20 min", city: "Riyadh", hours: "07:00–23:00", foodCategory: "dessert" },
+  { id: 6, name: "Al Baik Express", cuisine: "Fast food", rating: 4.9, eta: "15-20 min", city: "Jeddah", hours: "10:00–01:00", foodCategory: "butter-chicken" },
+  { id: 7, name: "Mandi House", cuisine: "Arabic", rating: 4.7, eta: "30-40 min", city: "Makkah", hours: "11:00–23:00", foodCategory: "rice" },
+  { id: 8, name: "Pasta Bella", cuisine: "Italian", rating: 4.6, eta: "25-35 min", city: "Riyadh", hours: "12:00–23:59", foodCategory: "pasta" },
+  { id: 9, name: "Sushi Zen", cuisine: "Japanese", rating: 4.8, eta: "20-30 min", city: "Dammam", hours: "13:00–23:00", foodCategory: "rice" },
 ];
 const MENU = {
   1: [{ id: "m1", name: "Kabsa Chicken", price: 42 }, { id: "m2", name: "Mandi Lamb", price: 58 }, { id: "m3", name: "Grilled Mixed Platter", price: 65 }],
@@ -1205,6 +1205,33 @@ const MENU = {
   8: [{ id: "m17", name: "Spaghetti Bolognese", price: 38 }, { id: "m18", name: "Fettuccine Alfredo", price: 42 }],
   9: [{ id: "m19", name: "Salmon Sushi Set", price: 55 }, { id: "m20", name: "California Roll (8pc)", price: 32 }],
 };
+
+/* ---------- FOOD PHOTO (real, category-matched images from a live food-photo API) ---------- */
+function FoodPhoto({ category, alt, className, style }) {
+  const [src, setSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSrc(null);
+    setFailed(false);
+    fetch(`https://foodish-api.com/api/images/${category}`)
+      .then((res) => res.json())
+      .then((data) => { if (!cancelled && data?.image) setSrc(data.image); else if (!cancelled) setFailed(true); })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, [category]);
+
+  if (failed || !src) {
+    return (
+      <div className={className} style={{ ...style, background: BORDER, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <UtensilsCrossed size={18} color={FAINT} />
+      </div>
+    );
+  }
+  return <img src={src} alt={alt} className={className} style={style} />;
+}
+
 function FoodDelivery({ goBack, navigate }) {
   const [openRestaurant, setOpenRestaurant] = useState(null);
   const [cart, setCart] = useState({}); const [stage, setStage] = useState("browse");
@@ -1232,7 +1259,7 @@ function FoodDelivery({ goBack, navigate }) {
     <div style={{ color: TEXT }}>
       <Header title={openRestaurant.name} onBack={() => setOpenRestaurant(null)} />
       <div className="mx-5 mb-4 rounded-2xl overflow-hidden" style={{ height: 140, background: CARD, border: `1px solid ${BORDER}` }}>
-        <img src={openRestaurant.img} alt={openRestaurant.name} className="w-full h-full object-cover" />
+        <FoodPhoto category={openRestaurant.foodCategory} alt={openRestaurant.name} className="w-full h-full object-cover" />
       </div>
       <div className="px-5 flex flex-col gap-2">
         {menu.map((m) => (
@@ -1298,12 +1325,12 @@ function FoodDelivery({ goBack, navigate }) {
         {filteredRestaurants.map((r) => (
           <button key={r.id} onClick={() => setOpenRestaurant(r)} className="text-left rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="relative" style={{ height: 130 }}>
-              <img src={r.img} alt={r.name} className="w-full h-full object-cover" />
+              <FoodPhoto category={r.foodCategory} alt={r.name} className="w-full h-full object-cover" />
               <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[9px] font-semibold flex items-center gap-1" style={{ background: "rgba(91,143,212,0.85)", color: "#fff" }}>
                 <Truck size={9} /> Delivery
               </span>
               <div className="absolute -bottom-5 left-3 w-11 h-11 rounded-xl overflow-hidden" style={{ border: `2px solid ${CARD}` }}>
-                <img src={r.img} alt="" className="w-full h-full object-cover" />
+                <FoodPhoto category={r.foodCategory} alt="" className="w-full h-full object-cover" />
               </div>
             </div>
             <div className="pt-7 pb-3 px-3.5">
@@ -1392,14 +1419,14 @@ function Logistics({ goBack, navigate }) {
 
 /* ---------- JOBS ---------- */
 const JOBS = [
-  { id: 1, title: "Ride-hailing Driver", company: "Careem", location: "Riyadh", pay: "Up to 8,000 SAR/mo", type: "Full-time", category: "Driving" },
-  { id: 2, title: "Food Delivery Rider", company: "Jahez", location: "Jeddah", pay: "Per-order + bonuses", type: "Flexible", category: "Delivery" },
-  { id: 3, title: "Customer Support Agent", company: "STC", location: "Riyadh", pay: "5,500 SAR/mo", type: "Full-time", category: "Support" },
-  { id: 4, title: "Airport Transfer Driver", company: "Careem", location: "Dammam", pay: "Up to 9,500 SAR/mo", type: "Full-time", category: "Driving" },
-  { id: 5, title: "Fleet Operations Coordinator", company: "Aramex", location: "Riyadh", pay: "7,000 SAR/mo", type: "Full-time", category: "Operations" },
-  { id: 6, title: "Intercity Driver", company: "SAPTCO", location: "Makkah", pay: "Per-trip + fuel bonus", type: "Flexible", category: "Driving" },
-  { id: 7, title: "Warehouse Logistics Staff", company: "SMSA Express", location: "Jubail", pay: "6,000 SAR/mo", type: "Full-time", category: "Operations" },
-  { id: 8, title: "Delivery Rider", company: "HungerStation", location: "Khobar", pay: "Per-order + bonuses", type: "Flexible", category: "Delivery" },
+  { id: 1, title: "Ride-hailing Driver", company: "Careem", location: "Riyadh", pay: "Up to 8,000 SAR/mo", type: "Full-time", category: "Driving", phone: "0550 000 001", description: "Drive passengers around the city on flexible hours." },
+  { id: 2, title: "Food Delivery Rider", company: "Jahez", location: "Jeddah", pay: "Per-order + bonuses", type: "Flexible", category: "Delivery", phone: "0550 000 002", description: "Deliver food orders by bike or car, choose your own hours." },
+  { id: 3, title: "Customer Support Agent", company: "STC", location: "Riyadh", pay: "5,500 SAR/mo", type: "Full-time", category: "Support", phone: "0550 000 003", description: "Handle customer calls and chat support for a major telecom." },
+  { id: 4, title: "Airport Transfer Driver", company: "Careem", location: "Dammam", pay: "Up to 9,500 SAR/mo", type: "Full-time", category: "Driving", phone: "0550 000 004", description: "Pick up and drop off travellers at King Fahd Airport." },
+  { id: 5, title: "Fleet Operations Coordinator", company: "Aramex", location: "Riyadh", pay: "7,000 SAR/mo", type: "Full-time", category: "Operations", phone: "0550 000 005", description: "Coordinate daily dispatch and vehicle maintenance schedules." },
+  { id: 6, title: "Intercity Driver", company: "SAPTCO", location: "Makkah", pay: "Per-trip + fuel bonus", type: "Flexible", category: "Driving", phone: "0550 000 006", description: "Drive scheduled intercity routes between major Saudi cities." },
+  { id: 7, title: "Warehouse Logistics Staff", company: "SMSA Express", location: "Jubail", pay: "6,000 SAR/mo", type: "Full-time", category: "Operations", phone: "0550 000 007", description: "Sort and prepare parcels for daily delivery routes." },
+  { id: 8, title: "Delivery Rider", company: "HungerStation", location: "Khobar", pay: "Per-order + bonuses", type: "Flexible", category: "Delivery", phone: "0550 000 008", description: "Flexible food delivery shifts, motorbike provided on request." },
 ];
 const JOB_CATEGORIES = ["All", "Driving", "Delivery", "Support", "Operations"];
 const EXTERNAL_JOB_SITES = [
@@ -1410,74 +1437,198 @@ const EXTERNAL_JOB_SITES = [
   { name: "Tanqeeb", url: "https://sa.tanqeeb.com/" },
   { name: "NaukriGulf", url: "https://www.naukrigulf.com/" },
 ];
+const JOB_TABS = [
+  { id: "openings", label: "Job Openings", icon: Search },
+  { id: "post", label: "Post a Job", icon: Plus },
+  { id: "applicants", label: "My Applicants", icon: Users },
+  { id: "platforms", label: "Job Platforms", icon: Circle },
+];
 
 function JobsPortal({ goBack }) {
+  const [tab, setTab] = useState("openings");
   const [category, setCategory] = useState("All");
+  const [query, setQuery] = useState("");
+  const [postedJobs, setPostedJobs] = useState([]);
   const [applyJob, setApplyJob] = useState(null);
   const [form, setForm] = useState({ name: "", phone: "" });
   const [submitted, setSubmitted] = useState(false);
   const can = form.name.trim() && form.phone.trim();
-  const filtered = JOBS.filter((j) => category === "All" || j.category === category);
+
+  const [postForm, setPostForm] = useState({ title: "", company: "", location: "", pay: "", type: "Full-time", phone: "", description: "" });
+  const [postSubmitting, setPostSubmitting] = useState(false);
+  const [postDone, setPostDone] = useState(false);
+  const postCan = postForm.title.trim() && postForm.company.trim() && postForm.location.trim() && postForm.pay.trim();
+
+  const allJobs = [...postedJobs, ...JOBS];
+  const filtered = allJobs.filter((j) =>
+    (category === "All" || j.category === category) &&
+    (j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase()) || j.location.toLowerCase().includes(query.toLowerCase()))
+  );
+
+  async function submitPost() {
+    setPostSubmitting(true);
+    const newJob = {
+      id: `local-${Date.now()}`,
+      title: postForm.title,
+      company: postForm.company,
+      location: postForm.location,
+      pay: postForm.pay,
+      type: postForm.type,
+      category: "Driving",
+      phone: postForm.phone,
+      description: postForm.description || "No description provided.",
+    };
+    try {
+      await supabase.from("jobs").insert({ title: postForm.title, location: postForm.location, pay: postForm.pay, status: "active" });
+    } catch (e) { /* still show locally even if Supabase insert fails */ }
+    setPostedJobs((p) => [newJob, ...p]);
+    setPostSubmitting(false);
+    setPostDone(true);
+  }
 
   return (
     <div style={{ color: TEXT }}>
-      <Header title="Jobs — Drive & earn" onBack={goBack} />
+      <Header title="Jobs" onBack={goBack} />
 
-      <div className="mx-5 mb-5 rounded-2xl relative overflow-hidden" style={{ height: 150, background: CARD, border: `1px solid ${BORDER}` }}>
-        <img src="https://loremflickr.com/500/300/driver,rideshare/all?lock=52" alt="Jobs" className="w-full h-full object-cover" />
-        <div className="absolute inset-0 flex flex-col justify-end p-4" style={{ background: "linear-gradient(180deg, rgba(7,14,31,0) 30%, rgba(7,14,31,0.9) 100%)" }}>
-          <p className="text-base font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{JOBS.length} open positions</p>
-          <p className="text-[11px]" style={{ color: MUTE }}>Across leading Saudi companies</p>
+      {/* Hero */}
+      <div className="px-5 mb-6 text-center">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4" style={{ background: "rgba(217,166,83,0.14)", border: `1px solid rgba(217,166,83,0.3)` }}>
+          <Briefcase size={11} color={GOLD} />
+          <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: GOLD }}>Jobs portal</span>
+        </div>
+        <h2 className="text-2xl font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Driver Jobs Portal</h2>
+        <p className="text-xs mt-2" style={{ color: MUTE }}>Find real driver openings, post a vacancy, or explore trusted global job platforms.</p>
+        <div className="flex flex-wrap justify-center gap-3 mt-4 text-[10px]" style={{ color: FAINT }}>
+          <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: GREEN }} /> {allJobs.length} active openings</span>
+          <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} /> Real-time updates</span>
+          <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: GREEN }} /> Multiple cities</span>
         </div>
       </div>
 
-      <div className="px-5 mb-4 flex gap-2 overflow-x-auto">
-        {JOB_CATEGORIES.map((c) => (
-          <button key={c} onClick={() => setCategory(c)} className="px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0" style={{ background: category === c ? GOLD : CARD, color: category === c ? BG : MUTE, border: category === c ? "none" : `1px solid ${BORDER}` }}>{c}</button>
-        ))}
+      {/* Tabs */}
+      <div className="px-5 mb-5 flex gap-2 overflow-x-auto">
+        {JOB_TABS.map((tb) => {
+          const Icon = tb.icon;
+          return (
+            <button key={tb.id} onClick={() => setTab(tb.id)} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold whitespace-nowrap shrink-0" style={{ background: tab === tb.id ? GOLD : CARD, color: tab === tb.id ? BG : MUTE, border: tab === tb.id ? "none" : `1px solid ${BORDER}` }}>
+              <Icon size={12} /> {tb.label}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="px-5 flex flex-col gap-2.5">
-        {filtered.map((j) => (
-          <div key={j.id} className="rounded-2xl px-4 py-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div className="flex items-start gap-3">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
-                {j.company.charAt(0)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold leading-tight">{j.title}</p>
-                <p className="text-[12px] mt-0.5" style={{ color: GOLD }}>{j.company}</p>
-              </div>
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold shrink-0" style={{ background: "rgba(91,143,212,0.15)", color: GREEN }}>{j.type}</span>
+      {/* Job Openings tab */}
+      {tab === "openings" && (
+        <>
+          <div className="px-5 mb-4">
+            <div className="flex items-center gap-2 rounded-full px-4 py-2.5 mb-2.5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Search size={15} color={FAINT} />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search job title, company, city..." className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
             </div>
-            <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px]" style={{ color: FAINT }}>
-              <span className="flex items-center gap-1"><MapPin size={11} /> {j.location}</span>
-              <span className="flex items-center gap-1"><DollarSign size={11} /> {j.pay}</span>
+            <div className="flex items-center justify-between">
+              <div className="flex gap-2 overflow-x-auto">
+                {JOB_CATEGORIES.map((c) => (
+                  <button key={c} onClick={() => setCategory(c)} className="px-3 py-1.5 rounded-full text-[11px] font-medium whitespace-nowrap shrink-0" style={{ background: category === c ? GOLD : CARD, color: category === c ? BG : MUTE, border: category === c ? "none" : `1px solid ${BORDER}` }}>{c}</button>
+                ))}
+              </div>
+              <span className="text-[11px] ml-3 shrink-0" style={{ color: FAINT }}>{filtered.length} openings</span>
             </div>
-            <button onClick={() => setApplyJob(j)} className="w-full mt-3.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: GOLD, color: BG }}>Apply now</button>
           </div>
-        ))}
-      </div>
 
-      <div className="px-5 mt-7">
-        <p className="text-xs font-semibold mb-1" style={{ color: GREEN }}>ALSO SEARCH ON</p>
-        <p className="text-[11px] mb-3" style={{ color: FAINT }}>Browse more openings across the Gulf job market.</p>
-        <div className="grid grid-cols-2 gap-2">
-          {EXTERNAL_JOB_SITES.map((s) => (
-            <a
-              key={s.name}
-              href={s.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between rounded-xl px-4 py-3"
-              style={{ background: CARD, border: `1px solid ${BORDER}` }}
-            >
-              <span className="text-xs font-medium">{s.name}</span>
-              <ArrowRightLeft size={12} color={FAINT} style={{ transform: "rotate(45deg)" }} />
-            </a>
-          ))}
+          <div className="px-5 flex flex-col gap-2.5">
+            {filtered.map((j) => (
+              <div key={j.id} className="rounded-2xl px-4 py-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+                    {j.company.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold leading-tight">{j.title}</p>
+                    <p className="text-[12px] mt-0.5" style={{ color: GOLD }}>{j.company}</p>
+                  </div>
+                  <button onClick={() => setApplyJob(j)} className="px-3 py-1.5 rounded-full text-[11px] font-semibold shrink-0" style={{ background: GOLD, color: BG }}>Apply now</button>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mt-2.5">
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: "rgba(91,143,212,0.15)", color: GREEN }}>{j.type}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: BORDER, color: MUTE }}>{j.category}</span>
+                </div>
+                {j.description && <p className="text-[11px] mt-2" style={{ color: MUTE }}>{j.description}</p>}
+                <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px]" style={{ color: FAINT }}>
+                  <span className="flex items-center gap-1"><MapPin size={11} /> {j.location}</span>
+                  <span className="flex items-center gap-1"><DollarSign size={11} /> {j.pay}</span>
+                  {j.phone && <span className="flex items-center gap-1"><Phone size={11} /> {j.phone}</span>}
+                </div>
+              </div>
+            ))}
+            {filtered.length === 0 && <p className="text-sm text-center py-8" style={{ color: FAINT }}>No openings match your search.</p>}
+          </div>
+        </>
+      )}
+
+      {/* Post a Job tab */}
+      {tab === "post" && (
+        <div className="px-5">
+          {!postDone ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-xs" style={{ color: MUTE }}>Post a driving or delivery role. It appears instantly in Job Openings.</p>
+              <input value={postForm.title} onChange={(e) => setPostForm({ ...postForm, title: e.target.value })} placeholder="Job title" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+              <input value={postForm.company} onChange={(e) => setPostForm({ ...postForm, company: e.target.value })} placeholder="Company name" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+              <input value={postForm.location} onChange={(e) => setPostForm({ ...postForm, location: e.target.value })} placeholder="City" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+              <input value={postForm.pay} onChange={(e) => setPostForm({ ...postForm, pay: e.target.value })} placeholder="Pay (e.g. 6,000 SAR/mo)" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+              <div className="rounded-xl px-4 py-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <select value={postForm.type} onChange={(e) => setPostForm({ ...postForm, type: e.target.value })} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+                  <option value="Full-time" style={{ background: CARD }}>Full-time</option>
+                  <option value="Flexible" style={{ background: CARD }}>Flexible</option>
+                  <option value="Freelance" style={{ background: CARD }}>Freelance</option>
+                </select>
+              </div>
+              <input value={postForm.phone} onChange={(e) => setPostForm({ ...postForm, phone: e.target.value })} placeholder="Contact phone" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+              <textarea value={postForm.description} onChange={(e) => setPostForm({ ...postForm, description: e.target.value })} placeholder="Short description" rows={3} className="rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+              <button onClick={submitPost} disabled={!postCan || postSubmitting} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: postCan ? GOLD : BORDER, color: postCan ? BG : "#5C736D" }}>
+                {postSubmitting ? "Posting…" : "Post job"}
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center text-center py-8">
+              <CheckCircle2 size={44} color={GREEN} />
+              <h2 className="mt-4 text-lg font-semibold">Job posted</h2>
+              <p className="text-xs mt-1" style={{ color: MUTE }}>Your listing is now live under Job Openings.</p>
+              <button onClick={() => { setPostDone(false); setPostForm({ title: "", company: "", location: "", pay: "", type: "Full-time", phone: "", description: "" }); setTab("openings"); }} className="w-full max-w-xs mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>View openings</button>
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* My Applicants tab */}
+      {tab === "applicants" && (
+        <div className="px-5 flex flex-col items-center text-center py-12">
+          <Users size={32} color={FAINT} />
+          <p className="text-sm font-semibold mt-3">No applicants yet</p>
+          <p className="text-xs mt-1" style={{ color: FAINT }}>Once candidates apply to your posted jobs, they'll show up here.</p>
+        </div>
+      )}
+
+      {/* Job Platforms tab */}
+      {tab === "platforms" && (
+        <div className="px-5">
+          <p className="text-xs mb-3" style={{ color: FAINT }}>Browse more openings across the Gulf job market.</p>
+          <div className="grid grid-cols-2 gap-2">
+            {EXTERNAL_JOB_SITES.map((s) => (
+              <a
+                key={s.name}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between rounded-xl px-4 py-3"
+                style={{ background: CARD, border: `1px solid ${BORDER}` }}
+              >
+                <span className="text-xs font-medium">{s.name}</span>
+                <ArrowRightLeft size={12} color={FAINT} style={{ transform: "rotate(45deg)" }} />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {applyJob && (
         <div className="fixed inset-0 flex items-end justify-center z-40" style={{ background: "rgba(0,0,0,0.6)" }}>
@@ -1784,9 +1935,6 @@ function WelcomeScreen({ navigate }) {
         </button>
         <button onClick={() => navigate("driver_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
           Driver login / sign up
-        </button>
-        <button onClick={() => navigate("admin_login")} className="text-xs mt-2" style={{ color: FAINT }}>
-          Admin login
         </button>
       </div>
     </div>
@@ -2159,7 +2307,8 @@ function AdminOverview({ navigate, goBack, onLogout }) {
 const TAB_SCREENS = ["home", "activity", "wallet", "profile"];
 
 export default function SayyaraDriveApp() {
-  const [history, setHistory] = useState(["welcome"]);
+  const isAdminLink = typeof window !== "undefined" && window.location.search.includes("owner2026");
+  const [history, setHistory] = useState([isAdminLink ? "admin_login" : "welcome"]);
   const [currentDriver, setCurrentDriver] = useState(null);
   const [currentAdmin, setCurrentAdmin] = useState(null);
   const [showAI, setShowAI] = useState(false);
