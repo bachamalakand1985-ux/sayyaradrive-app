@@ -10,9 +10,9 @@ import {
 } from "lucide-react";
 
 /* ---------- shared tokens ---------- */
-const BG = "#0B1917", CARD = "#14262A", BORDER = "#1E3630";
-const GOLD = "#D4A64A", GREEN = "#6FA98C", TEXT = "#F2EFE9";
-const MUTE = "#9BB3AD", FAINT = "#7C948E";
+const BG = "#070E1F", CARD = "#101B36", BORDER = "#1E2E52";
+const GOLD = "#D9A653", GREEN = "#5B8FD4", TEXT = "#F1F5FB";
+const MUTE = "#9FB0CE", FAINT = "#6C7FA6";
 const HERE_API_KEY = "-ZUX_FxV-ok4896M-TXR2aqAShTd04KfYRqS_3_JGAM";
 
 /* ---------- Saudi Arabia cities & districts ---------- */
@@ -122,6 +122,69 @@ const TRANSLATIONS = {
   },
 };
 
+/* ---------- Riyadh skyline + desert silhouette background ---------- */
+function SkylineBackground({ opacity = 1 }) {
+  return (
+    <svg
+      className="absolute left-0 right-0 bottom-0 w-full pointer-events-none select-none"
+      viewBox="0 0 400 220"
+      preserveAspectRatio="xMidYMax slice"
+      style={{ height: 220, opacity }}
+    >
+      {/* night sky gradient */}
+      <defs>
+        <linearGradient id="skyFade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={BG} stopOpacity="0" />
+          <stop offset="100%" stopColor={BG} stopOpacity="1" />
+        </linearGradient>
+      </defs>
+      {/* stars */}
+      <circle cx="40" cy="30" r="1" fill={GOLD} opacity="0.6" />
+      <circle cx="120" cy="18" r="1.2" fill={GOLD} opacity="0.5" />
+      <circle cx="260" cy="25" r="1" fill={GOLD} opacity="0.6" />
+      <circle cx="340" cy="15" r="1.3" fill={GOLD} opacity="0.5" />
+      <circle cx="80" cy="55" r="0.8" fill={TEXT} opacity="0.3" />
+      <circle cx="300" cy="50" r="0.8" fill={TEXT} opacity="0.3" />
+      {/* crescent moon */}
+      <circle cx="330" cy="35" r="12" fill={GOLD} opacity="0.85" />
+      <circle cx="335" cy="31" r="11" fill={BG} />
+
+      {/* desert dunes */}
+      <path d="M0,190 Q60,165 130,185 T260,180 T400,190 V220 H0 Z" fill={CARD} opacity="0.9" />
+      <path d="M0,205 Q80,185 180,200 T400,200 V220 H0 Z" fill={BORDER} opacity="0.7" />
+
+      {/* Kingdom Centre Tower (arch top) */}
+      <g opacity="0.9">
+        <rect x="60" y="90" width="10" height="100" fill={CARD} />
+        <path d="M56,92 L60,60 L70,60 L74,92 Q65,84 56,92 Z" fill={CARD} />
+      </g>
+
+      {/* Al Faisaliyah Tower (globe top) */}
+      <g opacity="0.9">
+        <polygon points="185,190 179,110 191,110" fill={CARD} />
+        <circle cx="185" cy="102" r="7" fill={CARD} />
+      </g>
+
+      {/* Mosque dome + minaret silhouette */}
+      <g opacity="0.85">
+        <rect x="230" y="150" width="6" height="40" fill={CARD} />
+        <circle cx="233" cy="146" r="5" fill={CARD} />
+        <path d="M245,190 Q245,165 260,165 Q275,165 275,190 Z" fill={CARD} />
+        <rect x="266" y="140" width="5" height="30" fill={CARD} />
+        <circle cx="268" cy="136" r="4" fill={CARD} />
+      </g>
+
+      {/* small palm accents */}
+      <g opacity="0.7">
+        <line x1="320" y1="192" x2="320" y2="175" stroke={CARD} strokeWidth="2" />
+        <path d="M320,175 Q310,170 305,175 M320,175 Q330,170 335,175 M320,175 Q312,165 308,168 M320,175 Q328,165 332,168" stroke={CARD} strokeWidth="2" fill="none" strokeLinecap="round" />
+      </g>
+
+      <rect x="0" y="0" width="400" height="220" fill="url(#skyFade)" />
+    </svg>
+  );
+}
+
 function Header({ title, onBack, right }) {
   return (
     <div className="flex items-center justify-between px-5 pt-6 pb-4">
@@ -138,9 +201,6 @@ function Header({ title, onBack, right }) {
 
 /* ---------- HOME ---------- */
 const SERVICES = [
-  { id: "ride", label: "Ride", sub: "City rides", subKey: "cityRides", icon: Car },
-  { id: "airport", label: "Airport", sub: "Transfers", subKey: "transfers", icon: Plane },
-  { id: "intercity", label: "Intercity", sub: "City to city", subKey: "cityToCity", icon: MapPinned },
   { id: "rentals", label: "Rentals", sub: "Rent a car", subKey: "rentACar", icon: Key },
   { id: "market", label: "Marketplace", sub: "Buy & sell", subKey: "buySell", icon: ShoppingBag },
   { id: "food", label: "Food", sub: "Delivery", subKey: "delivery", icon: UtensilsCrossed },
@@ -151,8 +211,9 @@ const SERVICES = [
 
 function Home({ navigate, lang, setLang, t }) {
   return (
-    <div className="pb-4" style={{ color: TEXT }} dir={lang === "ar" ? "rtl" : "ltr"}>
-      <div className="flex items-center justify-between px-5 pt-6 pb-2">
+    <div className="pb-4 relative overflow-hidden" style={{ color: TEXT }} dir={lang === "ar" ? "rtl" : "ltr"}>
+      <SkylineBackground opacity={0.9} />
+      <div className="relative flex items-center justify-between px-5 pt-6 pb-2">
         <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}><Menu size={18} color={TEXT} /></button>
         <div className="text-[10px] uppercase" style={{ color: GREEN, letterSpacing: "0.25em" }}>Riyadh, Saudi Arabia</div>
         <div className="flex items-center gap-2">
@@ -168,13 +229,24 @@ function Home({ navigate, lang, setLang, t }) {
           </button>
         </div>
       </div>
-      <div className="px-5 pt-4 pb-6">
-        <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 34, fontWeight: 700, letterSpacing: "-0.02em" }}>
-          سيارة<span style={{ color: GOLD }}>Drive</span>
-        </h1>
+      <div className="relative px-5 pt-4 pb-6">
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: `linear-gradient(135deg, ${GOLD}, #B8863B)`, boxShadow: `0 4px 14px rgba(217,166,83,0.35)` }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M4 20 L4 10 L12 4 L20 10 L20 20" stroke={BG} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M9 20 V13 H15 V20" stroke={BG} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 30, fontWeight: 700, letterSpacing: "-0.02em" }}>
+            سيارة<span style={{ color: GOLD }}>Drive</span>
+          </h1>
+        </div>
         <p className="mt-2 text-sm" style={{ color: MUTE }}>{t("tagline")}</p>
       </div>
-      <div className="px-5 mb-6">
+      <div className="relative px-5 mb-6">
         <div className="relative rounded-2xl p-5 overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <div className="relative flex items-center justify-between">
             <div>
@@ -187,7 +259,7 @@ function Home({ navigate, lang, setLang, t }) {
           </div>
         </div>
       </div>
-      <div className="px-5">
+      <div className="relative px-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold">{t("services")}</h2>
           <span className="text-xs" style={{ color: GREEN }}>{SERVICES.length} {t("available")}</span>
@@ -197,7 +269,7 @@ function Home({ navigate, lang, setLang, t }) {
             const Icon = s.icon;
             return (
               <button key={s.id} onClick={() => navigate(s.id)} className="flex flex-col items-start gap-2 rounded-xl p-3 text-left active:scale-95" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "rgba(212,166,74,0.12)" }}><Icon size={18} color={GOLD} /></div>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "rgba(217,166,83,0.12)" }}><Icon size={18} color={GOLD} /></div>
                 <div><p className="text-xs font-semibold leading-tight">{t(s.id === "market" ? "marketplace" : s.id)}</p><p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{t(s.subKey)}</p></div>
               </button>
             );
@@ -214,59 +286,188 @@ const RIDE_TYPES = [
   { id: "comfort", label: "Comfort", eta: "6 min", price: 27, icon: Zap },
   { id: "family", label: "Family", eta: "8 min", price: 38, icon: Users2 },
 ];
-function RideBooking({ goBack }) {
-  const [pickup, setPickup] = useState("Current location");
-  const [dropoff, setDropoff] = useState("");
+const AIRPORTS = ["King Khalid International (RUH)", "King Abdulaziz International (JED)", "King Fahd International (DMM)"];
+const AIRPORT_VEHICLES = [{ id: "sedan", label: "Sedan", seats: "1-3", bags: 2, price: 85 }, { id: "suv", label: "SUV", seats: "1-5", bags: 4, price: 130 }, { id: "van", label: "Van", seats: "1-8", bags: 8, price: 190 }];
+const AIRPORT_CITY = { [AIRPORTS[0]]: "Riyadh", [AIRPORTS[1]]: "Jeddah", [AIRPORTS[2]]: "Dammam" };
+const CITIES = SAUDI_CITY_LIST;
+const INTERCITY_OPTIONS = [{ id: "shared", label: "Shared seat", sub: "Share with others", price: 120 }, { id: "private", label: "Private car", sub: "Full car", price: 480 }, { id: "private_suv", label: "Private SUV", sub: "Full SUV", price: 650 }];
+
+function BookRide({ goBack }) {
+  const [mode, setMode] = useState("city"); // city | airport | intercity
   const [stage, setStage] = useState("input");
-  const [selectedType, setSelectedType] = useState("economy");
+
+  // --- city ride state ---
+  const mapRef = useRef(null);
+  const mapObjRef = useRef(null);
+  const markerRef = useRef(null);
+  const [mapStatus, setMapStatus] = useState("loading");
+  const [pickup, setPickup] = useState("Current location");
+  const [pickupCoords, setPickupCoords] = useState({ lat: 24.7136, lng: 46.6753 });
+  const [dropoff, setDropoff] = useState("");
+  const [rideType, setRideType] = useState("economy");
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState("");
-  const chosen = RIDE_TYPES.find((r) => r.id === selectedType);
+  const chosenRide = RIDE_TYPES.find((r) => r.id === rideType);
 
-  function useMyLocation() {
+  useEffect(() => {
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) return resolve();
+        const s = document.createElement("script"); s.src = src; s.async = true;
+        s.onload = resolve; s.onerror = () => reject(new Error("fail"));
+        document.head.appendChild(s);
+      });
+    }
+    function loadCss(href) {
+      if (document.querySelector(`link[href="${href}"]`)) return;
+      const l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; document.head.appendChild(l);
+    }
+    async function init() {
+      try {
+        loadCss("https://js.api.here.com/v3/3.1/mapsjs-ui.css");
+        await loadScript("https://js.api.here.com/v3/3.1/mapsjs-core.js");
+        await loadScript("https://js.api.here.com/v3/3.1/mapsjs-service.js");
+        await loadScript("https://js.api.here.com/v3/3.1/mapsjs-ui.js");
+        await loadScript("https://js.api.here.com/v3/3.1/mapsjs-mapevents.js");
+        if (!window.H || !mapRef.current) throw new Error("no sdk");
+        const platform = new window.H.service.Platform({ apikey: HERE_API_KEY });
+        const defaultLayers = platform.createDefaultLayers();
+        const map = new window.H.Map(mapRef.current, defaultLayers.vector.normal.map, { zoom: 14, center: pickupCoords, pixelRatio: window.devicePixelRatio || 1 });
+        new window.H.mapevents.Behavior(new window.H.mapevents.MapEvents(map));
+        new window.H.ui.UI.createDefault(map, defaultLayers);
+        const icon = new window.H.map.Icon(
+          "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><circle cx="13" cy="13" r="9" fill="#5B8FD4" stroke="#070E1F" stroke-width="3"/></svg>`)
+        );
+        const marker = new window.H.map.Marker(pickupCoords, { icon });
+        map.addObject(marker);
+        markerRef.current = marker;
+        mapObjRef.current = map;
+        setMapStatus("ready");
+        window.addEventListener("resize", () => map.getViewPort().resize());
+      } catch (e) { setMapStatus("error"); }
+    }
+    init();
+  }, []);
+
+  function useMyLocationCity() {
     detectLocation({
       onStart: () => { setLocating(true); setLocError(""); },
-      onSuccess: ({ label }) => { setPickup(label); setLocating(false); },
+      onSuccess: ({ lat, lng, label }) => {
+        setPickup(label);
+        setPickupCoords({ lat, lng });
+        setLocating(false);
+        if (mapObjRef.current && markerRef.current) {
+          mapObjRef.current.setCenter({ lat, lng });
+          markerRef.current.setGeometry({ lat, lng });
+        }
+      },
       onError: (msg) => { setLocating(false); setLocError(msg); },
     });
   }
 
+  // --- airport transfer state ---
+  const [direction, setDirection] = useState("to");
+  const [airport, setAirport] = useState(AIRPORTS[0]);
+  const [district, setDistrict] = useState(SAUDI_CITIES[AIRPORT_CITY[AIRPORTS[0]]][0]);
+  const [address, setAddress] = useState("");
+  const [aptLocating, setAptLocating] = useState(false);
+  const [aptLocError, setAptLocError] = useState("");
+  const [aptDate, setAptDate] = useState(""); const [aptTime, setAptTime] = useState("");
+  const [vehicle, setVehicle] = useState("sedan");
+  const chosenVehicle = AIRPORT_VEHICLES.find((v) => v.id === vehicle);
+  const cityForAirport = AIRPORT_CITY[airport];
+
+  function useMyLocationAirport() {
+    detectLocation({
+      onStart: () => { setAptLocating(true); setAptLocError(""); },
+      onSuccess: ({ label }) => { setAddress(label); setAptLocating(false); },
+      onError: (msg) => { setAptLocating(false); setAptLocError(msg); },
+    });
+  }
+
+  // --- intercity state ---
+  const [icFrom, setIcFrom] = useState("Riyadh"); const [icTo, setIcTo] = useState("Jeddah");
+  const [icDate, setIcDate] = useState("");
+  const [icOption, setIcOption] = useState("shared");
+  const chosenIntercity = INTERCITY_OPTIONS.find((o) => o.id === icOption);
+
+  function switchMode(m) {
+    setMode(m);
+    setStage("input");
+  }
+
+  const canContinue =
+    mode === "city" ? dropoff.trim() :
+    mode === "airport" ? (aptDate && aptTime) :
+    (icFrom !== icTo && icDate);
+
+  function goChoose() {
+    if (canContinue) setStage("choose");
+  }
+
+  const MODE_TABS = [
+    { id: "city", label: "City" },
+    { id: "airport", label: "Airport" },
+    { id: "intercity", label: "Intercity" },
+  ];
+
   return (
     <div style={{ color: TEXT }}>
       <Header title="Book a ride" onBack={goBack} />
-      <div className="mx-5 rounded-2xl relative overflow-hidden flex items-center justify-center" style={{ height: 180, background: CARD, border: `1px solid ${BORDER}` }}>
-        <Navigation size={20} color={GOLD} />
-      </div>
-      <div className="px-5 mt-4">
-        <div className="rounded-2xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-            <Circle size={10} color={GREEN} fill={GREEN} />
-            <input value={pickup} onChange={(e) => setPickup(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
-          </div>
-          <div className="flex items-center gap-3 py-3">
-            <Square size={9} color={GOLD} fill={GOLD} />
-            <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} placeholder="Where to?" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
-          </div>
-        </div>
-        <button onClick={useMyLocation} disabled={locating} className="w-full mt-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(212,166,74,0.12)", color: GOLD }}>
-          <Navigation size={13} className={locating ? "animate-pulse" : ""} /> {locating ? "Detecting location…" : "Use my current location"}
-        </button>
-        {locError && <p className="text-[11px] text-center mt-2" style={{ color: "#C0755B" }}>{locError}</p>}
-        {stage === "input" && (
-          <button onClick={() => dropoff.trim() && setStage("choose")} disabled={!dropoff.trim()} className="w-full mt-4 rounded-full py-3 text-sm font-semibold" style={{ background: dropoff.trim() ? GOLD : BORDER, color: dropoff.trim() ? BG : "#5C736D" }}>
-            Find rides
+
+      {/* trip type switcher */}
+      <div className="px-5 mb-4 flex rounded-full p-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+        {MODE_TABS.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => switchMode(m.id)}
+            className="flex-1 rounded-full py-2 text-xs font-semibold"
+            style={{ background: mode === m.id ? GOLD : "transparent", color: mode === m.id ? BG : MUTE }}
+          >
+            {m.label}
           </button>
-        )}
+        ))}
       </div>
-      {stage === "choose" && (
-        <div className="px-5 mt-5">
+
+      {/* ---------- CITY RIDE ---------- */}
+      {mode === "city" && stage === "input" && (
+        <>
+          <div className="mx-5 rounded-2xl relative overflow-hidden" style={{ height: 200, background: CARD, border: `1px solid ${BORDER}` }}>
+            <div ref={mapRef} className="w-full h-full" />
+            {mapStatus === "loading" && <div className="absolute inset-0 flex items-center justify-center" style={{ background: CARD }}><Navigation size={20} color={GOLD} /></div>}
+            {mapStatus === "error" && <div className="absolute inset-0 flex items-center justify-center px-6 text-center" style={{ background: CARD }}><p className="text-[11px]" style={{ color: FAINT }}>Map couldn't load — check connection or try again.</p></div>}
+          </div>
+          <div className="px-5 mt-4">
+            <div className="rounded-2xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                <Circle size={10} color={GREEN} fill={GREEN} />
+                <input value={pickup} onChange={(e) => setPickup(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+              <div className="flex items-center gap-3 py-3">
+                <Square size={9} color={GOLD} fill={GOLD} />
+                <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} placeholder="Where to?" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+            </div>
+            <button onClick={useMyLocationCity} disabled={locating} className="w-full mt-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(217,166,83,0.12)", color: GOLD }}>
+              <Navigation size={13} className={locating ? "animate-pulse" : ""} /> {locating ? "Detecting location…" : "Use my current location"}
+            </button>
+            {locError && <p className="text-[11px] text-center mt-2" style={{ color: "#C0755B" }}>{locError}</p>}
+            <button onClick={goChoose} disabled={!canContinue} className="w-full mt-4 rounded-full py-3 text-sm font-semibold" style={{ background: canContinue ? GOLD : BORDER, color: canContinue ? BG : "#5C736D" }}>
+              Find rides
+            </button>
+          </div>
+        </>
+      )}
+
+      {mode === "city" && stage === "choose" && (
+        <div className="px-5 mt-1">
           <div className="flex flex-col gap-2">
             {RIDE_TYPES.map((r) => {
-              const Icon = r.icon, isSel = selectedType === r.id;
+              const Icon = r.icon, isSel = rideType === r.id;
               return (
-                <button key={r.id} onClick={() => setSelectedType(r.id)} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
+                <button key={r.id} onClick={() => setRideType(r.id)} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "rgba(212,166,74,0.12)" }}><Icon size={17} color={GOLD} /></div>
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "rgba(217,166,83,0.12)" }}><Icon size={17} color={GOLD} /></div>
                     <div className="text-left"><p className="text-sm font-semibold">{r.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{r.eta} away</p></div>
                   </div>
                   <p className="text-sm font-semibold">{r.price} SAR</p>
@@ -274,10 +475,11 @@ function RideBooking({ goBack }) {
               );
             })}
           </div>
-          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Book {chosen.label} — {chosen.price} SAR</button>
+          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Book {chosenRide.label} — {chosenRide.price} SAR</button>
         </div>
       )}
-      {stage === "confirmed" && (
+
+      {mode === "city" && stage === "confirmed" && (
         <div className="px-5 mt-8 flex flex-col items-center text-center">
           <CheckCircle2 size={44} color={GREEN} />
           <h2 className="mt-4 text-lg font-semibold">Ride confirmed</h2>
@@ -285,14 +487,119 @@ function RideBooking({ goBack }) {
           <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
         </div>
       )}
+
+      {/* ---------- AIRPORT TRANSFER ---------- */}
+      {mode === "airport" && stage === "input" && (
+        <div className="px-5">
+          <div className="flex rounded-full p-1 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <button onClick={() => setDirection("to")} className="flex-1 flex items-center justify-center gap-2 rounded-full py-2 text-xs font-semibold" style={{ background: direction === "to" ? GOLD : "transparent", color: direction === "to" ? BG : MUTE }}><PlaneTakeoff size={13} /> To airport</button>
+            <button onClick={() => setDirection("from")} className="flex-1 flex items-center justify-center gap-2 rounded-full py-2 text-xs font-semibold" style={{ background: direction === "from" ? GOLD : "transparent", color: direction === "from" ? BG : MUTE }}><PlaneLanding size={13} /> From airport</button>
+          </div>
+          <div className="rounded-2xl px-4 py-2 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+              <Plane size={15} color={GOLD} />
+              <select value={airport} onChange={(e) => { setAirport(e.target.value); setDistrict(SAUDI_CITIES[AIRPORT_CITY[e.target.value]][0]); }} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
+                {AIRPORTS.map((a) => <option key={a} style={{ background: CARD }}>{a}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+              <MapPin size={15} color={GREEN} />
+              <select value={district} onChange={(e) => setDistrict(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
+                {SAUDI_CITIES[cityForAirport].map((d) => <option key={d} style={{ background: CARD }}>{d}, {cityForAirport}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-3 py-3">
+              <ChevronRight size={15} color={GREEN} />
+              <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Building / street (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+          </div>
+          <button onClick={useMyLocationAirport} disabled={aptLocating} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(217,166,83,0.12)", color: GOLD }}>
+            <Navigation size={13} className={aptLocating ? "animate-pulse" : ""} /> {aptLocating ? "Detecting location…" : "Use my current location"}
+          </button>
+          {aptLocError && <p className="text-[11px] text-center mb-3" style={{ color: "#C0755B" }}>{aptLocError}</p>}
+          <div className="flex gap-3 mb-6">
+            <div className="flex-1 flex items-center gap-2 rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Calendar size={14} color={GOLD} /><input type="date" value={aptDate} onChange={(e) => setAptDate(e.target.value)} className="bg-transparent outline-none text-xs w-full" style={{ color: TEXT }} /></div>
+            <div className="flex-1 flex items-center gap-2 rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Clock size={14} color={GOLD} /><input type="time" value={aptTime} onChange={(e) => setAptTime(e.target.value)} className="bg-transparent outline-none text-xs w-full" style={{ color: TEXT }} /></div>
+          </div>
+          <button onClick={goChoose} disabled={!canContinue} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: canContinue ? GOLD : BORDER, color: canContinue ? BG : "#5C736D" }}>See vehicles</button>
+        </div>
+      )}
+
+      {mode === "airport" && stage === "choose" && (
+        <div className="px-5">
+          <div className="flex flex-col gap-2">
+            {AIRPORT_VEHICLES.map((v) => {
+              const isSel = vehicle === v.id;
+              return (
+                <button key={v.id} onClick={() => setVehicle(v.id)} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
+                  <div className="text-left"><p className="text-sm font-semibold">{v.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{v.seats} seats · {v.bags} bags</p></div>
+                  <p className="text-sm font-semibold">{v.price} SAR</p>
+                </button>
+              );
+            })}
+          </div>
+          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Book {chosenVehicle.label} — {chosenVehicle.price} SAR</button>
+        </div>
+      )}
+
+      {mode === "airport" && stage === "confirmed" && (
+        <div className="px-5 mt-8 flex flex-col items-center text-center">
+          <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Transfer booked</h2>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver details shared via WhatsApp.</p>
+          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+        </div>
+      )}
+
+      {/* ---------- INTERCITY ---------- */}
+      {mode === "intercity" && stage === "input" && (
+        <div className="px-5">
+          <div className="rounded-2xl px-4 py-2 mb-4 relative" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><MapPin size={14} color={GREEN} /><select value={icFrom} onChange={(e) => setIcFrom(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>{CITIES.map((c) => <option key={c} style={{ background: CARD }}>{c}</option>)}</select></div>
+            <div className="flex items-center gap-3 py-3"><MapPin size={14} color={GOLD} /><select value={icTo} onChange={(e) => setIcTo(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>{CITIES.map((c) => <option key={c} style={{ background: CARD }}>{c}</option>)}</select></div>
+            <button onClick={() => { setIcFrom(icTo); setIcTo(icFrom); }} className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: BORDER }}><ArrowRightLeft size={14} color={GOLD} /></button>
+          </div>
+          <div className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Calendar size={15} color={GOLD} /><input type="date" value={icDate} onChange={(e) => setIcDate(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+          <button onClick={goChoose} disabled={!canContinue} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: canContinue ? GOLD : BORDER, color: canContinue ? BG : "#5C736D" }}>See options</button>
+        </div>
+      )}
+
+      {mode === "intercity" && stage === "choose" && (
+        <div className="px-5">
+          <div className="rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}><p className="text-sm font-semibold">{icFrom} → {icTo}</p><p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: FAINT }}><Route size={11} /> {icDate}</p></div>
+          <div className="flex flex-col gap-2">
+            {INTERCITY_OPTIONS.map((o) => {
+              const isSel = icOption === o.id;
+              return (
+                <button key={o.id} onClick={() => setIcOption(o.id)} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
+                  <div className="text-left"><p className="text-sm font-semibold">{o.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{o.sub}</p></div>
+                  <p className="text-sm font-semibold">{o.price} SAR</p>
+                </button>
+              );
+            })}
+          </div>
+          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Book {chosenIntercity.label} — {chosenIntercity.price} SAR</button>
+        </div>
+      )}
+
+      {mode === "intercity" && stage === "confirmed" && (
+        <div className="px-5 mt-8 flex flex-col items-center text-center">
+          <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Trip booked</h2>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver details on WhatsApp before departure.</p>
+          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+        </div>
+      )}
+
+      <div className="h-10" />
     </div>
   );
 }
 
 /* ---------- DRIVER APP ---------- */
-const INCOMING_REQUEST = { rider: "Faisal A.", rating: 4.8, pickup: "Al Olaya Street, Riyadh", dropoff: "King Khalid International Airport", distance: "1.2 km away", fare: 42 };
+const INCOMING_REQUEST = { rider: "Faisal A.", rating: 4.8, pickup: "Al Olaya Street, Riyadh", dropoff: "King Khalid International Airport", distance: "1.2 km away", fare: 42, pickupCoords: { lat: 24.7, lng: 46.685 } };
 function DriverApp({ goBack }) {
   const mapRef = useRef(null);
+  const mapObjRef = useRef(null);
+  const pickupMarkerRef = useRef(null);
   const [mapStatus, setMapStatus] = useState("loading");
   const [online, setOnline] = useState(false);
   const [request, setRequest] = useState(null);
@@ -334,12 +641,41 @@ function DriverApp({ goBack }) {
         const map = new window.H.Map(mapRef.current, defaultLayers.vector.normal.map, { zoom: 13, center: driverLoc, pixelRatio: window.devicePixelRatio || 1 });
         new window.H.mapevents.Behavior(new window.H.mapevents.MapEvents(map));
         new window.H.ui.UI.createDefault(map, defaultLayers);
+        const driverIcon = new window.H.map.Icon(
+          "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><circle cx="13" cy="13" r="9" fill="#D9A653" stroke="#070E1F" stroke-width="3"/></svg>`)
+        );
+        const driverMarker = new window.H.map.Marker(driverLoc, { icon: driverIcon });
+        map.addObject(driverMarker);
+        mapObjRef.current = map;
         setMapStatus("ready");
         window.addEventListener("resize", () => map.getViewPort().resize());
       } catch (e) { setMapStatus("error"); }
     }
     init();
   }, []);
+
+  // Show pickup marker on the map when a ride request comes in
+  useEffect(() => {
+    if (!mapObjRef.current || !window.H) return;
+    if (pickupMarkerRef.current) {
+      mapObjRef.current.removeObject(pickupMarkerRef.current);
+      pickupMarkerRef.current = null;
+    }
+    if (request && request.pickupCoords) {
+      const icon = new window.H.map.Icon(
+        "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect x="4" y="4" width="16" height="16" rx="3" fill="#5B8FD4" stroke="#070E1F" stroke-width="3"/></svg>`)
+      );
+      const marker = new window.H.map.Marker(request.pickupCoords, { icon });
+      mapObjRef.current.addObject(marker);
+      pickupMarkerRef.current = marker;
+      mapObjRef.current.getViewModel().setLookAtData({ bounds: new window.H.geo.Rect(
+        Math.max(driverLoc.lat, request.pickupCoords.lat) + 0.01,
+        Math.min(driverLoc.lng, request.pickupCoords.lng) - 0.01,
+        Math.min(driverLoc.lat, request.pickupCoords.lat) - 0.01,
+        Math.max(driverLoc.lng, request.pickupCoords.lng) + 0.01,
+      ) });
+    }
+  }, [request]);
 
   function goOnline() { setOnline(true); setTimeout(() => setRequest(INCOMING_REQUEST), 1500); }
   function goOffline() { setOnline(false); setRequest(null); setTripState("idle"); }
@@ -381,148 +717,6 @@ function DriverApp({ goBack }) {
             <p className="text-sm font-semibold mb-3">Trip accepted — contact rider on WhatsApp</p>
             <button onClick={() => { setTripState("idle"); setRequest(null); }} className="w-full rounded-full py-2.5 text-sm font-semibold" style={{ background: GREEN, color: BG }}>Complete trip</button>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ---------- AIRPORT ---------- */
-const AIRPORTS = ["King Khalid International (RUH)", "King Abdulaziz International (JED)", "King Fahd International (DMM)"];
-const AIRPORT_VEHICLES = [{ id: "sedan", label: "Sedan", seats: "1-3", bags: 2, price: 85 }, { id: "suv", label: "SUV", seats: "1-5", bags: 4, price: 130 }, { id: "van", label: "Van", seats: "1-8", bags: 8, price: 190 }];
-const AIRPORT_CITY = { [AIRPORTS[0]]: "Riyadh", [AIRPORTS[1]]: "Jeddah", [AIRPORTS[2]]: "Dammam" };
-function AirportTransfer({ goBack }) {
-  const [direction, setDirection] = useState("to");
-  const [airport, setAirport] = useState(AIRPORTS[0]);
-  const [district, setDistrict] = useState(SAUDI_CITIES[AIRPORT_CITY[AIRPORTS[0]]][0]);
-  const [address, setAddress] = useState("");
-  const [locating, setLocating] = useState(false);
-  const [locError, setLocError] = useState("");
-  const [date, setDate] = useState(""); const [time, setTime] = useState("");
-  const [stage, setStage] = useState("input");
-  const [vehicle, setVehicle] = useState("sedan");
-  const chosen = AIRPORT_VEHICLES.find((v) => v.id === vehicle);
-  const can = date && time;
-  const cityForAirport = AIRPORT_CITY[airport];
-
-  function useMyLocation() {
-    detectLocation({
-      onStart: () => { setLocating(true); setLocError(""); },
-      onSuccess: ({ label }) => { setAddress(label); setLocating(false); },
-      onError: (msg) => { setLocating(false); setLocError(msg); },
-    });
-  }
-
-  return (
-    <div style={{ color: TEXT }}>
-      <Header title="Airport transfer" onBack={goBack} />
-      {stage === "input" && (
-        <div className="px-5">
-          <div className="flex rounded-full p-1 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <button onClick={() => setDirection("to")} className="flex-1 flex items-center justify-center gap-2 rounded-full py-2 text-xs font-semibold" style={{ background: direction === "to" ? GOLD : "transparent", color: direction === "to" ? BG : MUTE }}><PlaneTakeoff size={13} /> To airport</button>
-            <button onClick={() => setDirection("from")} className="flex-1 flex items-center justify-center gap-2 rounded-full py-2 text-xs font-semibold" style={{ background: direction === "from" ? GOLD : "transparent", color: direction === "from" ? BG : MUTE }}><PlaneLanding size={13} /> From airport</button>
-          </div>
-          <div className="rounded-2xl px-4 py-2 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-              <Plane size={15} color={GOLD} />
-              <select value={airport} onChange={(e) => { setAirport(e.target.value); setDistrict(SAUDI_CITIES[AIRPORT_CITY[e.target.value]][0]); }} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
-                {AIRPORTS.map((a) => <option key={a} style={{ background: CARD }}>{a}</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-              <MapPin size={15} color={GREEN} />
-              <select value={district} onChange={(e) => setDistrict(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
-                {SAUDI_CITIES[cityForAirport].map((d) => <option key={d} style={{ background: CARD }}>{d}, {cityForAirport}</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-3 py-3">
-              <ChevronRight size={15} color={GREEN} />
-              <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Building / street (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
-            </div>
-          </div>
-          <button onClick={useMyLocation} disabled={locating} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(212,166,74,0.12)", color: GOLD }}>
-            <Navigation size={13} className={locating ? "animate-pulse" : ""} /> {locating ? "Detecting location…" : "Use my current location"}
-          </button>
-          {locError && <p className="text-[11px] text-center mb-3" style={{ color: "#C0755B" }}>{locError}</p>}
-          <div className="flex gap-3 mb-6">
-            <div className="flex-1 flex items-center gap-2 rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Calendar size={14} color={GOLD} /><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-transparent outline-none text-xs w-full" style={{ color: TEXT }} /></div>
-            <div className="flex-1 flex items-center gap-2 rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Clock size={14} color={GOLD} /><input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="bg-transparent outline-none text-xs w-full" style={{ color: TEXT }} /></div>
-          </div>
-          <button onClick={() => can && setStage("choose")} disabled={!can} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>See vehicles</button>
-        </div>
-      )}
-      {stage === "choose" && (
-        <div className="px-5">
-          <div className="flex flex-col gap-2">
-            {AIRPORT_VEHICLES.map((v) => {
-              const isSel = vehicle === v.id;
-              return (
-                <button key={v.id} onClick={() => setVehicle(v.id)} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
-                  <div className="text-left"><p className="text-sm font-semibold">{v.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{v.seats} seats · {v.bags} bags</p></div>
-                  <p className="text-sm font-semibold">{v.price} SAR</p>
-                </button>
-              );
-            })}
-          </div>
-          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Book {chosen.label} — {chosen.price} SAR</button>
-        </div>
-      )}
-      {stage === "confirmed" && (
-        <div className="px-5 mt-8 flex flex-col items-center text-center">
-          <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Transfer booked</h2>
-          <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver details shared via WhatsApp.</p>
-          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ---------- INTERCITY ---------- */
-const CITIES = SAUDI_CITY_LIST;
-const INTERCITY_OPTIONS = [{ id: "shared", label: "Shared seat", sub: "Share with others", price: 120 }, { id: "private", label: "Private car", sub: "Full car", price: 480 }, { id: "private_suv", label: "Private SUV", sub: "Full SUV", price: 650 }];
-function IntercityRide({ goBack }) {
-  const [from, setFrom] = useState("Riyadh"); const [to, setTo] = useState("Jeddah");
-  const [date, setDate] = useState(""); const [stage, setStage] = useState("input");
-  const [option, setOption] = useState("shared");
-  const chosen = INTERCITY_OPTIONS.find((o) => o.id === option);
-  const can = from !== to && date;
-  return (
-    <div style={{ color: TEXT }}>
-      <Header title="Intercity ride" onBack={goBack} />
-      {stage === "input" && (
-        <div className="px-5">
-          <div className="rounded-2xl px-4 py-2 mb-4 relative" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><MapPin size={14} color={GREEN} /><select value={from} onChange={(e) => setFrom(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>{CITIES.map((c) => <option key={c} style={{ background: CARD }}>{c}</option>)}</select></div>
-            <div className="flex items-center gap-3 py-3"><MapPin size={14} color={GOLD} /><select value={to} onChange={(e) => setTo(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>{CITIES.map((c) => <option key={c} style={{ background: CARD }}>{c}</option>)}</select></div>
-            <button onClick={() => { setFrom(to); setTo(from); }} className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: BORDER }}><ArrowRightLeft size={14} color={GOLD} /></button>
-          </div>
-          <div className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Calendar size={15} color={GOLD} /><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
-          <button onClick={() => can && setStage("choose")} disabled={!can} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>See options</button>
-        </div>
-      )}
-      {stage === "choose" && (
-        <div className="px-5">
-          <div className="rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}><p className="text-sm font-semibold">{from} → {to}</p><p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: FAINT }}><Route size={11} /> {date}</p></div>
-          <div className="flex flex-col gap-2">
-            {INTERCITY_OPTIONS.map((o) => {
-              const isSel = option === o.id;
-              return (
-                <button key={o.id} onClick={() => setOption(o.id)} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
-                  <div className="text-left"><p className="text-sm font-semibold">{o.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{o.sub}</p></div>
-                  <p className="text-sm font-semibold">{o.price} SAR</p>
-                </button>
-              );
-            })}
-          </div>
-          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Book {chosen.label} — {chosen.price} SAR</button>
-        </div>
-      )}
-      {stage === "confirmed" && (
-        <div className="px-5 mt-8 flex flex-col items-center text-center">
-          <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Trip booked</h2>
-          <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver details on WhatsApp before departure.</p>
-          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
         </div>
       )}
     </div>
@@ -573,7 +767,7 @@ function CarRental({ goBack }) {
               const isSel = carId === c.id;
               return (
                 <button key={c.id} onClick={() => setCarId(c.id)} className="flex items-center gap-3 rounded-xl px-4 py-3 text-left" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
-                  <div className="w-11 h-11 rounded-lg flex items-center justify-center" style={{ background: "rgba(212,166,74,0.12)" }}><Car size={20} color={GOLD} /></div>
+                  <div className="w-11 h-11 rounded-lg flex items-center justify-center" style={{ background: "rgba(217,166,83,0.12)" }}><Car size={20} color={GOLD} /></div>
                   <div className="flex-1"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{c.label}</p><p className="text-sm font-semibold">{c.price} SAR/day</p></div><p className="text-[11px]" style={{ color: FAINT }}>{c.model}</p></div>
                 </button>
               );
@@ -692,7 +886,7 @@ function FoodDelivery({ goBack }) {
       <div className="px-5 flex flex-col gap-2">
         {RESTAURANTS.map((r) => (
           <button key={r.id} onClick={() => setOpenRestaurant(r)} className="flex items-center gap-3 rounded-xl px-4 py-3 text-left" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(212,166,74,0.12)" }}><Bag size={18} color={GOLD} /></div>
+            <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.12)" }}><Bag size={18} color={GOLD} /></div>
             <div className="flex-1"><p className="text-sm font-semibold">{r.name}</p><p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{r.cuisine}</p><div className="flex items-center gap-3 mt-1 text-[10px]" style={{ color: FAINT }}><span className="flex items-center gap-1"><Star size={10} color={GOLD} /> {r.rating}</span><span className="flex items-center gap-1"><Clock size={10} /> {r.eta}</span></div></div>
           </button>
         ))}
@@ -821,7 +1015,7 @@ function FleetManagement({ goBack }) {
           const meta = STATUS_META[c.status];
           return (
             <div key={c.id} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(212,166,74,0.12)" }}><Car size={19} color={GOLD} /></div>
+              <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.12)" }}><Car size={19} color={GOLD} /></div>
               <div className="flex-1">
                 <div className="flex items-center justify-between"><p className="text-sm font-semibold">{c.plate}</p><button onClick={() => cycleStatus(c.id)} className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${meta.color}22`, color: meta.color }}>{meta.label}</button></div>
                 <p className="text-[11px]" style={{ color: FAINT }}>{c.model} · {c.driver}</p>
@@ -886,7 +1080,7 @@ function TripHistory({ goBack }) {
           const meta = TYPE_META[t.type]; const Icon = meta.icon;
           return (
             <div key={t.id} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(212,166,74,0.12)" }}><Icon size={17} color={GOLD} /></div>
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.12)" }}><Icon size={17} color={GOLD} /></div>
               <div className="flex-1"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{meta.label}</p><p className="text-sm font-semibold">{t.fare} SAR</p></div><p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{t.from} → {t.to}</p><p className="text-[10px] mt-1" style={{ color: FAINT }}>{t.date}</p></div>
             </div>
           );
@@ -967,7 +1161,7 @@ function AIAssistant({ onClose }) {
       <div className="w-full max-w-md rounded-t-3xl flex flex-col" style={{ background: CARD, border: `1px solid ${BORDER}`, height: "75vh" }}>
         <div className="flex items-center justify-between px-5 pt-5 pb-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(212,166,74,0.15)" }}>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(217,166,83,0.15)" }}>
               <Sparkles size={15} color={GOLD} />
             </div>
             <h2 className="text-sm font-semibold" style={{ color: TEXT }}>SayyaraDrive Assistant</h2>
@@ -1168,7 +1362,7 @@ function AdminDashboard({ goBack }) {
               const meta = STATUS_META[d.status];
               return (
                 <div key={d.name} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(212,166,74,0.12)" }}>
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.12)" }}>
                     <User size={17} color={GOLD} />
                   </div>
                   <div className="flex-1">
@@ -1229,10 +1423,10 @@ export default function SayyaraDriveApp() {
 
   const SCREEN_MAP = {
     home: <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />,
-    ride: <RideBooking goBack={goBack} />,
+    ride: <BookRide goBack={goBack} />,
     driver: <DriverApp goBack={goBack} />,
-    airport: <AirportTransfer goBack={goBack} />,
-    intercity: <IntercityRide goBack={goBack} />,
+    airport: <BookRide goBack={goBack} />,
+    intercity: <BookRide goBack={goBack} />,
     rentals: <CarRental goBack={goBack} />,
     market: <Marketplace goBack={goBack} />,
     food: <FoodDelivery goBack={goBack} />,
@@ -1246,9 +1440,14 @@ export default function SayyaraDriveApp() {
   };
 
   return (
-    <div className="min-h-screen w-full flex justify-center" style={{ background: BG, fontFamily: "'Inter', sans-serif" }}>
-      <div className={`w-full relative ${screen === "admin" ? "max-w-5xl" : "max-w-md"}`} style={{ paddingBottom: isTab ? 70 : 20 }}>
-        {SCREEN_MAP[screen] || <Home navigate={navigate} />}
+    <div className="min-h-screen w-full flex justify-center relative" style={{ background: BG, fontFamily: "'Inter', sans-serif" }}>
+      <div className="fixed inset-0 pointer-events-none z-0 flex justify-center">
+        <div className="w-full max-w-md relative h-full">
+          <SkylineBackground opacity={0.25} />
+        </div>
+      </div>
+      <div className={`w-full relative z-10 ${screen === "admin" ? "max-w-5xl" : "max-w-md"}`} style={{ paddingBottom: isTab ? 70 : 20 }}>
+        {SCREEN_MAP[screen] || <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />}
 
         <button
           onClick={() => setShowAI(true)}
