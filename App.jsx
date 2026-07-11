@@ -333,7 +333,11 @@ const RIDE_TYPES = [
   { id: "family", label: "Family", eta: "8 min", price: 38, icon: Users2 },
 ];
 const AIRPORTS = ["King Khalid International (RUH)", "King Abdulaziz International (JED)", "King Fahd International (DMM)"];
-const AIRPORT_VEHICLES = [{ id: "sedan", label: "Sedan", seats: "1-3", bags: 2, price: 85 }, { id: "suv", label: "SUV", seats: "1-5", bags: 4, price: 130 }, { id: "van", label: "Van", seats: "1-8", bags: 8, price: 190 }];
+const AIRPORT_VEHICLES = [
+  { id: "sedan", label: "Sedan", seats: "1-3", bags: 2, price: 85, img: "https://loremflickr.com/300/220/sedan,car/all?lock=61" },
+  { id: "suv", label: "SUV", seats: "1-5", bags: 4, price: 130, img: "https://loremflickr.com/300/220/suv,car/all?lock=62" },
+  { id: "van", label: "Van", seats: "1-8", bags: 8, price: 190, img: "https://loremflickr.com/300/220/passenger-van/all?lock=63" },
+];
 const AIRPORT_CITY = { [AIRPORTS[0]]: "Riyadh", [AIRPORTS[1]]: "Jeddah", [AIRPORTS[2]]: "Dammam" };
 const CITIES = SAUDI_CITY_LIST;
 const INTERCITY_OPTIONS = [{ id: "shared", label: "Shared seat", sub: "Share with others", price: 120 }, { id: "private", label: "Private car", sub: "Full car", price: 480 }, { id: "private_suv", label: "Private SUV", sub: "Full SUV", price: 650 }];
@@ -615,9 +619,9 @@ function BookRide({ goBack }) {
             {AIRPORT_VEHICLES.map((v) => {
               const isSel = vehicle === v.id;
               return (
-                <button key={v.id} onClick={() => setVehicle(v.id)} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
-                  <div className="text-left"><p className="text-sm font-semibold">{v.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{v.seats} seats · {v.bags} bags</p></div>
-                  <p className="text-sm font-semibold">{v.price} SAR</p>
+                <button key={v.id} onClick={() => setVehicle(v.id)} className="flex items-center gap-3 rounded-xl px-3 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
+                  <img src={v.img} alt={v.label} className="w-16 h-14 rounded-lg object-cover shrink-0" style={{ background: BORDER }} />
+                  <div className="flex-1 flex items-center justify-between"><div className="text-left"><p className="text-sm font-semibold">{v.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{v.seats} seats · {v.bags} bags</p></div><p className="text-sm font-semibold">{v.price} SAR</p></div>
                 </button>
               );
             })}
@@ -1049,7 +1053,14 @@ function PartnerRegister({ goBack, type }) {
 }
 
 /* ---------- CAR RENTAL ---------- */
-const CARS = [{ id: "eco", label: "Economy", model: "Hyundai Accent", price: 95 }, { id: "sedan", label: "Sedan", model: "Toyota Camry", price: 145 }, { id: "suv", label: "SUV", model: "Toyota Fortuner", price: 220 }, { id: "luxury", label: "Luxury", model: "Lexus ES", price: 380 }];
+const CARS = [
+  { id: "eco", label: "Economy", model: "Hyundai Accent", price: 95, provider: "Lumi Rent a Car", img: "https://loremflickr.com/400/300/hyundai,sedan/all?lock=11" },
+  { id: "sedan", label: "Sedan", model: "Toyota Camry", price: 145, provider: "Theeb Rent a Car", img: "https://loremflickr.com/400/300/toyota,camry/all?lock=12" },
+  { id: "suv", label: "SUV", model: "Toyota Fortuner", price: 220, provider: "Yelo Rent a Car", img: "https://loremflickr.com/400/300/suv,car/all?lock=13" },
+  { id: "luxury", label: "Luxury", model: "Lexus ES", price: 380, provider: "Sixt Rent a Car", img: "https://loremflickr.com/400/300/lexus,luxury-car/all?lock=14" },
+  { id: "van", label: "Minivan", model: "Hyundai Staria", price: 260, provider: "Hanco Rent a Car", img: "https://loremflickr.com/400/300/minivan,van/all?lock=15" },
+  { id: "pickup", label: "Pickup", model: "Toyota Hilux", price: 190, provider: "Key Rent a Car", img: "https://loremflickr.com/400/300/pickup-truck/all?lock=16" },
+];
 function CarRental({ goBack, navigate }) {
   const [city, setCity] = useState("Riyadh");
   const [district, setDistrict] = useState(SAUDI_CITIES["Riyadh"][0]);
@@ -1063,9 +1074,13 @@ function CarRental({ goBack, navigate }) {
       <Header title="Car rental" onBack={goBack} />
       {stage === "input" && (
         <div className="px-5">
-          <button onClick={() => navigate("register_rental")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+          <button onClick={() => navigate("register_rental")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
             <span className="flex items-center gap-2 text-sm font-semibold"><Key size={15} color={GOLD} /> Own a car? List it for rent</span>
             <ChevronRight size={14} color={GOLD} />
+          </button>
+          <button onClick={() => navigate("register_fleet")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GREEN} /> Own a fleet? Register your transport company</span>
+            <ChevronRight size={14} color={GREEN} />
           </button>
           <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
@@ -1095,9 +1110,9 @@ function CarRental({ goBack, navigate }) {
             {CARS.map((c) => {
               const isSel = carId === c.id;
               return (
-                <button key={c.id} onClick={() => setCarId(c.id)} className="flex items-center gap-3 rounded-xl px-4 py-3 text-left" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
-                  <div className="w-11 h-11 rounded-lg flex items-center justify-center" style={{ background: "rgba(217,166,83,0.12)" }}><Car size={20} color={GOLD} /></div>
-                  <div className="flex-1"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{c.label}</p><p className="text-sm font-semibold">{c.price} SAR/day</p></div><p className="text-[11px]" style={{ color: FAINT }}>{c.model}</p></div>
+                <button key={c.id} onClick={() => setCarId(c.id)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-left" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
+                  <img src={c.img} alt={c.model} className="w-16 h-14 rounded-lg object-cover shrink-0" style={{ background: BORDER }} />
+                  <div className="flex-1"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{c.label}</p><p className="text-sm font-semibold">{c.price} SAR/day</p></div><p className="text-[11px]" style={{ color: FAINT }}>{c.model}</p><p className="text-[10px] mt-0.5" style={{ color: GOLD }}>{c.provider}</p></div>
                 </button>
               );
             })}
@@ -1119,18 +1134,22 @@ function CarRental({ goBack, navigate }) {
 /* ---------- MARKETPLACE ---------- */
 const CATEGORIES = ["All", "Cars", "Electronics", "Furniture", "Fashion", "Spare parts"];
 const LISTINGS = [
-  { id: 1, title: "Toyota Camry 2021", price: 62000, category: "Cars", location: "Riyadh", tag: "Featured" },
-  { id: 2, title: "iPhone 15 Pro, 256GB", price: 3400, category: "Electronics", location: "Jeddah", tag: null },
-  { id: 3, title: "3-seat sofa, grey", price: 950, category: "Furniture", location: "Dammam", tag: null },
-  { id: 4, title: "Nike Air Max, size 43", price: 220, category: "Fashion", location: "Riyadh", tag: null },
-  { id: 5, title: "Car tires set (4)", price: 800, category: "Spare parts", location: "Khobar", tag: "New" },
-  { id: 6, title: "Hyundai Elantra 2020", price: 41000, category: "Cars", location: "Makkah", tag: null },
-  { id: 7, title: "Samsung 55\" Smart TV", price: 1600, category: "Electronics", location: "Madinah", tag: "New" },
-  { id: 8, title: "Dining table + 6 chairs", price: 1200, category: "Furniture", location: "Taif", tag: null },
-  { id: 9, title: "Men's Thobe, size L", price: 90, category: "Fashion", location: "Abha", tag: null },
-  { id: 10, title: "Car battery, 70Ah", price: 260, category: "Spare parts", location: "Jubail", tag: null },
-  { id: 11, title: "GMC Yukon 2019", price: 118000, category: "Cars", location: "Dammam", tag: "Featured" },
-  { id: 12, title: "MacBook Air M2", price: 4200, category: "Electronics", location: "Riyadh", tag: null },
+  { id: 1, title: "Toyota Camry 2021", price: 62000, category: "Cars", location: "Riyadh", tag: "Featured", seller: "Individual seller", img: "https://loremflickr.com/400/300/toyota,camry/all?lock=21" },
+  { id: 2, title: "iPhone 15 Pro, 256GB", price: 3400, category: "Electronics", location: "Jeddah", tag: null, seller: "Extra Stores", img: "https://loremflickr.com/400/300/iphone,smartphone/all?lock=22" },
+  { id: 3, title: "3-seat sofa, grey", price: 950, category: "Furniture", location: "Dammam", tag: null, seller: "IKEA Marketplace", img: "https://loremflickr.com/400/300/sofa,couch/all?lock=23" },
+  { id: 4, title: "Nike Air Max, size 43", price: 220, category: "Fashion", location: "Riyadh", tag: null, seller: "SHEIN Store", img: "https://loremflickr.com/400/300/sneakers,nike/all?lock=24" },
+  { id: 5, title: "Car tires set (4)", price: 800, category: "Spare parts", location: "Khobar", tag: "New", seller: "Al Jazira Tires Co.", img: "https://loremflickr.com/400/300/car-tires/all?lock=25" },
+  { id: 6, title: "Hyundai Elantra 2020", price: 41000, category: "Cars", location: "Makkah", tag: null, seller: "Individual seller", img: "https://loremflickr.com/400/300/hyundai,elantra/all?lock=26" },
+  { id: 7, title: "Samsung 55\" Smart TV", price: 1600, category: "Electronics", location: "Madinah", tag: "New", seller: "Jarir Bookstore", img: "https://loremflickr.com/400/300/smart-tv,television/all?lock=27" },
+  { id: 8, title: "Dining table + 6 chairs", price: 1200, category: "Furniture", location: "Taif", tag: null, seller: "Home Centre", img: "https://loremflickr.com/400/300/dining-table/all?lock=28" },
+  { id: 9, title: "Men's Thobe, size L", price: 90, category: "Fashion", location: "Abha", tag: null, seller: "Individual seller", img: "https://loremflickr.com/400/300/thobe,mens-fashion/all?lock=29" },
+  { id: 10, title: "Car battery, 70Ah", price: 260, category: "Spare parts", location: "Jubail", tag: null, seller: "AutoZone Saudi", img: "https://loremflickr.com/400/300/car-battery/all?lock=30" },
+  { id: 11, title: "GMC Yukon 2019", price: 118000, category: "Cars", location: "Dammam", tag: "Featured", seller: "Individual seller", img: "https://loremflickr.com/400/300/gmc,suv/all?lock=31" },
+  { id: 12, title: "MacBook Air M2", price: 4200, category: "Electronics", location: "Riyadh", tag: null, seller: "Jarir Bookstore", img: "https://loremflickr.com/400/300/macbook,laptop/all?lock=32" },
+  { id: 13, title: "Leather office chair", price: 480, category: "Furniture", location: "Riyadh", tag: "New", seller: "Home Centre", img: "https://loremflickr.com/400/300/office-chair/all?lock=33" },
+  { id: 14, title: "PlayStation 5", price: 1950, category: "Electronics", location: "Jeddah", tag: "Featured", seller: "Extra Stores", img: "https://loremflickr.com/400/300/playstation,gaming-console/all?lock=34" },
+  { id: 15, title: "Women's handbag, leather", price: 320, category: "Fashion", location: "Khobar", tag: null, seller: "Individual seller", img: "https://loremflickr.com/400/300/handbag,leather-bag/all?lock=35" },
+  { id: 16, title: "Alloy wheels, 18-inch set", price: 1400, category: "Spare parts", location: "Dammam", tag: null, seller: "Al Jazira Tires Co.", img: "https://loremflickr.com/400/300/alloy-wheels,car-rim/all?lock=36" },
 ];
 function Marketplace({ goBack, navigate }) {
   const [category, setCategory] = useState("All"); const [query, setQuery] = useState("");
@@ -1151,8 +1170,11 @@ function Marketplace({ goBack, navigate }) {
       <div className="px-5 grid grid-cols-2 gap-3">
         {filtered.map((l) => (
           <div key={l.id} className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div className="h-24 flex items-center justify-center relative" style={{ background: BORDER }}><Tag size={20} color="#3F5750" />{l.tag && <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: GOLD, color: BG }}>{l.tag}</span>}</div>
-            <div className="p-2.5"><p className="text-xs font-semibold leading-tight">{l.title}</p><p className="text-sm font-semibold mt-1" style={{ color: GOLD }}>{l.price.toLocaleString()} SAR</p><p className="text-[10px] mt-1 flex items-center gap-1" style={{ color: FAINT }}><MapPin size={9} /> {l.location}</p></div>
+            <div className="h-24 relative" style={{ background: BORDER }}>
+              <img src={l.img} alt={l.title} className="w-full h-full object-cover" />
+              {l.tag && <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: GOLD, color: BG }}>{l.tag}</span>}
+            </div>
+            <div className="p-2.5"><p className="text-xs font-semibold leading-tight">{l.title}</p><p className="text-sm font-semibold mt-1" style={{ color: GOLD }}>{l.price.toLocaleString()} SAR</p><p className="text-[10px] mt-1" style={{ color: GREEN }}>{l.seller}</p><p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: FAINT }}><MapPin size={9} /> {l.location}</p></div>
           </div>
         ))}
       </div>
@@ -1162,13 +1184,15 @@ function Marketplace({ goBack, navigate }) {
 
 /* ---------- FOOD DELIVERY ---------- */
 const RESTAURANTS = [
-  { id: 1, name: "Najd Kitchen", cuisine: "Arabic", rating: 4.7, eta: "25-35 min" },
-  { id: 2, name: "Burger Point", cuisine: "Fast food", rating: 4.4, eta: "15-25 min" },
-  { id: 3, name: "Green Bowl", cuisine: "Healthy", rating: 4.8, eta: "20-30 min" },
-  { id: 4, name: "Sweet Dates", cuisine: "Desserts", rating: 4.6, eta: "20-30 min" },
-  { id: 5, name: "Qahwa House", cuisine: "Cafe", rating: 4.5, eta: "10-20 min" },
-  { id: 6, name: "Al Baik Express", cuisine: "Fast food", rating: 4.9, eta: "15-20 min" },
-  { id: 7, name: "Mandi House", cuisine: "Arabic", rating: 4.7, eta: "30-40 min" },
+  { id: 1, name: "Najd Kitchen", cuisine: "Arabic", rating: 4.7, eta: "25-35 min", city: "Riyadh", hours: "10:00–23:59", img: "https://loremflickr.com/500/300/arabic-food,kabsa/all?lock=41" },
+  { id: 2, name: "Burger Point", cuisine: "Fast food", rating: 4.4, eta: "15-25 min", city: "Riyadh", hours: "11:00–02:00", img: "https://loremflickr.com/500/300/burger/all?lock=42" },
+  { id: 3, name: "Green Bowl", cuisine: "Healthy", rating: 4.8, eta: "20-30 min", city: "Jeddah", hours: "09:00–22:00", img: "https://loremflickr.com/500/300/salad-bowl,healthy-food/all?lock=43" },
+  { id: 4, name: "Sweet Dates", cuisine: "Desserts", rating: 4.6, eta: "20-30 min", city: "Dammam", hours: "12:00–00:00", img: "https://loremflickr.com/500/300/dessert,cake/all?lock=44" },
+  { id: 5, name: "Qahwa House", cuisine: "Cafe", rating: 4.5, eta: "10-20 min", city: "Riyadh", hours: "07:00–23:00", img: "https://loremflickr.com/500/300/arabic-coffee,cafe/all?lock=45" },
+  { id: 6, name: "Al Baik Express", cuisine: "Fast food", rating: 4.9, eta: "15-20 min", city: "Jeddah", hours: "10:00–01:00", img: "https://loremflickr.com/500/300/fried-chicken/all?lock=46" },
+  { id: 7, name: "Mandi House", cuisine: "Arabic", rating: 4.7, eta: "30-40 min", city: "Makkah", hours: "11:00–23:00", img: "https://loremflickr.com/500/300/mandi,rice-dish/all?lock=47" },
+  { id: 8, name: "Pasta Bella", cuisine: "Italian", rating: 4.6, eta: "25-35 min", city: "Riyadh", hours: "12:00–23:59", img: "https://loremflickr.com/500/300/pasta,italian-food/all?lock=48" },
+  { id: 9, name: "Sushi Zen", cuisine: "Japanese", rating: 4.8, eta: "20-30 min", city: "Dammam", hours: "13:00–23:00", img: "https://loremflickr.com/500/300/sushi/all?lock=49" },
 ];
 const MENU = {
   1: [{ id: "m1", name: "Kabsa Chicken", price: 42 }, { id: "m2", name: "Mandi Lamb", price: 58 }, { id: "m3", name: "Grilled Mixed Platter", price: 65 }],
@@ -1178,15 +1202,24 @@ const MENU = {
   5: [{ id: "m11", name: "Arabic Coffee (pot)", price: 20 }, { id: "m12", name: "Cardamom Latte", price: 16 }],
   6: [{ id: "m13", name: "Broasted Chicken Meal", price: 24 }, { id: "m14", name: "Garlic Sauce Extra", price: 5 }],
   7: [{ id: "m15", name: "Mandi Chicken", price: 45 }, { id: "m16", name: "Mandi Lamb (large)", price: 78 }],
+  8: [{ id: "m17", name: "Spaghetti Bolognese", price: 38 }, { id: "m18", name: "Fettuccine Alfredo", price: 42 }],
+  9: [{ id: "m19", name: "Salmon Sushi Set", price: 55 }, { id: "m20", name: "California Roll (8pc)", price: 32 }],
 };
 function FoodDelivery({ goBack, navigate }) {
   const [openRestaurant, setOpenRestaurant] = useState(null);
   const [cart, setCart] = useState({}); const [stage, setStage] = useState("browse");
+  const [query, setQuery] = useState("");
+  const [city, setCity] = useState("All Cities");
   function addItem(item) { setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 })); }
   function removeItem(item) { setCart((c) => { const n = { ...c }; if (n[item.id] > 1) n[item.id]--; else delete n[item.id]; return n; }); }
   const menu = openRestaurant ? MENU[openRestaurant.id] : [];
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
   const cartTotal = menu.reduce((s, m) => s + (cart[m.id] || 0) * m.price, 0);
+  const cityOptions = ["All Cities", ...Array.from(new Set(RESTAURANTS.map((r) => r.city)))];
+  const filteredRestaurants = RESTAURANTS.filter((r) =>
+    (city === "All Cities" || r.city === city) &&
+    (r.name.toLowerCase().includes(query.toLowerCase()) || r.cuisine.toLowerCase().includes(query.toLowerCase()))
+  );
 
   if (stage === "confirmed") return (
     <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
@@ -1198,6 +1231,9 @@ function FoodDelivery({ goBack, navigate }) {
   if (openRestaurant) return (
     <div style={{ color: TEXT }}>
       <Header title={openRestaurant.name} onBack={() => setOpenRestaurant(null)} />
+      <div className="mx-5 mb-4 rounded-2xl overflow-hidden" style={{ height: 140, background: CARD, border: `1px solid ${BORDER}` }}>
+        <img src={openRestaurant.img} alt={openRestaurant.name} className="w-full h-full object-cover" />
+      </div>
       <div className="px-5 flex flex-col gap-2">
         {menu.map((m) => (
           <div key={m.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -1218,20 +1254,77 @@ function FoodDelivery({ goBack, navigate }) {
   return (
     <div style={{ color: TEXT }}>
       <Header title="Food delivery" onBack={goBack} />
-      <div className="px-5 mb-3">
-        <button onClick={() => navigate("register_food")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
-          <span className="flex items-center gap-2 text-sm font-semibold"><UtensilsCrossed size={15} color={GOLD} /> Own a restaurant? Partner with us</span>
-          <ChevronRight size={14} color={GOLD} />
-        </button>
+
+      {/* Hero */}
+      <div className="px-5 mb-6 text-center">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4" style={{ background: "rgba(217,166,83,0.14)", border: `1px solid rgba(217,166,83,0.3)` }}>
+          <UtensilsCrossed size={11} color={GOLD} />
+          <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: GOLD }}>Food delivery</span>
+        </div>
+        <h2 className="text-2xl font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Order food you love</h2>
+        <p className="text-xs mt-2" style={{ color: MUTE }}>Discover restaurants near you and get your meal delivered in minutes.</p>
+        <div className="flex flex-wrap justify-center gap-2 mt-4">
+          <button onClick={() => navigate("register_food")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold" style={{ background: GOLD, color: BG }}>
+            <UtensilsCrossed size={13} /> Register restaurant
+          </button>
+          <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+            <Bag size={13} /> My orders
+          </button>
+          <button onClick={() => navigate("driver_login")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+            <Car size={13} /> Driver dashboard
+          </button>
+        </div>
       </div>
-      <div className="px-5 flex flex-col gap-2">
-        {RESTAURANTS.map((r) => (
-          <button key={r.id} onClick={() => setOpenRestaurant(r)} className="flex items-center gap-3 rounded-xl px-4 py-3 text-left" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.12)" }}><Bag size={18} color={GOLD} /></div>
-            <div className="flex-1"><p className="text-sm font-semibold">{r.name}</p><p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{r.cuisine}</p><div className="flex items-center gap-3 mt-1 text-[10px]" style={{ color: FAINT }}><span className="flex items-center gap-1"><Star size={10} color={GOLD} /> {r.rating}</span><span className="flex items-center gap-1"><Clock size={10} /> {r.eta}</span></div></div>
+
+      {/* Search + city filter */}
+      <div className="px-5 mb-4">
+        <div className="flex items-center gap-2 rounded-full px-4 py-2.5 mb-2.5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <Search size={15} color={FAINT} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search restaurants or cuisine..." className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 rounded-full px-3.5 py-2 flex-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <MapPin size={13} color={GOLD} />
+            <select value={city} onChange={(e) => setCity(e.target.value)} className="bg-transparent outline-none text-xs w-full" style={{ color: TEXT }}>
+              {cityOptions.map((c) => <option key={c} style={{ background: CARD }}>{c}</option>)}
+            </select>
+          </div>
+          <span className="text-[11px] ml-3 shrink-0" style={{ color: FAINT }}>{filteredRestaurants.length} restaurants</span>
+        </div>
+      </div>
+
+      {/* Restaurant cards */}
+      <div className="px-5 flex flex-col gap-4">
+        {filteredRestaurants.map((r) => (
+          <button key={r.id} onClick={() => setOpenRestaurant(r)} className="text-left rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div className="relative" style={{ height: 130 }}>
+              <img src={r.img} alt={r.name} className="w-full h-full object-cover" />
+              <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[9px] font-semibold flex items-center gap-1" style={{ background: "rgba(91,143,212,0.85)", color: "#fff" }}>
+                <Truck size={9} /> Delivery
+              </span>
+              <div className="absolute -bottom-5 left-3 w-11 h-11 rounded-xl overflow-hidden" style={{ border: `2px solid ${CARD}` }}>
+                <img src={r.img} alt="" className="w-full h-full object-cover" />
+              </div>
+            </div>
+            <div className="pt-7 pb-3 px-3.5">
+              <p className="text-sm font-semibold">{r.name}</p>
+              <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{r.cuisine}</p>
+              <div className="flex items-center gap-3 mt-2 text-[10px]" style={{ color: FAINT }}>
+                <span className="flex items-center gap-1"><MapPin size={10} /> {r.city}</span>
+                <span className="flex items-center gap-1"><Clock size={10} /> {r.hours}</span>
+                <span className="flex items-center gap-1"><Star size={10} color={GOLD} /> {r.rating}</span>
+              </div>
+              <div className="flex items-center gap-2 mt-3">
+                <span className="flex-1 text-center rounded-full py-2 text-xs font-semibold" style={{ background: GOLD, color: BG }}>View menu</span>
+                <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(91,143,212,0.15)" }}><Bot size={14} color={GREEN} /></span>
+              </div>
+            </div>
           </button>
         ))}
+        {filteredRestaurants.length === 0 && <p className="text-sm text-center py-8" style={{ color: FAINT }}>No restaurants match your search.</p>}
       </div>
+
+      <div className="h-6" />
     </div>
   );
 }
@@ -1254,6 +1347,17 @@ function Logistics({ goBack, navigate }) {
   return (
     <div style={{ color: TEXT }}>
       <Header title="Send a parcel" onBack={goBack} />
+      <div className="mx-5 mb-4 rounded-2xl overflow-hidden" style={{ height: 130, background: CARD, border: `1px solid ${BORDER}` }}>
+        <img src="https://loremflickr.com/500/260/delivery-van,courier/all?lock=51" alt="Logistics" className="w-full h-full object-cover" />
+      </div>
+      <div className="px-5 mb-4">
+        <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: FAINT }}>Delivery partners</p>
+        <div className="flex gap-2 flex-wrap">
+          {["Aramex", "SMSA Express", "Zajil", "Barq"].map((p) => (
+            <span key={p} className="px-3 py-1.5 rounded-full text-[11px] font-medium" style={{ background: CARD, border: `1px solid ${BORDER}`, color: MUTE }}>{p}</span>
+          ))}
+        </div>
+      </div>
       <div className="px-5">
         <button onClick={() => navigate("register_logistics")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
           <span className="flex items-center gap-2 text-sm font-semibold"><Truck size={15} color={GOLD} /> Become a delivery partner</span>
@@ -1288,53 +1392,121 @@ function Logistics({ goBack, navigate }) {
 
 /* ---------- JOBS ---------- */
 const JOBS = [
-  { id: 1, title: "Ride-hailing Driver", location: "Riyadh", pay: "Up to 8,000 SAR/mo" },
-  { id: 2, title: "Food Delivery Rider", location: "Jeddah", pay: "Per-order + bonuses" },
-  { id: 3, title: "Customer Support Agent", location: "Riyadh", pay: "5,500 SAR/mo" },
-  { id: 4, title: "Airport Transfer Driver", location: "Dammam", pay: "Up to 9,500 SAR/mo" },
-  { id: 5, title: "Fleet Operations Coordinator", location: "Riyadh", pay: "7,000 SAR/mo" },
-  { id: 6, title: "Intercity Driver", location: "Makkah", pay: "Per-trip + fuel bonus" },
-  { id: 7, title: "Warehouse Logistics Staff", location: "Jubail", pay: "6,000 SAR/mo" },
+  { id: 1, title: "Ride-hailing Driver", company: "Careem", location: "Riyadh", pay: "Up to 8,000 SAR/mo", type: "Full-time", category: "Driving" },
+  { id: 2, title: "Food Delivery Rider", company: "Jahez", location: "Jeddah", pay: "Per-order + bonuses", type: "Flexible", category: "Delivery" },
+  { id: 3, title: "Customer Support Agent", company: "STC", location: "Riyadh", pay: "5,500 SAR/mo", type: "Full-time", category: "Support" },
+  { id: 4, title: "Airport Transfer Driver", company: "Careem", location: "Dammam", pay: "Up to 9,500 SAR/mo", type: "Full-time", category: "Driving" },
+  { id: 5, title: "Fleet Operations Coordinator", company: "Aramex", location: "Riyadh", pay: "7,000 SAR/mo", type: "Full-time", category: "Operations" },
+  { id: 6, title: "Intercity Driver", company: "SAPTCO", location: "Makkah", pay: "Per-trip + fuel bonus", type: "Flexible", category: "Driving" },
+  { id: 7, title: "Warehouse Logistics Staff", company: "SMSA Express", location: "Jubail", pay: "6,000 SAR/mo", type: "Full-time", category: "Operations" },
+  { id: 8, title: "Delivery Rider", company: "HungerStation", location: "Khobar", pay: "Per-order + bonuses", type: "Flexible", category: "Delivery" },
 ];
+const JOB_CATEGORIES = ["All", "Driving", "Delivery", "Support", "Operations"];
+const EXTERNAL_JOB_SITES = [
+  { name: "LinkedIn", url: "https://www.linkedin.com/jobs/search/?keywords=driver%20saudi%20arabia" },
+  { name: "Bayt", url: "https://www.bayt.com/en/saudi-arabia/jobs/driver-jobs/" },
+  { name: "GulfTalent", url: "https://www.gulftalent.com/saudi-arabia/jobs" },
+  { name: "Indeed", url: "https://sa.indeed.com/jobs?q=driver" },
+  { name: "Tanqeeb", url: "https://sa.tanqeeb.com/" },
+  { name: "NaukriGulf", url: "https://www.naukrigulf.com/" },
+];
+
 function JobsPortal({ goBack }) {
+  const [category, setCategory] = useState("All");
   const [applyJob, setApplyJob] = useState(null);
-  const [form, setForm] = useState({ name: "", phone: "", city: "" });
+  const [form, setForm] = useState({ name: "", phone: "" });
   const [submitted, setSubmitted] = useState(false);
-  const can = form.name.trim() && form.phone.trim() && form.city.trim();
+  const can = form.name.trim() && form.phone.trim();
+  const filtered = JOBS.filter((j) => category === "All" || j.category === category);
+
   return (
     <div style={{ color: TEXT }}>
       <Header title="Jobs — Drive & earn" onBack={goBack} />
-      <div className="px-5 flex flex-col gap-2">
-        {JOBS.map((j) => (
-          <div key={j.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <p className="text-sm font-semibold">{j.title}</p>
-            <div className="flex flex-wrap items-center gap-3 mt-1 text-[10px]" style={{ color: FAINT }}><span className="flex items-center gap-1"><MapPin size={10} /> {j.location}</span><span>{j.pay}</span></div>
-            <button onClick={() => setApplyJob(j)} className="w-full mt-3 rounded-full py-2 text-xs font-semibold" style={{ background: GOLD, color: BG }}>Apply now</button>
+
+      <div className="mx-5 mb-5 rounded-2xl relative overflow-hidden" style={{ height: 150, background: CARD, border: `1px solid ${BORDER}` }}>
+        <img src="https://loremflickr.com/500/300/driver,rideshare/all?lock=52" alt="Jobs" className="w-full h-full object-cover" />
+        <div className="absolute inset-0 flex flex-col justify-end p-4" style={{ background: "linear-gradient(180deg, rgba(7,14,31,0) 30%, rgba(7,14,31,0.9) 100%)" }}>
+          <p className="text-base font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{JOBS.length} open positions</p>
+          <p className="text-[11px]" style={{ color: MUTE }}>Across leading Saudi companies</p>
+        </div>
+      </div>
+
+      <div className="px-5 mb-4 flex gap-2 overflow-x-auto">
+        {JOB_CATEGORIES.map((c) => (
+          <button key={c} onClick={() => setCategory(c)} className="px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0" style={{ background: category === c ? GOLD : CARD, color: category === c ? BG : MUTE, border: category === c ? "none" : `1px solid ${BORDER}` }}>{c}</button>
+        ))}
+      </div>
+
+      <div className="px-5 flex flex-col gap-2.5">
+        {filtered.map((j) => (
+          <div key={j.id} className="rounded-2xl px-4 py-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+                {j.company.charAt(0)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold leading-tight">{j.title}</p>
+                <p className="text-[12px] mt-0.5" style={{ color: GOLD }}>{j.company}</p>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold shrink-0" style={{ background: "rgba(91,143,212,0.15)", color: GREEN }}>{j.type}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px]" style={{ color: FAINT }}>
+              <span className="flex items-center gap-1"><MapPin size={11} /> {j.location}</span>
+              <span className="flex items-center gap-1"><DollarSign size={11} /> {j.pay}</span>
+            </div>
+            <button onClick={() => setApplyJob(j)} className="w-full mt-3.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: GOLD, color: BG }}>Apply now</button>
           </div>
         ))}
       </div>
+
+      <div className="px-5 mt-7">
+        <p className="text-xs font-semibold mb-1" style={{ color: GREEN }}>ALSO SEARCH ON</p>
+        <p className="text-[11px] mb-3" style={{ color: FAINT }}>Browse more openings across the Gulf job market.</p>
+        <div className="grid grid-cols-2 gap-2">
+          {EXTERNAL_JOB_SITES.map((s) => (
+            <a
+              key={s.name}
+              href={s.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between rounded-xl px-4 py-3"
+              style={{ background: CARD, border: `1px solid ${BORDER}` }}
+            >
+              <span className="text-xs font-medium">{s.name}</span>
+              <ArrowRightLeft size={12} color={FAINT} style={{ transform: "rotate(45deg)" }} />
+            </a>
+          ))}
+        </div>
+      </div>
+
       {applyJob && (
-        <div className="fixed inset-0 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
+        <div className="fixed inset-0 flex items-end justify-center z-40" style={{ background: "rgba(0,0,0,0.6)" }}>
           <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             {!submitted ? (
               <>
-                <div className="flex items-center justify-between mb-4"><h2 className="text-base font-semibold">Apply — {applyJob.title}</h2><button onClick={() => setApplyJob(null)}><X size={18} color={MUTE} /></button></div>
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-base font-semibold">Quick apply</h2>
+                  <button onClick={() => setApplyJob(null)}><X size={18} color={MUTE} /></button>
+                </div>
+                <p className="text-xs mb-4" style={{ color: FAINT }}>{applyJob.title} · <span style={{ color: GOLD }}>{applyJob.company}</span></p>
                 <div className="flex flex-col gap-3">
                   <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
-                  <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Phone (WhatsApp)" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
-                  <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="City" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="WhatsApp number" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
                   <button onClick={() => can && setSubmitted(true)} disabled={!can} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>Submit application</button>
                 </div>
               </>
             ) : (
               <div className="flex flex-col items-center text-center py-4">
                 <CheckCircle2 size={40} color={GREEN} /><h2 className="mt-3 text-base font-semibold">Application sent</h2>
-                <button onClick={() => { setApplyJob(null); setSubmitted(false); setForm({ name: "", phone: "", city: "" }); }} className="w-full mt-4 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Done</button>
+                <p className="text-xs mt-1" style={{ color: MUTE }}>{applyJob.company} will contact you on WhatsApp.</p>
+                <button onClick={() => { setApplyJob(null); setSubmitted(false); setForm({ name: "", phone: "" }); }} className="w-full mt-4 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Done</button>
               </div>
             )}
           </div>
         </div>
       )}
+
+      <div className="h-6" />
     </div>
   );
 }
@@ -1342,12 +1514,12 @@ function JobsPortal({ goBack }) {
 /* ---------- FLEET ---------- */
 const STATUS_META = { active: { label: "On trip", color: GREEN }, idle: { label: "Idle", color: GOLD }, maintenance: { label: "Maintenance", color: "#C0755B" } };
 const INITIAL_FLEET = [
-  { id: 1, plate: "RUH 4021", model: "Toyota Camry", driver: "Faisal A.", status: "active" },
-  { id: 2, plate: "RUH 7788", model: "Hyundai Accent", driver: "Omar K.", status: "idle" },
-  { id: 3, plate: "JED 3390", model: "Toyota Fortuner", driver: "Sami R.", status: "maintenance" },
-  { id: 4, plate: "DMM 1156", model: "Lexus ES", driver: "Hussain M.", status: "active" },
-  { id: 5, plate: "RUH 9021", model: "Toyota Camry", driver: "Unassigned", status: "idle" },
-  { id: 6, plate: "MKH 2287", model: "GMC Yukon", driver: "Bandar S.", status: "active" },
+  { id: 1, plate: "RUH 4021", model: "Toyota Camry", driver: "Faisal A.", company: "Al Rasheed Transport Co.", status: "active" },
+  { id: 2, plate: "RUH 7788", model: "Hyundai Accent", driver: "Omar K.", company: "Theeb Rent a Car", status: "idle" },
+  { id: 3, plate: "JED 3390", model: "Toyota Fortuner", driver: "Sami R.", company: "Al Rasheed Transport Co.", status: "maintenance" },
+  { id: 4, plate: "DMM 1156", model: "Lexus ES", driver: "Hussain M.", company: "Sixt Rent a Car", status: "active" },
+  { id: 5, plate: "RUH 9021", model: "Toyota Camry", driver: "Unassigned", company: "Lumi Rent a Car", status: "idle" },
+  { id: 6, plate: "MKH 2287", model: "GMC Yukon", driver: "Bandar S.", company: "Al Rasheed Transport Co.", status: "active" },
 ];
 function FleetManagement({ goBack, navigate }) {
   const [fleet, setFleet] = useState(INITIAL_FLEET);
@@ -1370,6 +1542,7 @@ function FleetManagement({ goBack, navigate }) {
               <div className="flex-1">
                 <div className="flex items-center justify-between"><p className="text-sm font-semibold">{c.plate}</p><button onClick={() => cycleStatus(c.id)} className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${meta.color}22`, color: meta.color }}>{meta.label}</button></div>
                 <p className="text-[11px]" style={{ color: FAINT }}>{c.model} · {c.driver}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: GOLD }}>{c.company}</p>
               </div>
             </div>
           );
