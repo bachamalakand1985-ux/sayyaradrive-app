@@ -7,7 +7,8 @@ import {
   Calendar, Clock, ArrowRightLeft, Route, Search,
   Plus, Tag, X, Star, ShoppingBag as Bag, Minus,
   Package, Phone, DollarSign,
-  Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check
+  Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check,
+  Link, Globe, Trophy
 } from "lucide-react";
 
 /* ---------- shared tokens ---------- */
@@ -1430,12 +1431,12 @@ const JOBS = [
 ];
 const JOB_CATEGORIES = ["All", "Driving", "Delivery", "Support", "Operations"];
 const EXTERNAL_JOB_SITES = [
-  { name: "LinkedIn", url: "https://www.linkedin.com/jobs/search/?keywords=driver%20saudi%20arabia" },
-  { name: "Bayt", url: "https://www.bayt.com/en/saudi-arabia/jobs/driver-jobs/" },
-  { name: "GulfTalent", url: "https://www.gulftalent.com/saudi-arabia/jobs" },
-  { name: "Indeed", url: "https://sa.indeed.com/jobs?q=driver" },
-  { name: "Tanqeeb", url: "https://sa.tanqeeb.com/" },
-  { name: "NaukriGulf", url: "https://www.naukrigulf.com/" },
+  { name: "LinkedIn", url: "https://www.linkedin.com/jobs/search/?keywords=driver%20saudi%20arabia", icon: Link, tag: "Global", tagColor: "#5B8FD4", gradient: "linear-gradient(135deg, #2C4EA8, #1B2F6B)", description: "World's largest professional network. Find driver and logistics roles across KSA." },
+  { name: "Bayt", url: "https://www.bayt.com/en/saudi-arabia/jobs/driver-jobs/", icon: Briefcase, tag: "MENA Leader", tagColor: "#E05C7A", gradient: "linear-gradient(135deg, #C0447A, #7A2050)", description: "Middle East's leading job site. Thousands of transport & driving jobs in Saudi Arabia." },
+  { name: "GulfTalent", url: "https://www.gulftalent.com/saudi-arabia/jobs", icon: Globe, tag: "Gulf Jobs", tagColor: "#3FBFA6", gradient: "linear-gradient(135deg, #14453F, #0B2320)" , description: "Premier Gulf region job board. Driver, chauffeur, and fleet positions in KSA." },
+  { name: "Indeed KSA", url: "https://sa.indeed.com/jobs?q=driver", icon: Search, tag: "#1 Worldwide", tagColor: "#5B8FD4", gradient: "linear-gradient(135deg, #1E3A72, #12234A)", description: "Search millions of jobs. Driving, delivery, and logistics across all Saudi cities." },
+  { name: "Tanqeeb", url: "https://sa.tanqeeb.com/", icon: MapPinned, tag: "Saudi Platform", tagColor: "#3FBFA6", gradient: "linear-gradient(135deg, #15505B, #0C2E35)", description: "Saudi Arabia's national employment platform. Local driver & logistics jobs." },
+  { name: "NaukriGulf", url: "https://www.naukrigulf.com/", icon: Trophy, tag: "Verified", tagColor: "#A78BFA", gradient: "linear-gradient(135deg, #4C3D8C, #2A2255)", description: "Trusted Gulf job portal. Thousands of verified transport & driving vacancies in KSA." },
 ];
 const JOB_TABS = [
   { id: "openings", label: "Job Openings", icon: Search },
@@ -1454,10 +1455,10 @@ function JobsPortal({ goBack }) {
   const [submitted, setSubmitted] = useState(false);
   const can = form.name.trim() && form.phone.trim();
 
-  const [postForm, setPostForm] = useState({ title: "", company: "", location: "", pay: "", type: "Full-time", phone: "", description: "" });
+  const [postForm, setPostForm] = useState({ title: "", company: "", city: "", jobType: "", employment: "", minSalary: "", maxSalary: "", description: "", requirements: "", phone: "", email: "" });
   const [postSubmitting, setPostSubmitting] = useState(false);
   const [postDone, setPostDone] = useState(false);
-  const postCan = postForm.title.trim() && postForm.company.trim() && postForm.location.trim() && postForm.pay.trim();
+  const postCan = postForm.title.trim() && postForm.company.trim() && postForm.city.trim() && postForm.jobType.trim() && postForm.description.trim() && postForm.phone.trim();
 
   const allJobs = [...postedJobs, ...JOBS];
   const filtered = allJobs.filter((j) =>
@@ -1467,19 +1468,24 @@ function JobsPortal({ goBack }) {
 
   async function submitPost() {
     setPostSubmitting(true);
+    const pay = postForm.minSalary && postForm.maxSalary
+      ? `${postForm.minSalary}–${postForm.maxSalary} SAR/mo`
+      : postForm.minSalary ? `From ${postForm.minSalary} SAR/mo` : "Salary on request";
     const newJob = {
       id: `local-${Date.now()}`,
       title: postForm.title,
       company: postForm.company,
-      location: postForm.location,
-      pay: postForm.pay,
-      type: postForm.type,
+      location: postForm.city,
+      pay,
+      type: postForm.jobType,
       category: "Driving",
       phone: postForm.phone,
+      email: postForm.email,
       description: postForm.description || "No description provided.",
+      requirements: postForm.requirements,
     };
     try {
-      await supabase.from("jobs").insert({ title: postForm.title, location: postForm.location, pay: postForm.pay, status: "active" });
+      await supabase.from("jobs").insert({ title: postForm.title, location: postForm.city, pay, status: "active" });
     } catch (e) { /* still show locally even if Supabase insert fails */ }
     setPostedJobs((p) => [newJob, ...p]);
     setPostSubmitting(false);
@@ -1569,31 +1575,109 @@ function JobsPortal({ goBack }) {
       {tab === "post" && (
         <div className="px-5">
           {!postDone ? (
-            <div className="flex flex-col gap-3">
-              <p className="text-xs" style={{ color: MUTE }}>Post a driving or delivery role. It appears instantly in Job Openings.</p>
-              <input value={postForm.title} onChange={(e) => setPostForm({ ...postForm, title: e.target.value })} placeholder="Job title" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-              <input value={postForm.company} onChange={(e) => setPostForm({ ...postForm, company: e.target.value })} placeholder="Company name" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-              <input value={postForm.location} onChange={(e) => setPostForm({ ...postForm, location: e.target.value })} placeholder="City" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-              <input value={postForm.pay} onChange={(e) => setPostForm({ ...postForm, pay: e.target.value })} placeholder="Pay (e.g. 6,000 SAR/mo)" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-              <div className="rounded-xl px-4 py-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <select value={postForm.type} onChange={(e) => setPostForm({ ...postForm, type: e.target.value })} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
-                  <option value="Full-time" style={{ background: CARD }}>Full-time</option>
-                  <option value="Flexible" style={{ background: CARD }}>Flexible</option>
-                  <option value="Freelance" style={{ background: CARD }}>Freelance</option>
-                </select>
+            <>
+              <div className="rounded-2xl px-4 py-4 mb-5" style={{ background: "rgba(217,166,83,0.1)", border: `1px solid rgba(217,166,83,0.3)` }}>
+                <div className="flex items-center gap-2">
+                  <Plus size={16} color={GOLD} />
+                  <h2 className="text-base font-semibold">Post a Job Opening</h2>
+                </div>
+                <p className="text-[11px] mt-1" style={{ color: MUTE }}>Complete the details to reach thousands of drivers across KSA.</p>
               </div>
-              <input value={postForm.phone} onChange={(e) => setPostForm({ ...postForm, phone: e.target.value })} placeholder="Contact phone" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-              <textarea value={postForm.description} onChange={(e) => setPostForm({ ...postForm, description: e.target.value })} placeholder="Short description" rows={3} className="rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-              <button onClick={submitPost} disabled={!postCan || postSubmitting} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: postCan ? GOLD : BORDER, color: postCan ? BG : "#5C736D" }}>
-                {postSubmitting ? "Posting…" : "Post job"}
-              </button>
-            </div>
+
+              <div className="flex flex-col gap-4">
+                <div>
+                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Job Title</p>
+                  <input value={postForm.title} onChange={(e) => setPostForm({ ...postForm, title: e.target.value })} placeholder="e.g. Senior Delivery Driver" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Company Name <span style={{ color: "#C0755B" }}>*</span></p>
+                    <div className="flex items-center gap-2 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                      <Briefcase size={13} color={GOLD} />
+                      <input value={postForm.company} onChange={(e) => setPostForm({ ...postForm, company: e.target.value })} placeholder="e.g. Golden Transport Fleet" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>City <span style={{ color: "#C0755B" }}>*</span></p>
+                    <div className="rounded-xl px-4 py-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                      <select value={postForm.city} onChange={(e) => setPostForm({ ...postForm, city: e.target.value })} className="bg-transparent outline-none text-sm w-full py-3" style={{ color: postForm.city ? TEXT : FAINT }}>
+                        <option value="" style={{ background: CARD }}>Select City</option>
+                        {SAUDI_CITY_LIST.map((c) => <option key={c} value={c} style={{ background: CARD }}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Job Type <span style={{ color: "#C0755B" }}>*</span></p>
+                    <div className="rounded-xl px-4 py-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                      <select value={postForm.jobType} onChange={(e) => setPostForm({ ...postForm, jobType: e.target.value })} className="bg-transparent outline-none text-sm w-full py-3" style={{ color: postForm.jobType ? TEXT : FAINT }}>
+                        <option value="" style={{ background: CARD }}>Select Type</option>
+                        <option value="Full-time" style={{ background: CARD }}>Full-time</option>
+                        <option value="Part-time" style={{ background: CARD }}>Part-time</option>
+                        <option value="Flexible" style={{ background: CARD }}>Flexible</option>
+                        <option value="Freelance" style={{ background: CARD }}>Freelance</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Employment</p>
+                    <div className="rounded-xl px-4 py-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                      <select value={postForm.employment} onChange={(e) => setPostForm({ ...postForm, employment: e.target.value })} className="bg-transparent outline-none text-sm w-full py-3" style={{ color: postForm.employment ? TEXT : FAINT }}>
+                        <option value="" style={{ background: CARD }}>Select</option>
+                        <option value="On-site" style={{ background: CARD }}>On-site</option>
+                        <option value="Remote" style={{ background: CARD }}>Remote</option>
+                        <option value="Hybrid" style={{ background: CARD }}>Hybrid</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Min Salary (SAR)</p>
+                    <input value={postForm.minSalary} onChange={(e) => setPostForm({ ...postForm, minSalary: e.target.value })} placeholder="4000" inputMode="numeric" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Max Salary (SAR)</p>
+                    <input value={postForm.maxSalary} onChange={(e) => setPostForm({ ...postForm, maxSalary: e.target.value })} placeholder="8000" inputMode="numeric" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Job Description <span style={{ color: "#C0755B" }}>*</span></p>
+                  <textarea value={postForm.description} onChange={(e) => setPostForm({ ...postForm, description: e.target.value })} placeholder="Describe role, qualifications, benefits..." rows={4} className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                </div>
+
+                <div>
+                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Requirements</p>
+                  <textarea value={postForm.requirements} onChange={(e) => setPostForm({ ...postForm, requirements: e.target.value })} placeholder="Experience, license, nationality..." rows={3} className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Contact Phone <span style={{ color: "#C0755B" }}>*</span></p>
+                    <input value={postForm.phone} onChange={(e) => setPostForm({ ...postForm, phone: e.target.value })} placeholder="+966 5X XXX XXXX" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Contact Email</p>
+                    <input value={postForm.email} onChange={(e) => setPostForm({ ...postForm, email: e.target.value })} placeholder="hr@company.com" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  </div>
+                </div>
+
+                <button onClick={submitPost} disabled={!postCan || postSubmitting} className="w-full flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-semibold mt-2" style={{ background: postCan ? GOLD : BORDER, color: postCan ? BG : "#5C736D" }}>
+                  <Send size={14} /> {postSubmitting ? "Publishing…" : "Publish Job Opening"}
+                </button>
+              </div>
+            </>
           ) : (
             <div className="flex flex-col items-center text-center py-8">
               <CheckCircle2 size={44} color={GREEN} />
               <h2 className="mt-4 text-lg font-semibold">Job posted</h2>
               <p className="text-xs mt-1" style={{ color: MUTE }}>Your listing is now live under Job Openings.</p>
-              <button onClick={() => { setPostDone(false); setPostForm({ title: "", company: "", location: "", pay: "", type: "Full-time", phone: "", description: "" }); setTab("openings"); }} className="w-full max-w-xs mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>View openings</button>
+              <button onClick={() => { setPostDone(false); setPostForm({ title: "", company: "", city: "", jobType: "", employment: "", minSalary: "", maxSalary: "", description: "", requirements: "", phone: "", email: "" }); setTab("openings"); }} className="w-full max-w-xs mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>View openings</button>
             </div>
           )}
         </div>
@@ -1611,22 +1695,33 @@ function JobsPortal({ goBack }) {
       {/* Job Platforms tab */}
       {tab === "platforms" && (
         <div className="px-5">
-          <p className="text-xs mb-3" style={{ color: FAINT }}>Browse more openings across the Gulf job market.</p>
-          <div className="grid grid-cols-2 gap-2">
-            {EXTERNAL_JOB_SITES.map((s) => (
-              <a
-                key={s.name}
-                href={s.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between rounded-xl px-4 py-3"
-                style={{ background: CARD, border: `1px solid ${BORDER}` }}
-              >
-                <span className="text-xs font-medium">{s.name}</span>
-                <ArrowRightLeft size={12} color={FAINT} style={{ transform: "rotate(45deg)" }} />
-              </a>
-            ))}
+          <h2 className="text-lg font-bold text-center" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Trusted Job Platforms</h2>
+          <p className="text-xs text-center mt-1.5 mb-5" style={{ color: MUTE }}>Browse the largest, most trusted job platforms across Saudi Arabia and the Gulf.</p>
+          <div className="flex flex-col gap-4">
+            {EXTERNAL_JOB_SITES.map((s) => {
+              const Icon = s.icon;
+              return (
+                <div key={s.name} className="rounded-2xl p-5 relative overflow-hidden" style={{ background: s.gradient, border: `1px solid ${BORDER}` }}>
+                  <span className="absolute top-4 right-4 px-2.5 py-1 rounded-full text-[9px] font-bold" style={{ background: "rgba(0,0,0,0.35)", color: s.tagColor }}>{s.tag}</span>
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4" style={{ background: "rgba(255,255,255,0.12)" }}>
+                    <Icon size={24} color="#fff" />
+                  </div>
+                  <p className="text-base font-bold" style={{ color: "#fff" }}>{s.name}</p>
+                  <p className="text-[12px] mt-1.5 leading-relaxed" style={{ color: "rgba(255,255,255,0.75)" }}>{s.description}</p>
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-1.5 rounded-full py-3 text-xs font-semibold mt-4"
+                    style={{ background: "rgba(255,255,255,0.16)", color: "#fff" }}
+                  >
+                    <ArrowRightLeft size={12} style={{ transform: "rotate(45deg)" }} /> Browse Jobs
+                  </a>
+                </div>
+              );
+            })}
           </div>
+          <p className="text-[10px] text-center mt-5" style={{ color: FAINT }}>SayyaraDrive does not control external job platform content. Links open official websites.</p>
         </div>
       )}
 
