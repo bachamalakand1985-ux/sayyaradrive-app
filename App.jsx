@@ -1451,9 +1451,9 @@ function JobsPortal({ goBack }) {
   const [query, setQuery] = useState("");
   const [postedJobs, setPostedJobs] = useState([]);
   const [applyJob, setApplyJob] = useState(null);
-  const [form, setForm] = useState({ name: "", phone: "" });
+  const [form, setForm] = useState({ name: "", phone: "", email: "", cv: null, extraDocs: null, cover: "" });
   const [submitted, setSubmitted] = useState(false);
-  const can = form.name.trim() && form.phone.trim();
+  const can = form.name.trim() && form.phone.trim() && form.cv;
 
   const [postForm, setPostForm] = useState({ title: "", company: "", city: "", jobType: "", employment: "", minSalary: "", maxSalary: "", description: "", requirements: "", phone: "", email: "" });
   const [postSubmitting, setPostSubmitting] = useState(false);
@@ -1727,25 +1727,83 @@ function JobsPortal({ goBack }) {
 
       {applyJob && (
         <div className="fixed inset-0 flex items-end justify-center z-40" style={{ background: "rgba(0,0,0,0.6)" }}>
-          <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="w-full max-w-md rounded-t-3xl p-5 overflow-y-auto" style={{ background: CARD, border: `1px solid ${BORDER}`, maxHeight: "88vh" }}>
             {!submitted ? (
               <>
-                <div className="flex items-center justify-between mb-1">
-                  <h2 className="text-base font-semibold">Quick apply</h2>
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h2 className="text-base font-semibold">Apply for this Job</h2>
+                    <p className="text-xs mt-0.5" style={{ color: FAINT }}>{applyJob.title} · {applyJob.company} · {applyJob.location}</p>
+                  </div>
                   <button onClick={() => setApplyJob(null)}><X size={18} color={MUTE} /></button>
                 </div>
-                <p className="text-xs mb-4" style={{ color: FAINT }}>{applyJob.title} · <span style={{ color: GOLD }}>{applyJob.company}</span></p>
-                <div className="flex flex-col gap-3">
-                  <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
-                  <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="WhatsApp number" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
-                  <button onClick={() => can && setSubmitted(true)} disabled={!can} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>Submit application</button>
+
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Full Name <span style={{ color: "#C0755B" }}>*</span></p>
+                    <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Your full name" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Phone <span style={{ color: "#C0755B" }}>*</span></p>
+                      <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+966 5X XXX XXXX" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Email</p>
+                      <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@email.com" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>CV / Resume (PDF, DOC, DOCX) <span style={{ color: "#C0755B" }}>*</span></p>
+                    <label className="flex flex-col items-center justify-center gap-2 rounded-xl py-6 cursor-pointer" style={{ background: BG, border: `1.5px dashed ${BORDER}` }}>
+                      <input type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={(e) => setForm({ ...form, cv: e.target.files?.[0] || null })} />
+                      <Send size={18} color={form.cv ? GREEN : FAINT} style={{ transform: "rotate(-45deg)" }} />
+                      <p className="text-xs font-medium" style={{ color: form.cv ? GREEN : MUTE }}>{form.cv ? form.cv.name : "Click to upload your CV"}</p>
+                      {!form.cv && <p className="text-[10px]" style={{ color: FAINT }}>PDF, DOC, DOCX</p>}
+                    </label>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Additional Documents (optional)</p>
+                    <label className="flex items-center justify-center gap-2 rounded-xl py-3 cursor-pointer" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                      <input type="file" multiple className="hidden" onChange={(e) => setForm({ ...form, extraDocs: e.target.files })} />
+                      <Send size={13} color={MUTE} style={{ transform: "rotate(-45deg)" }} />
+                      <p className="text-xs font-medium" style={{ color: MUTE }}>{form.extraDocs && form.extraDocs.length > 0 ? `${form.extraDocs.length} file(s) selected` : "Add documents"}</p>
+                    </label>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium mb-1.5 flex items-center gap-1.5" style={{ color: MUTE }}>Cover Message</p>
+                    <textarea value={form.cover} onChange={(e) => setForm({ ...form, cover: e.target.value })} placeholder="Why are you a good fit for this role?" rows={3} className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  </div>
+
+                  {applyJob.phone && (
+                    <a
+                      href={`https://wa.me/${applyJob.phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I'm interested in the ${applyJob.title} position at ${applyJob.company}.`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold"
+                      style={{ background: "rgba(91,143,212,0.18)", color: GREEN }}
+                    >
+                      <Bot size={15} /> Contact employer on WhatsApp
+                    </a>
+                  )}
+
+                  <div className="flex gap-2 mt-1">
+                    <button onClick={() => setApplyJob(null)} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Cancel</button>
+                    <button onClick={() => can && setSubmitted(true)} disabled={!can} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>
+                      <Send size={13} /> Submit Application
+                    </button>
+                  </div>
                 </div>
               </>
             ) : (
               <div className="flex flex-col items-center text-center py-4">
                 <CheckCircle2 size={40} color={GREEN} /><h2 className="mt-3 text-base font-semibold">Application sent</h2>
                 <p className="text-xs mt-1" style={{ color: MUTE }}>{applyJob.company} will contact you on WhatsApp.</p>
-                <button onClick={() => { setApplyJob(null); setSubmitted(false); setForm({ name: "", phone: "" }); }} className="w-full mt-4 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Done</button>
+                <button onClick={() => { setApplyJob(null); setSubmitted(false); setForm({ name: "", phone: "", email: "", cv: null, extraDocs: null, cover: "" }); }} className="w-full mt-4 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Done</button>
               </div>
             )}
           </div>
@@ -1904,14 +1962,10 @@ function AIAssistant({ onClose }) {
         { role: "assistant", content: "Understood — I'll act as the SayyaraDrive in-app assistant." },
         ...nextMessages,
       ];
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/.netlify/functions/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          messages: apiMessages,
-        }),
+        body: JSON.stringify({ messages: apiMessages }),
       });
       const data = await response.json();
       const reply = (data.content || [])
@@ -2467,19 +2521,6 @@ export default function SayyaraDriveApp() {
       </div>
       <div className={`w-full relative z-10 ${screen === "admin" ? "max-w-5xl" : "max-w-md"}`} style={{ paddingBottom: isTab ? 70 : 20 }}>
         {SCREEN_MAP[screen] || <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />}
-
-        {screen !== "welcome" && (
-          <button
-            onClick={() => setShowAI(true)}
-            className="fixed right-5 w-12 h-12 rounded-full flex items-center justify-center shadow-lg z-40"
-            style={{ background: GOLD, bottom: isTab ? 86 : 24 }}
-            aria-label="Open AI assistant"
-          >
-            <Sparkles size={20} color={BG} />
-          </button>
-        )}
-
-        {showAI && <AIAssistant onClose={() => setShowAI(false)} />}
 
         {isTab && <BottomNav screen={screen} navigate={navigate} t={t} />}
       </div>
