@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { supabase } from "./supabaseClient";
 import {
   Car, Plane, MapPinned, Key, ShoppingBag, UtensilsCrossed, Truck,
   Briefcase, Users, Bell, Menu, ChevronRight, ArrowLeft, MapPin, Circle,
@@ -6,7 +7,7 @@ import {
   Calendar, Clock, ArrowRightLeft, Route, Search,
   Plus, Tag, X, Star, ShoppingBag as Bag, Minus,
   Package, Phone, DollarSign,
-  Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User
+  Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check
 } from "lucide-react";
 
 /* ---------- shared tokens ---------- */
@@ -39,6 +40,9 @@ const SAUDI_CITIES = {
   Sakaka: ["Al Nakheel", "Al Wasat", "Al Sharqi"],
 };
 const SAUDI_CITY_LIST = Object.keys(SAUDI_CITIES);
+const SAUDI_PLACES = SAUDI_CITY_LIST.flatMap((city) =>
+  SAUDI_CITIES[city].map((district) => ({ label: `${district}, ${city}`, district, city }))
+);
 
 /* ---------- geolocation helper ---------- */
 function detectLocation({ onStart, onSuccess, onError }) {
@@ -127,60 +131,90 @@ function SkylineBackground({ opacity = 1 }) {
   return (
     <svg
       className="absolute left-0 right-0 bottom-0 w-full pointer-events-none select-none"
-      viewBox="0 0 400 220"
+      viewBox="0 0 400 240"
       preserveAspectRatio="xMidYMax slice"
-      style={{ height: 220, opacity }}
+      style={{ height: 260, opacity }}
     >
-      {/* night sky gradient */}
       <defs>
         <linearGradient id="skyFade" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={BG} stopOpacity="0" />
           <stop offset="100%" stopColor={BG} stopOpacity="1" />
         </linearGradient>
+        <linearGradient id="glowGold" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={GOLD} stopOpacity="0.5" />
+          <stop offset="100%" stopColor={GOLD} stopOpacity="0" />
+        </linearGradient>
       </defs>
+
       {/* stars */}
-      <circle cx="40" cy="30" r="1" fill={GOLD} opacity="0.6" />
-      <circle cx="120" cy="18" r="1.2" fill={GOLD} opacity="0.5" />
-      <circle cx="260" cy="25" r="1" fill={GOLD} opacity="0.6" />
-      <circle cx="340" cy="15" r="1.3" fill={GOLD} opacity="0.5" />
-      <circle cx="80" cy="55" r="0.8" fill={TEXT} opacity="0.3" />
-      <circle cx="300" cy="50" r="0.8" fill={TEXT} opacity="0.3" />
-      {/* crescent moon */}
-      <circle cx="330" cy="35" r="12" fill={GOLD} opacity="0.85" />
-      <circle cx="335" cy="31" r="11" fill={BG} />
+      <circle cx="30" cy="25" r="1" fill={GOLD} opacity="0.7" />
+      <circle cx="110" cy="14" r="1.3" fill={GOLD} opacity="0.5" />
+      <circle cx="250" cy="20" r="1" fill={GOLD} opacity="0.7" />
+      <circle cx="370" cy="12" r="1.4" fill={GOLD} opacity="0.5" />
+      <circle cx="70" cy="48" r="0.8" fill={TEXT} opacity="0.35" />
+      <circle cx="290" cy="42" r="0.8" fill={TEXT} opacity="0.35" />
+      <circle cx="200" cy="10" r="1" fill={TEXT} opacity="0.3" />
 
-      {/* desert dunes */}
-      <path d="M0,190 Q60,165 130,185 T260,180 T400,190 V220 H0 Z" fill={CARD} opacity="0.9" />
-      <path d="M0,205 Q80,185 180,200 T400,200 V220 H0 Z" fill={BORDER} opacity="0.7" />
+      {/* crescent moon with glow */}
+      <circle cx="345" cy="32" r="18" fill="url(#glowGold)" opacity="0.6" />
+      <circle cx="345" cy="32" r="11" fill={GOLD} opacity="0.9" />
+      <circle cx="350" cy="28" r="10" fill={BG} />
 
-      {/* Kingdom Centre Tower (arch top) */}
-      <g opacity="0.9">
-        <rect x="60" y="90" width="10" height="100" fill={CARD} />
-        <path d="M56,92 L60,60 L70,60 L74,92 Q65,84 56,92 Z" fill={CARD} />
+      {/* desert dunes, layered */}
+      <path d="M0,210 Q70,180 150,205 T400,208 V240 H0 Z" fill={CARD} opacity="0.85" />
+      <path d="M0,222 Q90,198 190,215 T400,218 V240 H0 Z" fill={BORDER} opacity="0.65" />
+      <path d="M0,232 Q120,215 250,228 T400,228 V240 H0 Z" fill="#0B1730" opacity="0.8" />
+
+      {/* Kingdom Centre Tower */}
+      <g opacity="0.95">
+        <rect x="55" y="95" width="9" height="115" fill={CARD} />
+        <path d="M51,97 L55,58 L64,58 L68,97 Q59.5,88 51,97 Z" fill={CARD} />
+        <rect x="57" y="60" width="4" height="14" fill={GOLD} opacity="0.5" />
       </g>
 
-      {/* Al Faisaliyah Tower (globe top) */}
-      <g opacity="0.9">
-        <polygon points="185,190 179,110 191,110" fill={CARD} />
-        <circle cx="185" cy="102" r="7" fill={CARD} />
+      {/* Al Faisaliyah Tower */}
+      <g opacity="0.95">
+        <polygon points="178,210 172,118 184,118" fill={CARD} />
+        <circle cx="178" cy="108" r="8" fill={CARD} />
+        <circle cx="178" cy="108" r="3" fill={GOLD} opacity="0.6" />
       </g>
 
-      {/* Mosque dome + minaret silhouette */}
+      {/* Masmak-style fort silhouette */}
       <g opacity="0.85">
-        <rect x="230" y="150" width="6" height="40" fill={CARD} />
-        <circle cx="233" cy="146" r="5" fill={CARD} />
-        <path d="M245,190 Q245,165 260,165 Q275,165 275,190 Z" fill={CARD} />
-        <rect x="266" y="140" width="5" height="30" fill={CARD} />
-        <circle cx="268" cy="136" r="4" fill={CARD} />
+        <rect x="95" y="185" width="34" height="25" fill={CARD} />
+        <rect x="93" y="178" width="6" height="10" fill={CARD} />
+        <rect x="122" y="178" width="6" height="10" fill={CARD} />
+        <rect x="107" y="175" width="6" height="13" fill={CARD} />
       </g>
 
-      {/* small palm accents */}
+      {/* Mosque dome + minarets */}
+      <g opacity="0.9">
+        <rect x="228" y="160" width="6" height="50" fill={CARD} />
+        <circle cx="231" cy="155" r="5" fill={CARD} />
+        <path d="M244,210 Q244,178 262,178 Q280,178 280,210 Z" fill={CARD} />
+        <rect x="273" y="150" width="5" height="35" fill={CARD} />
+        <circle cx="275.5" cy="145" r="4" fill={CARD} />
+        <rect x="248" y="150" width="5" height="35" fill={CARD} />
+        <circle cx="250.5" cy="145" r="4" fill={CARD} />
+      </g>
+
+      {/* Kingdom Tower distant right */}
       <g opacity="0.7">
-        <line x1="320" y1="192" x2="320" y2="175" stroke={CARD} strokeWidth="2" />
-        <path d="M320,175 Q310,170 305,175 M320,175 Q330,170 335,175 M320,175 Q312,165 308,168 M320,175 Q328,165 332,168" stroke={CARD} strokeWidth="2" fill="none" strokeLinecap="round" />
+        <rect x="315" y="140" width="7" height="70" fill={CARD} />
+        <path d="M312,142 L315,112 L322,112 L325,142 Q318.5,134 312,142 Z" fill={CARD} />
       </g>
 
-      <rect x="0" y="0" width="400" height="220" fill="url(#skyFade)" />
+      {/* palm accents */}
+      <g opacity="0.75">
+        <line x1="345" y1="212" x2="345" y2="192" stroke={CARD} strokeWidth="2" />
+        <path d="M345,192 Q333,186 327,192 M345,192 Q357,186 363,192 M345,192 Q336,180 330,184 M345,192 Q354,180 360,184" stroke={CARD} strokeWidth="2" fill="none" strokeLinecap="round" />
+      </g>
+      <g opacity="0.6">
+        <line x1="20" y1="216" x2="20" y2="200" stroke={CARD} strokeWidth="1.6" />
+        <path d="M20,200 Q10,195 6,200 M20,200 Q30,195 34,200" stroke={CARD} strokeWidth="1.6" fill="none" strokeLinecap="round" />
+      </g>
+
+      <rect x="0" y="0" width="400" height="240" fill="url(#skyFade)" />
     </svg>
   );
 }
@@ -206,7 +240,6 @@ const SERVICES = [
   { id: "food", label: "Food", sub: "Delivery", subKey: "delivery", icon: UtensilsCrossed },
   { id: "logistics", label: "Logistics", sub: "Send parcels", subKey: "sendParcels", icon: Truck },
   { id: "jobs", label: "Jobs", sub: "Drive & earn", subKey: "driveEarn", icon: Briefcase },
-  { id: "fleet", label: "Fleet", sub: "Manage cars", subKey: "manageCars", icon: Users },
 ];
 
 function Home({ navigate, lang, setLang, t }) {
@@ -246,18 +279,31 @@ function Home({ navigate, lang, setLang, t }) {
         </div>
         <p className="mt-2 text-sm" style={{ color: MUTE }}>{t("tagline")}</p>
       </div>
-      <div className="relative px-5 mb-6">
-        <div className="relative rounded-2xl p-5 overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+      <div className="relative px-5 mb-7">
+        <button
+          onClick={() => navigate("ride")}
+          className="relative w-full text-left rounded-3xl p-5 overflow-hidden active:scale-[0.99] transition-transform"
+          style={{
+            background: `linear-gradient(135deg, ${CARD} 0%, #142347 100%)`,
+            border: `1px solid ${BORDER}`,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          <div
+            className="absolute -right-6 -top-6 w-28 h-28 rounded-full"
+            style={{ background: `radial-gradient(circle, rgba(217,166,83,0.18), transparent 70%)` }}
+          />
           <div className="relative flex items-center justify-between">
             <div>
-              <p className="text-xs" style={{ color: MUTE }}>{t("whereTo")}</p>
-              <p className="text-lg font-semibold mt-1">{t("bookRideNow")}</p>
+              <p className="text-[10px] uppercase tracking-widest" style={{ color: GOLD }}>{t("whereTo")}</p>
+              <p className="text-xl font-semibold mt-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{t("bookRideNow")}</p>
+              <p className="text-[11px] mt-1" style={{ color: FAINT }}>Arriving in minutes, anywhere in the city</p>
             </div>
-            <button onClick={() => navigate("ride")} className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}>
-              <ChevronRight size={20} color={BG} style={{ transform: lang === "ar" ? "rotate(180deg)" : "none" }} />
-            </button>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0" style={{ background: `linear-gradient(135deg, ${GOLD}, #B8863B)`, boxShadow: "0 6px 16px rgba(217,166,83,0.4)" }}>
+              <ChevronRight size={22} color={BG} style={{ transform: lang === "ar" ? "rotate(180deg)" : "none" }} />
+            </div>
           </div>
-        </div>
+        </button>
       </div>
       <div className="relative px-5">
         <div className="flex items-center justify-between mb-3">
@@ -304,6 +350,13 @@ function BookRide({ goBack }) {
   const [pickup, setPickup] = useState("Current location");
   const [pickupCoords, setPickupCoords] = useState({ lat: 24.7136, lng: 46.6753 });
   const [dropoff, setDropoff] = useState("");
+  const [activeField, setActiveField] = useState(null); // "pickup" | "dropoff" | null
+  const pickupSuggestions = activeField === "pickup" && pickup.trim()
+    ? SAUDI_PLACES.filter((p) => p.label.toLowerCase().includes(pickup.toLowerCase())).slice(0, 6)
+    : [];
+  const dropoffSuggestions = activeField === "dropoff" && dropoff.trim()
+    ? SAUDI_PLACES.filter((p) => p.label.toLowerCase().includes(dropoff.toLowerCase())).slice(0, 6)
+    : [];
   const [rideType, setRideType] = useState("economy");
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState("");
@@ -437,17 +490,48 @@ function BookRide({ goBack }) {
             {mapStatus === "loading" && <div className="absolute inset-0 flex items-center justify-center" style={{ background: CARD }}><Navigation size={20} color={GOLD} /></div>}
             {mapStatus === "error" && <div className="absolute inset-0 flex items-center justify-center px-6 text-center" style={{ background: CARD }}><p className="text-[11px]" style={{ color: FAINT }}>Map couldn't load — check connection or try again.</p></div>}
           </div>
-          <div className="px-5 mt-4">
+          <div className="px-5 mt-4 relative">
             <div className="rounded-2xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
                 <Circle size={10} color={GREEN} fill={GREEN} />
-                <input value={pickup} onChange={(e) => setPickup(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                <input
+                  value={pickup}
+                  onChange={(e) => setPickup(e.target.value)}
+                  onFocus={() => setActiveField("pickup")}
+                  onBlur={() => setTimeout(() => setActiveField((f) => (f === "pickup" ? null : f)), 150)}
+                  className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}
+                />
               </div>
               <div className="flex items-center gap-3 py-3">
                 <Square size={9} color={GOLD} fill={GOLD} />
-                <input value={dropoff} onChange={(e) => setDropoff(e.target.value)} placeholder="Where to?" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                <input
+                  value={dropoff}
+                  onChange={(e) => setDropoff(e.target.value)}
+                  onFocus={() => setActiveField("dropoff")}
+                  onBlur={() => setTimeout(() => setActiveField((f) => (f === "dropoff" ? null : f)), 150)}
+                  placeholder="Where to?"
+                  className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}
+                />
               </div>
             </div>
+            {pickupSuggestions.length > 0 && (
+              <div className="absolute left-5 right-5 mt-1 rounded-xl overflow-hidden z-20" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                {pickupSuggestions.map((p) => (
+                  <button key={p.label} onMouseDown={() => { setPickup(p.label); setActiveField(null); }} className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                    <MapPin size={12} color={GREEN} /> {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {dropoffSuggestions.length > 0 && (
+              <div className="absolute left-5 right-5 mt-1 rounded-xl overflow-hidden z-20" style={{ background: CARD, border: `1px solid ${BORDER}`, top: 68 }}>
+                {dropoffSuggestions.map((p) => (
+                  <button key={p.label} onMouseDown={() => { setDropoff(p.label); setActiveField(null); }} className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                    <MapPin size={12} color={GOLD} /> {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <button onClick={useMyLocationCity} disabled={locating} className="w-full mt-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(217,166,83,0.12)", color: GOLD }}>
               <Navigation size={13} className={locating ? "animate-pulse" : ""} /> {locating ? "Detecting location…" : "Use my current location"}
             </button>
@@ -596,7 +680,7 @@ function BookRide({ goBack }) {
 
 /* ---------- DRIVER APP ---------- */
 const INCOMING_REQUEST = { rider: "Faisal A.", rating: 4.8, pickup: "Al Olaya Street, Riyadh", dropoff: "King Khalid International Airport", distance: "1.2 km away", fare: 42, pickupCoords: { lat: 24.7, lng: 46.685 } };
-function DriverApp({ goBack }) {
+function DriverApp({ goBack, navigate, currentDriver }) {
   const mapRef = useRef(null);
   const mapObjRef = useRef(null);
   const pickupMarkerRef = useRef(null);
@@ -687,6 +771,14 @@ function DriverApp({ goBack }) {
           <Power size={13} /> {online ? "Online" : "Go online"}
         </button>
       } />
+      {currentDriver?.profile && (
+        <div className="px-5 mb-3">
+          <div className="rounded-xl px-4 py-2.5 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <p className="text-xs" style={{ color: MUTE }}>Logged in as <span style={{ color: TEXT, fontWeight: 600 }}>{currentDriver.profile.full_name}</span></p>
+            <span className="text-[10px]" style={{ color: FAINT }}>{currentDriver.profile.city_type === "intercity" ? "Intercity" : "Inside-city"}</span>
+          </div>
+        </div>
+      )}
       <div className="mx-5 rounded-2xl overflow-hidden relative" style={{ height: 220, background: CARD, border: `1px solid ${BORDER}` }}>
         <div ref={mapRef} className="w-full h-full" />
         {mapStatus === "loading" && <div className="absolute inset-0 flex items-center justify-center" style={{ background: CARD }}><Navigation size={20} color={GOLD} /></div>}
@@ -695,7 +787,19 @@ function DriverApp({ goBack }) {
       <p className="px-5 mt-2 text-[11px] flex items-center gap-1" style={{ color: FAINT }}><Navigation size={11} color={GREEN} /> {locLabel}</p>
       {locError && <p className="px-5 mt-1 text-[11px]" style={{ color: "#C0755B" }}>{locError}</p>}
       {online && !request && tripState === "idle" && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>You're online — waiting for requests…</p>}
-      {!online && <p className="text-sm text-center mt-6" style={{ color: FAINT }}>Go online to start receiving ride requests.</p>}
+      {!online && (
+        <div className="px-5 mt-6">
+          <p className="text-sm text-center" style={{ color: FAINT }}>Go online to start receiving ride requests.</p>
+          <button onClick={() => navigate("driver_login")} className="w-full mt-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+            <span className="flex items-center gap-2 text-sm font-semibold"><User size={15} color={GOLD} /> Driver login</span>
+            <ChevronRight size={14} color={GOLD} />
+          </button>
+          <button onClick={() => navigate("register_driver")} className="w-full mt-2 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Car size={15} color={GOLD} /> New driver? Register here</span>
+            <ChevronRight size={14} color={GOLD} />
+          </button>
+        </div>
+      )}
       {request && tripState === "idle" && (
         <div className="px-5 mt-4">
           <div className="rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
@@ -723,9 +827,230 @@ function DriverApp({ goBack }) {
   );
 }
 
+/* ---------- PARTNER / PROVIDER REGISTRATION ---------- */
+const REGISTER_CONFIGS = {
+  driver: {
+    title: "Driver registration",
+    icon: Car,
+    intro: "Join SayyaraDrive as a driver and start earning on your own schedule.",
+    detailFields: [
+      { key: "vehicleModel", label: "Vehicle model", placeholder: "e.g. Toyota Camry 2021" },
+      { key: "plateNumber", label: "Plate number", placeholder: "e.g. RUH 4021" },
+      { key: "vehicleYear", label: "Vehicle year", placeholder: "e.g. 2021" },
+    ],
+    documents: ["National ID / Iqama", "Driving license", "Vehicle registration (Istimara)"],
+  },
+  rental_owner: {
+    title: "List your car",
+    icon: Key,
+    intro: "Earn money by renting out your car when you're not using it.",
+    detailFields: [
+      { key: "vehicleModel", label: "Car model", placeholder: "e.g. Hyundai Elantra 2022" },
+      { key: "plateNumber", label: "Plate number", placeholder: "e.g. JED 1122" },
+      { key: "dailyRate", label: "Preferred daily rate (SAR)", placeholder: "e.g. 120" },
+    ],
+    documents: ["National ID / Iqama", "Vehicle registration (Istimara)", "Insurance document"],
+  },
+  seller: {
+    title: "Become a seller",
+    icon: ShoppingBag,
+    intro: "Open your own store on the SayyaraDrive marketplace.",
+    detailFields: [
+      { key: "storeName", label: "Store / seller name", placeholder: "e.g. Riyadh Auto Parts" },
+      { key: "category", label: "Main category", placeholder: "e.g. Spare parts, Electronics" },
+    ],
+    documents: ["National ID / Iqama", "Commercial registration (optional for individuals)"],
+  },
+  food_partner: {
+    title: "Restaurant partner",
+    icon: UtensilsCrossed,
+    intro: "Bring your restaurant onto SayyaraDrive and reach more customers.",
+    detailFields: [
+      { key: "restaurantName", label: "Restaurant name", placeholder: "e.g. Najd Kitchen" },
+      { key: "cuisine", label: "Cuisine type", placeholder: "e.g. Arabic, Fast food" },
+    ],
+    documents: ["Commercial registration", "Municipality license", "National ID / Iqama of owner"],
+  },
+  logistics_partner: {
+    title: "Delivery partner",
+    icon: Truck,
+    intro: "Deliver parcels across your city and get paid per delivery.",
+    detailFields: [
+      { key: "vehicleType", label: "Vehicle type", placeholder: "e.g. Motorbike, Car, Van" },
+    ],
+    documents: ["National ID / Iqama", "Driving license (if applicable)"],
+  },
+  fleet_owner: {
+    title: "Fleet company registration",
+    icon: Users,
+    intro: "Register your company's fleet to manage multiple vehicles and drivers.",
+    detailFields: [
+      { key: "companyName", label: "Company name", placeholder: "e.g. Al Rasheed Transport Co." },
+      { key: "fleetSize", label: "Number of vehicles", placeholder: "e.g. 12" },
+    ],
+    documents: ["Commercial registration", "National ID / Iqama of owner"],
+  },
+};
+
+function PartnerRegister({ goBack, type }) {
+  const cfg = REGISTER_CONFIGS[type];
+  const Icon = cfg.icon;
+  const [step, setStep] = useState(1); // 1 personal, 2 details, 3 documents, 4 confirmed
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [city, setCity] = useState("Riyadh");
+  const [district, setDistrict] = useState(SAUDI_CITIES["Riyadh"][0]);
+  const [details, setDetails] = useState({});
+  const [checkedDocs, setCheckedDocs] = useState({});
+
+  const step1Valid = name.trim() && phone.trim();
+  const step2Valid = cfg.detailFields.every((f) => (details[f.key] || "").trim());
+  const step3Valid = cfg.documents.every((d) => checkedDocs[d]);
+
+  function toggleDoc(d) {
+    setCheckedDocs((c) => ({ ...c, [d]: !c[d] }));
+  }
+
+  const STEPS = ["Personal", "Details", "Documents"];
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title={cfg.title} onBack={goBack} />
+
+      {step <= 3 && (
+        <>
+          <div className="px-5 mb-5 flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.14)" }}>
+              <Icon size={20} color={GOLD} />
+            </div>
+            <p className="text-xs" style={{ color: MUTE }}>{cfg.intro}</p>
+          </div>
+
+          <div className="px-5 mb-6 flex items-center gap-2">
+            {STEPS.map((s, i) => (
+              <div key={s} className="flex-1 flex items-center gap-2">
+                <div
+                  className="w-full h-1.5 rounded-full"
+                  style={{ background: i + 1 <= step ? GOLD : BORDER }}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {step === 1 && (
+        <div className="px-5">
+          <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>PERSONAL INFORMATION</p>
+          <div className="flex flex-col gap-3 mb-6">
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <User size={14} color={GOLD} />
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Phone size={14} color={GOLD} />
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number (WhatsApp)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Mail size={14} color={GOLD} />
+              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="rounded-xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-3 py-2.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                <MapPin size={14} color={GREEN} />
+                <select value={city} onChange={(e) => { setCity(e.target.value); setDistrict(SAUDI_CITIES[e.target.value][0]); }} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
+                  {SAUDI_CITY_LIST.map((c) => <option key={c} style={{ background: CARD }}>{c}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-3 py-2.5">
+                <MapPin size={14} color={GOLD} />
+                <select value={district} onChange={(e) => setDistrict(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
+                  {SAUDI_CITIES[city].map((d) => <option key={d} style={{ background: CARD }}>{d}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+          <button onClick={() => step1Valid && setStep(2)} disabled={!step1Valid} className="w-full rounded-full py-3 text-sm font-semibold flex items-center justify-center gap-2" style={{ background: step1Valid ? GOLD : BORDER, color: step1Valid ? BG : "#5C736D" }}>
+            Continue <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="px-5">
+          <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>
+            {type === "seller" || type === "food_partner" || type === "fleet_owner" ? "BUSINESS DETAILS" : "VEHICLE DETAILS"}
+          </p>
+          <div className="flex flex-col gap-3 mb-6">
+            {cfg.detailFields.map((f) => (
+              <div key={f.key} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <ChevronRight size={14} color={GOLD} />
+                <input
+                  value={details[f.key] || ""}
+                  onChange={(e) => setDetails((d) => ({ ...d, [f.key]: e.target.value }))}
+                  placeholder={f.placeholder}
+                  className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setStep(1)} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back</button>
+            <button onClick={() => step2Valid && setStep(3)} disabled={!step2Valid} className="flex-1 rounded-full py-3 text-sm font-semibold flex items-center justify-center gap-2" style={{ background: step2Valid ? GOLD : BORDER, color: step2Valid ? BG : "#5C736D" }}>
+              Continue <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="px-5">
+          <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>REQUIRED DOCUMENTS</p>
+          <p className="text-[11px] mb-4" style={{ color: FAINT }}>Confirm you have these ready — you'll upload them after submitting, or send via WhatsApp.</p>
+          <div className="flex flex-col gap-2 mb-6">
+            {cfg.documents.map((d) => (
+              <button key={d} onClick={() => toggleDoc(d)} className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left" style={{ background: CARD, border: checkedDocs[d] ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
+                <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={{ background: checkedDocs[d] ? GOLD : "transparent", border: `1px solid ${checkedDocs[d] ? GOLD : BORDER}` }}>
+                  {checkedDocs[d] && <Check size={13} color={BG} />}
+                </div>
+                <span className="text-sm">{d}</span>
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setStep(2)} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back</button>
+            <button onClick={() => step3Valid && setStep(4)} disabled={!step3Valid} className="flex-1 rounded-full py-3 text-sm font-semibold flex items-center justify-center gap-2" style={{ background: step3Valid ? GOLD : BORDER, color: step3Valid ? BG : "#5C736D" }}>
+              Submit application
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 4 && (
+        <div className="px-5 mt-8 flex flex-col items-center text-center">
+          <CheckCircle2 size={44} color={GREEN} />
+          <h2 className="mt-4 text-lg font-semibold">Application submitted</h2>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>
+            Our team will review your application and contact you on WhatsApp within 2-3 business days.
+          </p>
+          <div className="mt-6 w-full rounded-2xl px-4 py-4 text-left" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div className="flex justify-between text-sm py-1"><span style={{ color: FAINT }}>Applicant</span><span>{name}</span></div>
+            <div className="flex justify-between text-sm py-1"><span style={{ color: FAINT }}>Phone</span><span>{phone}</span></div>
+            <div className="flex justify-between text-sm py-1"><span style={{ color: FAINT }}>Location</span><span>{district}, {city}</span></div>
+          </div>
+          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Done</button>
+        </div>
+      )}
+
+      <div className="h-10" />
+    </div>
+  );
+}
+
 /* ---------- CAR RENTAL ---------- */
 const CARS = [{ id: "eco", label: "Economy", model: "Hyundai Accent", price: 95 }, { id: "sedan", label: "Sedan", model: "Toyota Camry", price: 145 }, { id: "suv", label: "SUV", model: "Toyota Fortuner", price: 220 }, { id: "luxury", label: "Luxury", model: "Lexus ES", price: 380 }];
-function CarRental({ goBack }) {
+function CarRental({ goBack, navigate }) {
   const [city, setCity] = useState("Riyadh");
   const [district, setDistrict] = useState(SAUDI_CITIES["Riyadh"][0]);
   const [pickupDate, setPickupDate] = useState(""); const [returnDate, setReturnDate] = useState("");
@@ -738,6 +1063,10 @@ function CarRental({ goBack }) {
       <Header title="Car rental" onBack={goBack} />
       {stage === "input" && (
         <div className="px-5">
+          <button onClick={() => navigate("register_rental")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Key size={15} color={GOLD} /> Own a car? List it for rent</span>
+            <ChevronRight size={14} color={GOLD} />
+          </button>
           <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
               <MapPin size={14} color={GREEN} />
@@ -803,12 +1132,18 @@ const LISTINGS = [
   { id: 11, title: "GMC Yukon 2019", price: 118000, category: "Cars", location: "Dammam", tag: "Featured" },
   { id: 12, title: "MacBook Air M2", price: 4200, category: "Electronics", location: "Riyadh", tag: null },
 ];
-function Marketplace({ goBack }) {
+function Marketplace({ goBack, navigate }) {
   const [category, setCategory] = useState("All"); const [query, setQuery] = useState("");
   const filtered = LISTINGS.filter((l) => (category === "All" || l.category === category) && l.title.toLowerCase().includes(query.toLowerCase()));
   return (
     <div style={{ color: TEXT }}>
-      <Header title="Marketplace" onBack={goBack} right={<button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: GOLD }}><Plus size={18} color={BG} /></button>} />
+      <Header title="Marketplace" onBack={goBack} right={<button onClick={() => navigate("register_seller")} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: GOLD }}><Plus size={18} color={BG} /></button>} />
+      <div className="px-5 mb-3">
+        <button onClick={() => navigate("register_seller")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+          <span className="flex items-center gap-2 text-sm font-semibold"><ShoppingBag size={15} color={GOLD} /> Become a seller</span>
+          <ChevronRight size={14} color={GOLD} />
+        </button>
+      </div>
       <div className="px-5 mb-3"><div className="flex items-center gap-2 rounded-full px-4 py-2.5" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Search size={15} color={FAINT} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search listings" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div></div>
       <div className="px-5 mb-4 flex gap-2 overflow-x-auto">
         {CATEGORIES.map((c) => <button key={c} onClick={() => setCategory(c)} className="px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0" style={{ background: category === c ? GOLD : CARD, color: category === c ? BG : MUTE, border: category === c ? "none" : `1px solid ${BORDER}` }}>{c}</button>)}
@@ -844,7 +1179,7 @@ const MENU = {
   6: [{ id: "m13", name: "Broasted Chicken Meal", price: 24 }, { id: "m14", name: "Garlic Sauce Extra", price: 5 }],
   7: [{ id: "m15", name: "Mandi Chicken", price: 45 }, { id: "m16", name: "Mandi Lamb (large)", price: 78 }],
 };
-function FoodDelivery({ goBack }) {
+function FoodDelivery({ goBack, navigate }) {
   const [openRestaurant, setOpenRestaurant] = useState(null);
   const [cart, setCart] = useState({}); const [stage, setStage] = useState("browse");
   function addItem(item) { setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 })); }
@@ -883,6 +1218,12 @@ function FoodDelivery({ goBack }) {
   return (
     <div style={{ color: TEXT }}>
       <Header title="Food delivery" onBack={goBack} />
+      <div className="px-5 mb-3">
+        <button onClick={() => navigate("register_food")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+          <span className="flex items-center gap-2 text-sm font-semibold"><UtensilsCrossed size={15} color={GOLD} /> Own a restaurant? Partner with us</span>
+          <ChevronRight size={14} color={GOLD} />
+        </button>
+      </div>
       <div className="px-5 flex flex-col gap-2">
         {RESTAURANTS.map((r) => (
           <button key={r.id} onClick={() => setOpenRestaurant(r)} className="flex items-center gap-3 rounded-xl px-4 py-3 text-left" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -897,7 +1238,7 @@ function FoodDelivery({ goBack }) {
 
 /* ---------- LOGISTICS ---------- */
 const PARCEL_SIZES = [{ id: "small", label: "Small", sub: "Up to 5kg", price: 20 }, { id: "medium", label: "Medium", sub: "Up to 20kg", price: 40 }, { id: "large", label: "Large", sub: "Needs a van", price: 90 }];
-function Logistics({ goBack }) {
+function Logistics({ goBack, navigate }) {
   const [pickupAddress, setPickupAddress] = useState(""); const [dropoffAddress, setDropoffAddress] = useState("");
   const [pickupContact, setPickupContact] = useState(""); const [dropoffContact, setDropoffContact] = useState("");
   const [size, setSize] = useState("small"); const [stage, setStage] = useState("input");
@@ -914,6 +1255,10 @@ function Logistics({ goBack }) {
     <div style={{ color: TEXT }}>
       <Header title="Send a parcel" onBack={goBack} />
       <div className="px-5">
+        <button onClick={() => navigate("register_logistics")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+          <span className="flex items-center gap-2 text-sm font-semibold"><Truck size={15} color={GOLD} /> Become a delivery partner</span>
+          <ChevronRight size={14} color={GOLD} />
+        </button>
         <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>PICKUP</p>
         <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><MapPin size={14} color={GREEN} /><input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} placeholder="Pickup address" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
@@ -1004,12 +1349,18 @@ const INITIAL_FLEET = [
   { id: 5, plate: "RUH 9021", model: "Toyota Camry", driver: "Unassigned", status: "idle" },
   { id: 6, plate: "MKH 2287", model: "GMC Yukon", driver: "Bandar S.", status: "active" },
 ];
-function FleetManagement({ goBack }) {
+function FleetManagement({ goBack, navigate }) {
   const [fleet, setFleet] = useState(INITIAL_FLEET);
   function cycleStatus(id) { const order = ["idle", "active", "maintenance"]; setFleet((f) => f.map((c) => c.id === id ? { ...c, status: order[(order.indexOf(c.status) + 1) % order.length] } : c)); }
   return (
     <div style={{ color: TEXT }}>
       <Header title="Fleet" onBack={goBack} />
+      <div className="px-5 mb-4">
+        <button onClick={() => navigate("register_fleet")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+          <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GOLD} /> Register a new fleet company</span>
+          <ChevronRight size={14} color={GOLD} />
+        </button>
+      </div>
       <div className="px-5 flex flex-col gap-2">
         {fleet.map((c) => {
           const meta = STATUS_META[c.status];
@@ -1236,43 +1587,361 @@ function BottomNav({ screen, navigate, t }) {
   );
 }
 
-/* ---------- ADMIN DASHBOARD ---------- */
-const ADMIN_STATS = [
-  { label: "Total rides today", value: "312", change: "+8%" },
-  { label: "Active drivers", value: "48", change: "+3" },
-  { label: "Revenue today", value: "24,680 SAR", change: "+12%" },
-  { label: "Pending applications", value: "9", change: "" },
+/* ---------- WELCOME / ENTRY SCREEN ---------- */
+function WelcomeScreen({ navigate }) {
+  return (
+    <div className="min-h-screen relative overflow-hidden flex flex-col justify-end" style={{ background: BG, color: TEXT }}>
+      <SkylineBackground opacity={1} />
+      <div className="relative z-10 px-6 pb-10 flex flex-col items-center text-center">
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: `linear-gradient(135deg, ${GOLD}, #B8863B)`, boxShadow: `0 4px 14px rgba(217,166,83,0.35)` }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M4 20 L4 10 L12 4 L20 10 L20 20" stroke={BG} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M9 20 V13 H15 V20" stroke={BG} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em" }}>
+            سيارة<span style={{ color: GOLD }}>Drive</span>
+          </h1>
+        </div>
+        <p className="text-sm mb-8" style={{ color: MUTE }}>One app. Every way to move, earn, and deliver.</p>
+
+        <button onClick={() => navigate("home")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: GOLD, color: BG }}>
+          Continue as passenger
+        </button>
+        <button onClick={() => navigate("driver_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+          Driver login / sign up
+        </button>
+        <button onClick={() => navigate("admin_login")} className="text-xs mt-2" style={{ color: FAINT }}>
+          Admin login
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- AUTH (SIGN UP / LOGIN) ---------- */
+function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [iqama, setIqama] = useState("");
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [cityType, setCityType] = useState("inside_city");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  const isDriver = type === "driver";
+
+  async function handleSignup() {
+    setError(""); setLoading(true);
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+      if (signUpError) throw signUpError;
+      const authUserId = data.user?.id;
+      if (isDriver) {
+        const { error: insertError } = await supabase.from("drivers").insert({
+          auth_user_id: authUserId,
+          full_name: fullName,
+          mobile_number: mobile,
+          iqama_number: iqama,
+          vehicle_number: vehicleNumber,
+          city_type: cityType,
+        });
+        if (insertError) throw insertError;
+      } else {
+        const { error: insertError } = await supabase.from("passengers").insert({
+          auth_user_id: authUserId,
+          full_name: fullName,
+          mobile_number: mobile,
+        });
+        if (insertError) throw insertError;
+      }
+      setSuccess(true);
+    } catch (e) {
+      setError(e.message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLogin() {
+    setError(""); setLoading(true);
+    try {
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+      if (loginError) throw loginError;
+      let profile = null;
+      if (isDriver) {
+        const { data } = await supabase.from("drivers").select("*").eq("mobile_number", mobile).maybeSingle();
+        profile = data;
+        if (profile && profile.status === "blocked") {
+          setError("This driver account has been blocked. Contact support.");
+          setLoading(false);
+          return;
+        }
+      }
+      if (onLoggedIn) onLoggedIn({ email, type, profile });
+      setSuccess(true);
+    } catch (e) {
+      setError(e.message || "Invalid email or password.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (success) {
+    return (
+      <div className="px-5 mt-8 flex flex-col items-center text-center" style={{ color: TEXT }}>
+        <CheckCircle2 size={44} color={GREEN} />
+        <h2 className="mt-4 text-lg font-semibold">
+          {mode === "signup" ? "Account created" : "Logged in"}
+        </h2>
+        <p className="mt-1 text-sm" style={{ color: MUTE }}>
+          {mode === "signup"
+            ? "Your account is ready. You can now log in anytime."
+            : "Welcome back!"}
+        </p>
+        <button onClick={() => navigate(isDriver ? "driver" : "home")} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+          Continue
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title={isDriver ? "Driver account" : "Passenger account"} onBack={goBack} />
+      <div className="px-5">
+        <div className="flex rounded-full p-1 mb-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <button onClick={() => setMode("login")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: mode === "login" ? GOLD : "transparent", color: mode === "login" ? BG : MUTE }}>Log in</button>
+          <button onClick={() => setMode("signup")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: mode === "signup" ? GOLD : "transparent", color: mode === "signup" ? BG : MUTE }}>Sign up</button>
+        </div>
+
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Mail size={14} color={GOLD} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Key size={14} color={GOLD} />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          {mode === "login" && isDriver && (
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Phone size={14} color={GOLD} />
+              <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number (to load your profile)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+          )}
+        </div>
+
+        {mode === "signup" && (
+          <div className="flex flex-col gap-3 mb-4">
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <User size={14} color={GOLD} />
+              <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Phone size={14} color={GOLD} />
+              <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            {isDriver && (
+              <>
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <User size={14} color={GOLD} />
+                  <input value={iqama} onChange={(e) => setIqama(e.target.value)} placeholder="Iqama number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                </div>
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <Car size={14} color={GOLD} />
+                  <input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} placeholder="Vehicle number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                </div>
+                <div className="rounded-xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <select value={cityType} onChange={(e) => setCityType(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+                    <option value="inside_city" style={{ background: CARD }}>Inside-city driver</option>
+                    <option value="intercity" style={{ background: CARD }}>Intercity driver</option>
+                  </select>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+
+        <button
+          onClick={mode === "signup" ? handleSignup : handleLogin}
+          disabled={loading || !email || !password}
+          className="w-full rounded-full py-3 text-sm font-semibold"
+          style={{ background: (loading || !email || !password) ? BORDER : GOLD, color: (loading || !email || !password) ? "#5C736D" : BG }}
+        >
+          {loading ? "Please wait…" : mode === "signup" ? "Create account" : "Log in"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- ADMIN LOGIN ---------- */
+function AdminLogin({ goBack, navigate, onLoggedIn }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleAdminLogin() {
+    setError(""); setLoading(true);
+    try {
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+      if (loginError) throw loginError;
+      const { data: adminRow, error: adminError } = await supabase.from("admins").select("*").eq("email", email).maybeSingle();
+      if (adminError) throw adminError;
+      if (!adminRow) {
+        setError("This account doesn't have admin access.");
+        setLoading(false);
+        return;
+      }
+      if (onLoggedIn) onLoggedIn(adminRow);
+      navigate("admin");
+    } catch (e) {
+      setError(e.message || "Invalid email or password.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Admin login" onBack={goBack} />
+      <div className="px-5">
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Mail size={14} color={GOLD} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Admin email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Key size={14} color={GOLD} />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+        </div>
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <button
+          onClick={handleAdminLogin}
+          disabled={loading || !email || !password}
+          className="w-full rounded-full py-3 text-sm font-semibold"
+          style={{ background: (loading || !email || !password) ? BORDER : GOLD, color: (loading || !email || !password) ? "#5C736D" : BG }}
+        >
+          {loading ? "Checking…" : "Log in"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- GENERIC ADMIN LIST (drivers, passengers, companies, marketplace, jobs, food, logistics, fleet, violations) ---------- */
+function AdminListPage({ goBack, title, table, columns, showDriverActions }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function loadRows() {
+    setLoading(true);
+    const { data, error: fetchError } = await supabase.from(table).select("*").order("created_at", { ascending: false });
+    if (fetchError) setError(fetchError.message);
+    else setRows(data || []);
+    setLoading(false);
+  }
+
+  useEffect(() => { loadRows(); }, []);
+
+  async function addWarning(driver) {
+    const newCount = (driver.warning_count || 0) + 1;
+    const newStatus = newCount >= 5 ? "blocked" : "warned";
+    await supabase.from("violations").insert({ driver_id: driver.id, reason: "Manual warning from admin" });
+    await supabase.from("drivers").update({ warning_count: newCount, status: newStatus }).eq("id", driver.id);
+    loadRows();
+  }
+
+  async function unblockDriver(driver) {
+    await supabase.from("drivers").update({ status: "active", warning_count: 0 }).eq("id", driver.id);
+    loadRows();
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title={title} onBack={goBack} />
+      <div className="px-5">
+        {loading && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>Loading…</p>}
+        {error && <p className="text-sm text-center mt-6" style={{ color: "#C0755B" }}>{error}</p>}
+        {!loading && rows.length === 0 && <p className="text-sm text-center mt-6" style={{ color: FAINT }}>No records yet.</p>}
+        <div className="flex flex-col gap-2">
+          {rows.map((r) => {
+            const statusColor = r.status === "blocked" ? "#C0755B" : r.status === "warned" ? GOLD : GREEN;
+            return (
+              <div key={r.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-semibold">{columns.map((c) => r[c.key]).filter(Boolean)[0] || "—"}</p>
+                  {r.status && (
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${statusColor}22`, color: statusColor }}>
+                      {r.status}{showDriverActions ? ` · ${r.warning_count || 0}/5 warnings` : ""}
+                    </span>
+                  )}
+                </div>
+                {columns.slice(1).map((c) => r[c.key] ? (
+                  <p key={c.key} className="text-[11px]" style={{ color: FAINT }}>{c.label}: {String(r[c.key])}</p>
+                ) : null)}
+                {showDriverActions && (
+                  <div className="flex gap-2 mt-3">
+                    {r.status !== "blocked" ? (
+                      <button onClick={() => addWarning(r)} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: "rgba(217,166,83,0.15)", color: GOLD }}>
+                        Add warning
+                      </button>
+                    ) : (
+                      <button onClick={() => unblockDriver(r)} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: "rgba(91,143,212,0.15)", color: GREEN }}>
+                        Unblock driver
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- ADMIN OVERVIEW (sidebar-style dashboard) ---------- */
+const ADMIN_SECTIONS = [
+  { id: "drivers", label: "Drivers", table: "drivers", icon: Car },
+  { id: "passengers", label: "Passengers", table: "passengers", icon: Users },
+  { id: "companies", label: "Companies", table: "companies", icon: Briefcase },
+  { id: "marketplace_listings", label: "Marketplace", table: "marketplace_listings", icon: ShoppingBag },
+  { id: "jobs", label: "Jobs", table: "jobs", icon: Briefcase },
+  { id: "food_orders", label: "Food Delivery", table: "food_orders", icon: UtensilsCrossed },
+  { id: "logistics_parcels", label: "Logistics", table: "logistics_parcels", icon: Truck },
+  { id: "fleet_vehicles", label: "Fleet", table: "fleet_vehicles", icon: Car },
+  { id: "violations", label: "Violations", table: "violations", icon: Shield },
 ];
 
-const ADMIN_RECENT_RIDES = [
-  { id: "R-4821", rider: "Faisal A.", driver: "Omar K.", type: "Ride", fare: 24, status: "Completed" },
-  { id: "R-4820", rider: "Sara M.", driver: "Hussain M.", type: "Airport", fare: 85, status: "In progress" },
-  { id: "R-4819", rider: "Ahmed T.", driver: "Sami R.", type: "Intercity", fare: 480, status: "Completed" },
-  { id: "R-4818", rider: "Nourah S.", driver: "Unassigned", type: "Ride", fare: 19, status: "Cancelled" },
-  { id: "R-4817", rider: "Khalid B.", driver: "Faisal A.", type: "Food", fare: 58, status: "Completed" },
-];
+function AdminOverview({ navigate, goBack, onLogout }) {
+  const [counts, setCounts] = useState({});
+  const [loading, setLoading] = useState(true);
 
-const ADMIN_DRIVERS = [
-  { name: "Faisal A.", status: "active", rides: 142, rating: 4.9 },
-  { name: "Omar K.", status: "idle", rides: 98, rating: 4.7 },
-  { name: "Sami R.", status: "maintenance", rides: 210, rating: 4.8 },
-  { name: "Hussain M.", status: "active", rides: 65, rating: 4.6 },
-];
-
-const ADMIN_APPLICATIONS = [
-  { name: "Yousef A.", role: "Driver", city: "Riyadh", date: "Jul 9" },
-  { name: "Lama K.", role: "Support Agent", city: "Jeddah", date: "Jul 8" },
-  { name: "Bandar S.", role: "Driver", city: "Dammam", date: "Jul 8" },
-];
-
-function AdminDashboard({ goBack }) {
-  const [tab, setTab] = useState("overview");
-  const TABS = [
-    { id: "overview", label: "Overview" },
-    { id: "rides", label: "Rides" },
-    { id: "drivers", label: "Drivers" },
-    { id: "applications", label: "Applications" },
-  ];
+  useEffect(() => {
+    async function loadCounts() {
+      const results = {};
+      for (const s of ADMIN_SECTIONS) {
+        const { count } = await supabase.from(s.table).select("*", { count: "exact", head: true });
+        results[s.id] = count || 0;
+      }
+      setCounts(results);
+      setLoading(false);
+    }
+    loadCounts();
+  }, []);
 
   return (
     <div style={{ color: TEXT }}>
@@ -1281,119 +1950,31 @@ function AdminDashboard({ goBack }) {
           <button onClick={goBack} className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: CARD }}>
             <ArrowLeft size={17} color={TEXT} />
           </button>
-          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: TEXT }}>
-            Admin dashboard
-          </h1>
+          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: TEXT }}>Admin dashboard</h1>
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-xs" style={{ color: FAINT }}>
-          <Shield size={14} color={GOLD} /> Owner access
-        </div>
+        <button onClick={onLogout} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-full" style={{ background: CARD, border: `1px solid ${BORDER}`, color: "#C0755B" }}>
+          <LogOut size={13} /> Log out
+        </button>
       </div>
 
-      {/* Tabs */}
-      <div className="px-5 sm:px-8 mb-5 flex gap-2 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className="px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap shrink-0"
-            style={{
-              background: tab === t.id ? GOLD : CARD,
-              color: tab === t.id ? BG : MUTE,
-              border: tab === t.id ? "none" : `1px solid ${BORDER}`,
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="px-5 sm:px-8 mb-6">
+        <p className="text-sm font-semibold mb-1">Platform overview</p>
+        <p className="text-[11px]" style={{ color: FAINT }}>Live stats across all modules</p>
       </div>
 
-      <div className="px-5 sm:px-8">
-        {tab === "overview" && (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-              {ADMIN_STATS.map((s) => (
-                <div key={s.label} className="rounded-2xl px-4 py-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <p className="text-xl sm:text-2xl font-semibold" style={{ color: GOLD }}>{s.value}</p>
-                  <p className="text-[11px] mt-1" style={{ color: FAINT }}>{s.label}</p>
-                  {s.change && <p className="text-[10px] mt-1" style={{ color: GREEN }}>{s.change} vs yesterday</p>}
-                </div>
-              ))}
-            </div>
-
-            <p className="text-sm font-semibold mb-3">Recent activity</p>
-            <div className="flex flex-col gap-2">
-              {ADMIN_RECENT_RIDES.slice(0, 3).map((r) => (
-                <div key={r.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <div>
-                    <p className="text-sm font-semibold">{r.rider} <span style={{ color: FAINT, fontWeight: 400 }}>→ {r.driver}</span></p>
-                    <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{r.type} · {r.id}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold">{r.fare} SAR</p>
-                    <p className="text-[10px]" style={{ color: r.status === "Cancelled" ? "#C0755B" : r.status === "In progress" ? GOLD : GREEN }}>{r.status}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {tab === "rides" && (
-          <div className="flex flex-col gap-2">
-            {ADMIN_RECENT_RIDES.map((r) => (
-              <div key={r.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <div>
-                  <p className="text-sm font-semibold">{r.id} — {r.type}</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{r.rider} → {r.driver}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold">{r.fare} SAR</p>
-                  <p className="text-[10px]" style={{ color: r.status === "Cancelled" ? "#C0755B" : r.status === "In progress" ? GOLD : GREEN }}>{r.status}</p>
-                </div>
+      <div className="px-5 sm:px-8 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {ADMIN_SECTIONS.map((s) => {
+          const Icon = s.icon;
+          return (
+            <button key={s.id} onClick={() => navigate(`admin_${s.id}`)} className="text-left rounded-2xl px-4 py-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs" style={{ color: FAINT }}>{s.label}</p>
+                <Icon size={16} color={GOLD} />
               </div>
-            ))}
-          </div>
-        )}
-
-        {tab === "drivers" && (
-          <div className="grid sm:grid-cols-2 gap-2">
-            {ADMIN_DRIVERS.map((d) => {
-              const meta = STATUS_META[d.status];
-              return (
-                <div key={d.name} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.12)" }}>
-                    <User size={17} color={GOLD} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold">{d.name}</p>
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${meta.color}22`, color: meta.color }}>{meta.label}</span>
-                    </div>
-                    <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{d.rides} rides · {d.rating} rating</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {tab === "applications" && (
-          <div className="flex flex-col gap-2">
-            {ADMIN_APPLICATIONS.map((a) => (
-              <div key={a.name} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <div>
-                  <p className="text-sm font-semibold">{a.name}</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{a.role} · {a.city}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[11px]" style={{ color: FAINT }}>{a.date}</p>
-                  <button className="mt-1 px-3 py-1 rounded-full text-[10px] font-semibold" style={{ background: GOLD, color: BG }}>Review</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+              <p className="text-2xl font-semibold" style={{ color: GOLD }}>{loading ? "…" : counts[s.id] ?? 0}</p>
+            </button>
+          );
+        })}
       </div>
 
       <div className="h-10" />
@@ -1405,7 +1986,9 @@ function AdminDashboard({ goBack }) {
 const TAB_SCREENS = ["home", "activity", "wallet", "profile"];
 
 export default function SayyaraDriveApp() {
-  const [history, setHistory] = useState(["home"]);
+  const [history, setHistory] = useState(["welcome"]);
+  const [currentDriver, setCurrentDriver] = useState(null);
+  const [currentAdmin, setCurrentAdmin] = useState(null);
   const [showAI, setShowAI] = useState(false);
   const [lang, setLang] = useState("en");
   const screen = history[history.length - 1];
@@ -1422,21 +2005,40 @@ export default function SayyaraDriveApp() {
   const isTab = TAB_SCREENS.includes(screen);
 
   const SCREEN_MAP = {
+    welcome: <WelcomeScreen navigate={navigate} />,
     home: <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />,
     ride: <BookRide goBack={goBack} />,
-    driver: <DriverApp goBack={goBack} />,
+    driver: <DriverApp goBack={goBack} navigate={navigate} currentDriver={currentDriver} />,
     airport: <BookRide goBack={goBack} />,
     intercity: <BookRide goBack={goBack} />,
-    rentals: <CarRental goBack={goBack} />,
-    market: <Marketplace goBack={goBack} />,
-    food: <FoodDelivery goBack={goBack} />,
-    logistics: <Logistics goBack={goBack} />,
-    jobs: <JobsPortal goBack={goBack} />,
-    fleet: <FleetManagement goBack={goBack} />,
+    rentals: <CarRental goBack={goBack} navigate={navigate} />,
+    market: <Marketplace goBack={goBack} navigate={navigate} />,
+    food: <FoodDelivery goBack={goBack} navigate={navigate} />,
+    logistics: <Logistics goBack={goBack} navigate={navigate} />,
+    jobs: <JobsPortal goBack={goBack} navigate={navigate} />,
+    fleet: <FleetManagement goBack={goBack} navigate={navigate} />,
     profile: <Profile goBack={goBack} navigate={navigate} />,
     activity: <TripHistory goBack={goBack} />,
     wallet: <WalletTab goBack={goBack} />,
-    admin: <AdminDashboard goBack={goBack} />,
+    admin: currentAdmin ? <AdminOverview navigate={navigate} goBack={goBack} onLogout={() => { supabase.auth.signOut(); setCurrentAdmin(null); navigate("welcome"); }} /> : <AdminLogin goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAdmin} />,
+    register_driver: <PartnerRegister goBack={goBack} type="driver" />,
+    register_rental: <PartnerRegister goBack={goBack} type="rental_owner" />,
+    register_seller: <PartnerRegister goBack={goBack} type="seller" />,
+    register_food: <PartnerRegister goBack={goBack} type="food_partner" />,
+    register_logistics: <PartnerRegister goBack={goBack} type="logistics_partner" />,
+    register_fleet: <PartnerRegister goBack={goBack} type="fleet_owner" />,
+    driver_login: <AuthScreen goBack={goBack} type="driver" navigate={navigate} onLoggedIn={setCurrentDriver} />,
+    passenger_login: <AuthScreen goBack={goBack} type="passenger" navigate={navigate} onLoggedIn={setCurrentDriver} />,
+    admin_login: <AdminLogin goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAdmin} />,
+    admin_drivers: <AdminListPage goBack={goBack} title="Drivers" table="drivers" showDriverActions columns={[{key:"full_name",label:"Name"},{key:"iqama_number",label:"Iqama"},{key:"vehicle_number",label:"Vehicle"},{key:"mobile_number",label:"Mobile"},{key:"city_type",label:"City type"}]} />,
+    admin_passengers: <AdminListPage goBack={goBack} title="Passengers" table="passengers" columns={[{key:"full_name",label:"Name"},{key:"mobile_number",label:"Mobile"}]} />,
+    admin_companies: <AdminListPage goBack={goBack} title="Companies" table="companies" columns={[{key:"name",label:"Name"},{key:"contact_name",label:"Contact"},{key:"mobile_number",label:"Mobile"},{key:"fleet_size",label:"Fleet size"}]} />,
+    admin_marketplace_listings: <AdminListPage goBack={goBack} title="Marketplace" table="marketplace_listings" columns={[{key:"title",label:"Title"},{key:"seller_name",label:"Seller"},{key:"price",label:"Price"},{key:"category",label:"Category"}]} />,
+    admin_jobs: <AdminListPage goBack={goBack} title="Jobs" table="jobs" columns={[{key:"title",label:"Title"},{key:"location",label:"Location"},{key:"pay",label:"Pay"}]} />,
+    admin_food_orders: <AdminListPage goBack={goBack} title="Food Delivery" table="food_orders" columns={[{key:"restaurant_name",label:"Restaurant"},{key:"customer_name",label:"Customer"},{key:"total",label:"Total"}]} />,
+    admin_logistics_parcels: <AdminListPage goBack={goBack} title="Logistics" table="logistics_parcels" columns={[{key:"sender_name",label:"Sender"},{key:"pickup_address",label:"Pickup"},{key:"dropoff_address",label:"Dropoff"}]} />,
+    admin_fleet_vehicles: <AdminListPage goBack={goBack} title="Fleet" table="fleet_vehicles" columns={[{key:"plate_number",label:"Plate"},{key:"model",label:"Model"},{key:"driver_name",label:"Driver"}]} />,
+    admin_violations: <AdminListPage goBack={goBack} title="Violations" table="violations" columns={[{key:"reason",label:"Reason"},{key:"driver_id",label:"Driver ID"}]} />,
   };
 
   return (
@@ -1449,14 +2051,16 @@ export default function SayyaraDriveApp() {
       <div className={`w-full relative z-10 ${screen === "admin" ? "max-w-5xl" : "max-w-md"}`} style={{ paddingBottom: isTab ? 70 : 20 }}>
         {SCREEN_MAP[screen] || <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />}
 
-        <button
-          onClick={() => setShowAI(true)}
-          className="fixed right-5 w-12 h-12 rounded-full flex items-center justify-center shadow-lg z-40"
-          style={{ background: GOLD, bottom: isTab ? 86 : 24 }}
-          aria-label="Open AI assistant"
-        >
-          <Sparkles size={20} color={BG} />
-        </button>
+        {screen !== "welcome" && (
+          <button
+            onClick={() => setShowAI(true)}
+            className="fixed right-5 w-12 h-12 rounded-full flex items-center justify-center shadow-lg z-40"
+            style={{ background: GOLD, bottom: isTab ? 86 : 24 }}
+            aria-label="Open AI assistant"
+          >
+            <Sparkles size={20} color={BG} />
+          </button>
+        )}
 
         {showAI && <AIAssistant onClose={() => setShowAI(false)} />}
 
