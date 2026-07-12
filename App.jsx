@@ -247,6 +247,14 @@ const SERVICES = [
 ];
 
 function Home({ navigate, lang, setLang, t }) {
+  const [unreadCount, setUnreadCount] = useState(0);
+  useEffect(() => {
+    async function loadUnread() {
+      const { count } = await supabase.from("notifications").select("*", { count: "exact", head: true }).eq("recipient_type", "all").eq("read", false);
+      setUnreadCount(count || 0);
+    }
+    loadUnread();
+  }, []);
   return (
     <div className="pb-4 relative overflow-hidden" style={{ color: TEXT }} dir={lang === "ar" ? "rtl" : "ltr"}>
       <SkylineBackground opacity={0.9} />
@@ -261,8 +269,9 @@ function Home({ navigate, lang, setLang, t }) {
           >
             {lang === "en" ? "AR" : "EN"}
           </button>
-          <button className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
-            <Bell size={17} color={TEXT} /><span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />
+          <button onClick={() => navigate("notifications")} className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
+            <Bell size={17} color={TEXT} />
+            {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />}
           </button>
         </div>
       </div>
@@ -943,9 +952,34 @@ function PartnerRegister({ goBack, type }) {
   const step1Valid = name.trim() && phone.trim();
   const step2Valid = cfg.detailFields.every((f) => (details[f.key] || "").trim());
   const step3Valid = cfg.documents.every((d) => checkedDocs[d]);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   function toggleDoc(d) {
     setCheckedDocs((c) => ({ ...c, [d]: !c[d] }));
+  }
+
+  async function submitApplication() {
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      const detailsText = cfg.detailFields.map((f) => `${f.label}: ${details[f.key]}`).join(" · ");
+      await supabase.from("partner_applications").insert({
+        type,
+        full_name: name,
+        phone,
+        email: email || null,
+        city,
+        district,
+        details: detailsText,
+        status: "pending",
+      });
+      setStep(4);
+    } catch (e) {
+      setSubmitError("Something went wrong submitting your application. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const STEPS = ["Personal", "Details", "Documents"];
@@ -1054,10 +1088,11 @@ function PartnerRegister({ goBack, type }) {
               </button>
             ))}
           </div>
+          {submitError && <p className="text-[12px] mb-2" style={{ color: "#C0755B" }}>{submitError}</p>}
           <div className="flex gap-2">
             <button onClick={() => setStep(2)} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back</button>
-            <button onClick={() => step3Valid && setStep(4)} disabled={!step3Valid} className="flex-1 rounded-full py-3 text-sm font-semibold flex items-center justify-center gap-2" style={{ background: step3Valid ? GOLD : BORDER, color: step3Valid ? BG : "#5C736D" }}>
-              Submit application
+            <button onClick={submitApplication} disabled={!step3Valid || submitting} className="flex-1 rounded-full py-3 text-sm font-semibold flex items-center justify-center gap-2" style={{ background: step3Valid ? GOLD : BORDER, color: step3Valid ? BG : "#5C736D" }}>
+              {submitting ? "Submitting…" : "Submit application"}
             </button>
           </div>
         </div>
@@ -1087,13 +1122,26 @@ function PartnerRegister({ goBack, type }) {
 /* ---------- CAR RENTAL ---------- */
 const CARS = [
   { id: "eco", label: "Economy", model: "Hyundai Accent", price: 95, provider: "Lumi Rent a Car", img: "https://loremflickr.com/400/300/hyundai,sedan/all?lock=11" },
+  { id: "eco2", label: "Economy", model: "Toyota Yaris", price: 90, provider: "Lumi Rent a Car", img: "https://loremflickr.com/400/300/toyota,yaris/all?lock=17" },
   { id: "sedan", label: "Sedan", model: "Toyota Camry", price: 145, provider: "Theeb Rent a Car", img: "https://loremflickr.com/400/300/toyota,camry/all?lock=12" },
+  { id: "sedan2", label: "Sedan", model: "Honda Accord", price: 135, provider: "Theeb Rent a Car", img: "https://loremflickr.com/400/300/honda,accord/all?lock=18" },
   { id: "suv", label: "SUV", model: "Toyota Fortuner", price: 220, provider: "Yelo Rent a Car", img: "https://loremflickr.com/400/300/suv,car/all?lock=13" },
+  { id: "suv2", label: "SUV", model: "Nissan Patrol", price: 310, provider: "Yelo Rent a Car", img: "https://loremflickr.com/400/300/nissan,patrol/all?lock=19" },
   { id: "luxury", label: "Luxury", model: "Lexus ES", price: 380, provider: "Sixt Rent a Car", img: "https://loremflickr.com/400/300/lexus,luxury-car/all?lock=14" },
+  { id: "luxury2", label: "Luxury", model: "BMW 5 Series", price: 420, provider: "Sixt Rent a Car", img: "https://loremflickr.com/400/300/bmw,luxury-sedan/all?lock=20" },
   { id: "van", label: "Minivan", model: "Hyundai Staria", price: 260, provider: "Hanco Rent a Car", img: "https://loremflickr.com/400/300/minivan,van/all?lock=15" },
   { id: "pickup", label: "Pickup", model: "Toyota Hilux", price: 190, provider: "Key Rent a Car", img: "https://loremflickr.com/400/300/pickup-truck/all?lock=16" },
+  { id: "budget1", label: "Economy", model: "Kia Pegas", price: 85, provider: "Budget Saudi Arabia", img: "https://loremflickr.com/400/300/kia,sedan/all?lock=41" },
+  { id: "ejar1", label: "Sedan", model: "Hyundai Sonata", price: 130, provider: "Ejar", img: "https://loremflickr.com/400/300/hyundai,sonata/all?lock=42" },
 ];
+const RENTAL_COMPANIES = Array.from(new Set(CARS.map((c) => c.provider))).map((name) => ({
+  name,
+  count: CARS.filter((c) => c.provider === name).length,
+}));
+
 function CarRental({ goBack, navigate }) {
+  const [view, setView] = useState("search");
+  const [companyFilter, setCompanyFilter] = useState(null);
   const [city, setCity] = useState("Riyadh");
   const [district, setDistrict] = useState(SAUDI_CITIES["Riyadh"][0]);
   const [pickupDate, setPickupDate] = useState(""); const [returnDate, setReturnDate] = useState("");
@@ -1104,7 +1152,41 @@ function CarRental({ goBack, navigate }) {
   return (
     <div style={{ color: TEXT }}>
       <Header title="Car rental" onBack={goBack} />
+
       {stage === "input" && (
+        <div className="px-5 mb-4 flex gap-2">
+          <button onClick={() => { setView("search"); setCompanyFilter(null); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "search" ? GOLD : CARD, color: view === "search" ? BG : MUTE, border: view === "search" ? "none" : `1px solid ${BORDER}` }}>
+            <Search size={12} /> Search
+          </button>
+          <button onClick={() => setView("companies")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "companies" ? GOLD : CARD, color: view === "companies" ? BG : MUTE, border: view === "companies" ? "none" : `1px solid ${BORDER}` }}>
+            <Briefcase size={12} /> By Company
+          </button>
+        </div>
+      )}
+
+      {stage === "input" && view === "companies" && (
+        <div className="px-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {RENTAL_COMPANIES.map((co) => (
+            <button
+              key={co.name}
+              onClick={() => { setCompanyFilter(co.name); setStage("choose"); }}
+              className="flex items-center gap-3 rounded-2xl px-4 py-4 text-left"
+              style={{ background: CARD, border: `1px solid ${BORDER}` }}
+            >
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.14)" }}>
+                <Car size={20} color={GOLD} />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold">{co.name}</p>
+                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{co.count} vehicle{co.count > 1 ? "s" : ""} available</p>
+              </div>
+              <ChevronRight size={14} color={FAINT} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {stage === "input" && view === "search" && (
         <div className="px-5">
           <button onClick={() => navigate("register_rental")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
             <span className="flex items-center gap-2 text-sm font-semibold"><Key size={15} color={GOLD} /> Own a car? List it for rent</span>
@@ -1137,9 +1219,14 @@ function CarRental({ goBack, navigate }) {
       )}
       {stage === "choose" && (
         <div className="px-5">
-          <p className="text-xs mb-3" style={{ color: FAINT }}>{district}, {city} · {pickupDate} → {returnDate} · {days} day{days > 1 ? "s" : ""}</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs" style={{ color: FAINT }}>
+              {companyFilter ? companyFilter : can ? `${district}, ${city} · ${pickupDate} → ${returnDate} · ${days} day${days > 1 ? "s" : ""}` : "All available vehicles"}
+            </p>
+            {companyFilter && <button onClick={() => { setCompanyFilter(null); setStage("input"); setView("companies"); }} className="text-[11px]" style={{ color: GOLD }}>Change company</button>}
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-            {CARS.map((c) => {
+            {(companyFilter ? CARS.filter((c) => c.provider === companyFilter) : CARS).map((c) => {
               const isSel = carId === c.id;
               return (
                 <button key={c.id} onClick={() => setCarId(c.id)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-left" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
@@ -1149,13 +1236,15 @@ function CarRental({ goBack, navigate }) {
               );
             })}
           </div>
-          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Reserve — {chosen.price * days} SAR total</button>
+          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+            {days > 0 ? `Reserve — ${chosen.price * days} SAR total` : `Reserve — ${chosen.price} SAR/day`}
+          </button>
         </div>
       )}
       {stage === "confirmed" && (
         <div className="px-5 mt-8 flex flex-col items-center text-center">
           <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Reservation confirmed</h2>
-          <p className="mt-1 text-sm" style={{ color: MUTE }}>Bring your ID and license at pickup.</p>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>{chosen?.provider} will contact you on WhatsApp to confirm pickup details.</p>
           <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
           <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel reservation</button>
         </div>
@@ -1174,26 +1263,37 @@ function CarRental({ goBack, navigate }) {
 /* ---------- MARKETPLACE ---------- */
 const CATEGORIES = ["All", "Cars", "Electronics", "Furniture", "Fashion", "Spare parts"];
 const LISTINGS = [
-  { id: 1, title: "Toyota Camry 2021", price: 62000, category: "Cars", location: "Riyadh", tag: "Featured", seller: "Individual seller", img: "https://loremflickr.com/400/300/toyota,camry/all?lock=21" },
-  { id: 2, title: "iPhone 15 Pro, 256GB", price: 3400, category: "Electronics", location: "Jeddah", tag: null, seller: "Extra Stores", img: "https://loremflickr.com/400/300/iphone,smartphone/all?lock=22" },
-  { id: 3, title: "3-seat sofa, grey", price: 950, category: "Furniture", location: "Dammam", tag: null, seller: "IKEA Marketplace", img: "https://loremflickr.com/400/300/sofa,couch/all?lock=23" },
-  { id: 4, title: "Nike Air Max, size 43", price: 220, category: "Fashion", location: "Riyadh", tag: null, seller: "SHEIN Store", img: "https://loremflickr.com/400/300/sneakers,nike/all?lock=24" },
-  { id: 5, title: "Car tires set (4)", price: 800, category: "Spare parts", location: "Khobar", tag: "New", seller: "Al Jazira Tires Co.", img: "https://loremflickr.com/400/300/car-tires/all?lock=25" },
-  { id: 6, title: "Hyundai Elantra 2020", price: 41000, category: "Cars", location: "Makkah", tag: null, seller: "Individual seller", img: "https://loremflickr.com/400/300/hyundai,elantra/all?lock=26" },
-  { id: 7, title: "Samsung 55\" Smart TV", price: 1600, category: "Electronics", location: "Madinah", tag: "New", seller: "Jarir Bookstore", img: "https://loremflickr.com/400/300/smart-tv,television/all?lock=27" },
-  { id: 8, title: "Dining table + 6 chairs", price: 1200, category: "Furniture", location: "Taif", tag: null, seller: "Home Centre", img: "https://loremflickr.com/400/300/dining-table/all?lock=28" },
-  { id: 9, title: "Men's Thobe, size L", price: 90, category: "Fashion", location: "Abha", tag: null, seller: "Individual seller", img: "https://loremflickr.com/400/300/thobe,mens-fashion/all?lock=29" },
-  { id: 10, title: "Car battery, 70Ah", price: 260, category: "Spare parts", location: "Jubail", tag: null, seller: "AutoZone Saudi", img: "https://loremflickr.com/400/300/car-battery/all?lock=30" },
-  { id: 11, title: "GMC Yukon 2019", price: 118000, category: "Cars", location: "Dammam", tag: "Featured", seller: "Individual seller", img: "https://loremflickr.com/400/300/gmc,suv/all?lock=31" },
-  { id: 12, title: "MacBook Air M2", price: 4200, category: "Electronics", location: "Riyadh", tag: null, seller: "Jarir Bookstore", img: "https://loremflickr.com/400/300/macbook,laptop/all?lock=32" },
-  { id: 13, title: "Leather office chair", price: 480, category: "Furniture", location: "Riyadh", tag: "New", seller: "Home Centre", img: "https://loremflickr.com/400/300/office-chair/all?lock=33" },
-  { id: 14, title: "PlayStation 5", price: 1950, category: "Electronics", location: "Jeddah", tag: "Featured", seller: "Extra Stores", img: "https://loremflickr.com/400/300/playstation,gaming-console/all?lock=34" },
-  { id: 15, title: "Women's handbag, leather", price: 320, category: "Fashion", location: "Khobar", tag: null, seller: "Individual seller", img: "https://loremflickr.com/400/300/handbag,leather-bag/all?lock=35" },
-  { id: 16, title: "Alloy wheels, 18-inch set", price: 1400, category: "Spare parts", location: "Dammam", tag: null, seller: "Al Jazira Tires Co.", img: "https://loremflickr.com/400/300/alloy-wheels,car-rim/all?lock=36" },
+  { id: 1, title: "Toyota Camry 2021", price: 62000, category: "Cars", location: "Riyadh", tag: "Featured", condition: "Excellent", year: "2021", km: "42,000 KM", seller: "Individual seller", phone: "0550 111 001", img: "https://loremflickr.com/400/300/toyota,camry/all?lock=21" },
+  { id: 2, title: "iPhone 15 Pro, 256GB", price: 3400, category: "Electronics", location: "Jeddah", tag: null, seller: "Extra Stores", phone: "0550 111 002", img: "https://loremflickr.com/400/300/iphone,smartphone/all?lock=22" },
+  { id: 3, title: "3-seat sofa, grey", price: 950, category: "Furniture", location: "Dammam", tag: null, seller: "IKEA Marketplace", phone: "0550 111 003", img: "https://loremflickr.com/400/300/sofa,couch/all?lock=23" },
+  { id: 4, title: "Nike Air Max, size 43", price: 220, category: "Fashion", location: "Riyadh", tag: null, seller: "SHEIN Store", phone: "0550 111 004", img: "https://loremflickr.com/400/300/sneakers,nike/all?lock=24" },
+  { id: 5, title: "Car tires set (4)", price: 800, category: "Spare parts", location: "Khobar", tag: "New", seller: "Al Jazira Tires Co.", phone: "0550 111 005", img: "https://loremflickr.com/400/300/car-tires/all?lock=25" },
+  { id: 6, title: "Hyundai Elantra 2020", price: 41000, category: "Cars", location: "Makkah", tag: null, condition: "Good", year: "2020", km: "68,000 KM", seller: "Individual seller", phone: "0550 111 006", img: "https://loremflickr.com/400/300/hyundai,elantra/all?lock=26" },
+  { id: 7, title: "Samsung 55\" Smart TV", price: 1600, category: "Electronics", location: "Madinah", tag: "New", seller: "Jarir Bookstore", phone: "0550 111 007", img: "https://loremflickr.com/400/300/smart-tv,television/all?lock=27" },
+  { id: 8, title: "Dining table + 6 chairs", price: 1200, category: "Furniture", location: "Taif", tag: null, seller: "Home Centre", phone: "0550 111 008", img: "https://loremflickr.com/400/300/dining-table/all?lock=28" },
+  { id: 9, title: "Men's Thobe, size L", price: 90, category: "Fashion", location: "Abha", tag: null, seller: "Individual seller", phone: "0550 111 009", img: "https://loremflickr.com/400/300/thobe,mens-fashion/all?lock=29" },
+  { id: 10, title: "Car battery, 70Ah", price: 260, category: "Spare parts", location: "Jubail", tag: null, seller: "AutoZone Saudi", phone: "0550 111 010", img: "https://loremflickr.com/400/300/car-battery/all?lock=30" },
+  { id: 11, title: "GMC Yukon 2019", price: 118000, category: "Cars", location: "Dammam", tag: "Featured", condition: "Very Good", year: "2019", km: "89,000 KM", seller: "Individual seller", phone: "0550 111 011", img: "https://loremflickr.com/400/300/gmc,suv/all?lock=31" },
+  { id: 12, title: "MacBook Air M2", price: 4200, category: "Electronics", location: "Riyadh", tag: null, seller: "Jarir Bookstore", phone: "0550 111 012", img: "https://loremflickr.com/400/300/macbook,laptop/all?lock=32" },
+  { id: 13, title: "Leather office chair", price: 480, category: "Furniture", location: "Riyadh", tag: "New", seller: "Home Centre", phone: "0550 111 013", img: "https://loremflickr.com/400/300/office-chair/all?lock=33" },
+  { id: 14, title: "PlayStation 5", price: 1950, category: "Electronics", location: "Jeddah", tag: "Featured", seller: "Extra Stores", phone: "0550 111 014", img: "https://loremflickr.com/400/300/playstation,gaming-console/all?lock=34" },
+  { id: 15, title: "Women's handbag, leather", price: 320, category: "Fashion", location: "Khobar", tag: null, seller: "Individual seller", phone: "0550 111 015", img: "https://loremflickr.com/400/300/handbag,leather-bag/all?lock=35" },
+  { id: 16, title: "Alloy wheels, 18-inch set", price: 1400, category: "Spare parts", location: "Dammam", tag: null, seller: "Al Jazira Tires Co.", phone: "0550 111 016", img: "https://loremflickr.com/400/300/alloy-wheels,car-rim/all?lock=36" },
 ];
+const PARTNER_PLATFORMS = [
+  { name: "Haraj Cars", url: "https://haraj.com.sa", icon: Car, tag: "Most Popular", tagColor: "#F0A868", gradient: "linear-gradient(135deg, #8C4A1E, #4A2410)", description: "Saudi Arabia's largest classifieds for used cars and more." },
+  { name: "Syarah", url: "https://syarah.com", icon: Key, tag: "Inspected", tagColor: "#3FD1D1", gradient: "linear-gradient(135deg, #0E6E6E, #0A3D3D)", description: "Buy & sell cars online — inspection reports included." },
+  { name: "OLX Saudi Arabia", url: "https://saudi.olx.com", icon: Tag, tag: "Free Listings", tagColor: "#E8C34A", gradient: "linear-gradient(135deg, #8C6E14, #4A3908)", description: "Free classifieds for cars, electronics & more." },
+  { name: "Opensooq", url: "https://opensooq.com", icon: Globe, tag: "Arab Market", tagColor: "#3FBFA6", gradient: "linear-gradient(135deg, #14453F, #0B2320)", description: "Arab world classifieds — cars, property, general." },
+  { name: "Motory", url: "https://motory.com", icon: Car, tag: "Verified", tagColor: "#5B8FD4", gradient: "linear-gradient(135deg, #1E3A72, #12234A)", description: "Trusted verified car marketplace across KSA." },
+  { name: "CarSwitch", url: "https://ksa.carswitch.com/en", icon: CheckCircle2, tag: "Certified", tagColor: "#A78BFA", gradient: "linear-gradient(135deg, #4C3D8C, #2A2255)", description: "Certified pre-owned cars with 200-point inspections." },
+];
+
 function Marketplace({ goBack, navigate }) {
+  const [view, setView] = useState("browse");
   const [category, setCategory] = useState("All"); const [query, setQuery] = useState("");
   const [dbListings, setDbListings] = useState([]);
+  const [contactListing, setContactListing] = useState(null);
 
   useEffect(() => {
     async function loadListings() {
@@ -1206,7 +1306,11 @@ function Marketplace({ goBack, navigate }) {
           category: r.category || "Cars",
           location: r.location || "Riyadh",
           tag: r.tag || null,
+          condition: r.condition || null,
+          year: r.year || null,
+          km: r.km || null,
           seller: r.seller_name || "Individual seller",
+          phone: r.seller_phone || null,
           img: r.image_url || "https://loremflickr.com/400/300/product/all",
         })));
       }
@@ -1219,27 +1323,127 @@ function Marketplace({ goBack, navigate }) {
   return (
     <div style={{ color: TEXT }}>
       <Header title="Marketplace" onBack={goBack} right={<button onClick={() => navigate("register_seller")} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: GOLD }}><Plus size={18} color={BG} /></button>} />
-      <div className="px-5 mb-3">
-        <button onClick={() => navigate("register_seller")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
-          <span className="flex items-center gap-2 text-sm font-semibold"><ShoppingBag size={15} color={GOLD} /> Become a seller</span>
-          <ChevronRight size={14} color={GOLD} />
+
+      <div className="px-5 mb-3 flex gap-2">
+        <button onClick={() => navigate("register_seller")} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: GOLD, color: BG }}>
+          <Plus size={13} /> Post New Listing
+        </button>
+        <button onClick={() => setView("chats")} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+          <MessageCircle size={13} /> My Chats
         </button>
       </div>
-      <div className="px-5 mb-3"><div className="flex items-center gap-2 rounded-full px-4 py-2.5" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Search size={15} color={FAINT} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search listings" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div></div>
-      <div className="px-5 mb-4 flex gap-2 overflow-x-auto">
-        {CATEGORIES.map((c) => <button key={c} onClick={() => setCategory(c)} className="px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0" style={{ background: category === c ? GOLD : CARD, color: category === c ? BG : MUTE, border: category === c ? "none" : `1px solid ${BORDER}` }}>{c}</button>)}
+
+      <div className="px-5 mb-4 flex gap-2">
+        <button onClick={() => setView("browse")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "browse" ? GOLD : CARD, color: view === "browse" ? BG : MUTE, border: view === "browse" ? "none" : `1px solid ${BORDER}` }}>
+          <Search size={12} /> Browse
+        </button>
+        <button onClick={() => setView("platforms")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "platforms" ? GOLD : CARD, color: view === "platforms" ? BG : MUTE, border: view === "platforms" ? "none" : `1px solid ${BORDER}` }}>
+          <Globe size={12} /> Partner Platforms
+        </button>
       </div>
-      <div className="px-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {filtered.map((l) => (
-          <div key={l.id} className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div className="h-24 relative" style={{ background: BORDER }}>
-              <img src={l.img} alt={l.title} className="w-full h-full object-cover" />
-              {l.tag && <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: GOLD, color: BG }}>{l.tag}</span>}
-            </div>
-            <div className="p-2.5"><p className="text-xs font-semibold leading-tight">{l.title}</p><p className="text-sm font-semibold mt-1" style={{ color: GOLD }}>{l.price.toLocaleString()} SAR</p><p className="text-[10px] mt-1" style={{ color: GREEN }}>{l.seller}</p><p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: FAINT }}><MapPin size={9} /> {l.location}</p></div>
+
+      {view === "chats" && (
+        <div className="px-5 flex flex-col items-center text-center py-12">
+          <MessageCircle size={32} color={FAINT} />
+          <p className="text-sm font-semibold mt-3">No chats yet</p>
+          <p className="text-xs mt-1" style={{ color: FAINT }}>Message a seller from a listing and your conversations will show up here.</p>
+        </div>
+      )}
+
+      {view === "browse" && (
+        <>
+          <div className="px-5 mb-3">
+            <button onClick={() => navigate("register_seller")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+              <span className="flex items-center gap-2 text-sm font-semibold"><ShoppingBag size={15} color={GOLD} /> Become a seller</span>
+              <ChevronRight size={14} color={GOLD} />
+            </button>
           </div>
-        ))}
-      </div>
+          <div className="px-5 mb-3"><div className="flex items-center gap-2 rounded-full px-4 py-2.5" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Search size={15} color={FAINT} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search listings" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div></div>
+          <div className="px-5 mb-4 flex gap-2 overflow-x-auto">
+            {CATEGORIES.map((c) => <button key={c} onClick={() => setCategory(c)} className="px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0" style={{ background: category === c ? GOLD : CARD, color: category === c ? BG : MUTE, border: category === c ? "none" : `1px solid ${BORDER}` }}>{c}</button>)}
+          </div>
+          <div className="px-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((l) => (
+              <div key={l.id} className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <div className="h-36 relative" style={{ background: BORDER }}>
+                  <img src={l.img} alt={l.title} className="w-full h-full object-cover" />
+                  {l.tag && <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full text-[9px] font-semibold flex items-center gap-1" style={{ background: GOLD, color: BG }}><Star size={9} /> {l.tag}</span>}
+                  {l.condition && <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: "rgba(91,143,212,0.85)", color: "#fff" }}>{l.condition}</span>}
+                </div>
+                <div className="p-3.5">
+                  <p className="text-sm font-semibold leading-tight">{l.title}</p>
+                  <p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: FAINT }}><MapPin size={10} /> {l.location} · {l.seller}</p>
+
+                  {(l.year || l.km) && (
+                    <div className="flex gap-2 mt-2.5">
+                      {l.year && <div className="flex-1 rounded-lg py-1.5 text-center" style={{ background: BG }}><p className="text-[9px]" style={{ color: FAINT }}>Year</p><p className="text-xs font-semibold">{l.year}</p></div>}
+                      {l.km && <div className="flex-1 rounded-lg py-1.5 text-center" style={{ background: BG }}><p className="text-[9px]" style={{ color: FAINT }}>Mileage</p><p className="text-xs font-semibold">{l.km}</p></div>}
+                    </div>
+                  )}
+
+                  <p className="text-base font-semibold mt-2.5 flex items-center gap-1" style={{ color: GOLD }}><Tag size={13} /> {l.price.toLocaleString()} SAR</p>
+
+                  {l.phone && (
+                    <div className="flex items-center gap-1.5 mt-2 text-xs" style={{ color: MUTE }}>
+                      <Phone size={12} /> {l.phone}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setContactListing(l)}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold mt-3"
+                    style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
+                  >
+                    <MessageCircle size={13} /> Contact Seller
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {contactListing && (
+        <ContactModal
+          context="marketplace"
+          referenceTitle={contactListing.title}
+          recipientPhone={contactListing.phone}
+          whatsappNumber={SUPPORT_WHATSAPP_NUMBER}
+          whatsappMessage={`Hi, I'm interested in "${contactListing.title}" listed on SayyaraDrive Marketplace.`}
+          onClose={() => setContactListing(null)}
+        />
+      )}
+
+      {view === "platforms" && (
+        <div className="px-5">
+          <h2 className="text-lg font-bold text-center" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Partner Platforms</h2>
+          <p className="text-xs text-center mt-1.5 mb-5" style={{ color: MUTE }}>Browse the biggest buy & sell sites in KSA.</p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {PARTNER_PLATFORMS.map((s) => {
+              const Icon = s.icon;
+              return (
+                <div key={s.name} className="rounded-2xl p-5 relative overflow-hidden" style={{ background: s.gradient, border: `1px solid ${BORDER}` }}>
+                  <span className="absolute top-4 right-4 px-2.5 py-1 rounded-full text-[9px] font-bold" style={{ background: "rgba(0,0,0,0.35)", color: s.tagColor }}>{s.tag}</span>
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4" style={{ background: "rgba(255,255,255,0.12)" }}>
+                    <Icon size={24} color="#fff" />
+                  </div>
+                  <p className="text-base font-bold" style={{ color: "#fff" }}>{s.name}</p>
+                  <p className="text-[12px] mt-1.5 leading-relaxed" style={{ color: "rgba(255,255,255,0.75)" }}>{s.description}</p>
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-1.5 rounded-full py-3 text-xs font-semibold mt-4"
+                    style={{ background: "rgba(255,255,255,0.16)", color: "#fff" }}
+                  >
+                    <ArrowRightLeft size={12} style={{ transform: "rotate(45deg)" }} /> Open Platform
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1257,16 +1461,73 @@ const RESTAURANTS = [
   { id: 9, name: "Sushi Zen", cuisine: "Japanese", rating: 4.8, eta: "20-30 min", city: "Dammam", hours: "13:00–23:00", foodCategory: "rice" },
 ];
 const MENU = {
-  1: [{ id: "m1", name: "Kabsa Chicken", price: 42 }, { id: "m2", name: "Mandi Lamb", price: 58 }, { id: "m3", name: "Grilled Mixed Platter", price: 65 }],
-  2: [{ id: "m4", name: "Classic Beef Burger", price: 28 }, { id: "m5", name: "Fries", price: 12 }, { id: "m6", name: "Chicken Crispy Burger", price: 26 }],
-  3: [{ id: "m7", name: "Grilled Chicken Bowl", price: 34 }, { id: "m8", name: "Quinoa Salad", price: 30 }],
-  4: [{ id: "m9", name: "Kunafa Slice", price: 18 }, { id: "m10", name: "Date Cake", price: 15 }],
-  5: [{ id: "m11", name: "Arabic Coffee (pot)", price: 20 }, { id: "m12", name: "Cardamom Latte", price: 16 }],
-  6: [{ id: "m13", name: "Broasted Chicken Meal", price: 24 }, { id: "m14", name: "Garlic Sauce Extra", price: 5 }],
-  7: [{ id: "m15", name: "Mandi Chicken", price: 45 }, { id: "m16", name: "Mandi Lamb (large)", price: 78 }],
-  8: [{ id: "m17", name: "Spaghetti Bolognese", price: 38 }, { id: "m18", name: "Fettuccine Alfredo", price: 42 }],
-  9: [{ id: "m19", name: "Salmon Sushi Set", price: 55 }, { id: "m20", name: "California Roll (8pc)", price: 32 }],
+  1: [
+    { id: "m1", category: "Grilled Chicken", name: "Half Grilled Chicken", desc: "Marinated overnight and flame-grilled", price: 28 },
+    { id: "m2", category: "Grilled Chicken", name: "Full Grilled Chicken", desc: "Whole chicken with garlic sauce", price: 52 },
+    { id: "m3", category: "Grilled Chicken", name: "Chicken Tikka", desc: "Skewered chicken with spices", price: 32 },
+    { id: "m4", category: "Rice & Mandi", name: "Kabsa Chicken", desc: "Spiced rice with tender chicken", price: 42 },
+    { id: "m5", category: "Rice & Mandi", name: "Mandi Lamb", desc: "Slow-cooked lamb over saffron rice", price: 58 },
+    { id: "m6", category: "BBQ Platters", name: "Mixed Grill Platter", desc: "Chicken, kebab, and kofta for 2", price: 75 },
+  ],
+  2: [
+    { id: "m7", category: "Burgers", name: "Classic Beef Burger", desc: "Beef patty, cheddar, house sauce", price: 28 },
+    { id: "m8", category: "Burgers", name: "Chicken Crispy Burger", desc: "Crispy fried chicken, pickles, mayo", price: 26 },
+    { id: "m9", category: "Burgers", name: "Double Smash Burger", desc: "Two smashed patties, double cheese", price: 36 },
+    { id: "m10", category: "Sides", name: "Fries", desc: "Crispy golden fries", price: 12 },
+    { id: "m11", category: "Sides", name: "Onion Rings", desc: "Crunchy battered onion rings", price: 14 },
+  ],
+  3: [
+    { id: "m12", category: "Bowls", name: "Grilled Chicken Bowl", desc: "Grilled chicken, greens, tahini dressing", price: 34 },
+    { id: "m13", category: "Bowls", name: "Quinoa Salad", desc: "Quinoa, roasted veg, lemon dressing", price: 30 },
+    { id: "m14", category: "Bowls", name: "Falafel Bowl", desc: "Crispy falafel, hummus, pickled veg", price: 28 },
+    { id: "m15", category: "Juices", name: "Fresh Orange Juice", desc: "Cold-pressed, no sugar added", price: 14 },
+  ],
+  4: [
+    { id: "m16", category: "Desserts", name: "Kunafa Slice", desc: "Crispy kunafa with sweet cheese", price: 18 },
+    { id: "m17", category: "Desserts", name: "Date Cake", desc: "Moist cake with Saudi dates", price: 15 },
+    { id: "m18", category: "Desserts", name: "Umm Ali", desc: "Warm bread pudding with nuts", price: 20 },
+  ],
+  5: [
+    { id: "m19", category: "Hot Drinks", name: "Arabic Coffee (pot)", desc: "Traditional qahwa with cardamom", price: 20 },
+    { id: "m20", category: "Hot Drinks", name: "Cardamom Latte", desc: "Espresso, steamed milk, cardamom", price: 16 },
+    { id: "m21", category: "Cold Drinks", name: "Iced Karak", desc: "Chilled spiced milk tea", price: 15 },
+  ],
+  6: [
+    { id: "m22", category: "Fried Chicken", name: "Broasted Chicken Meal", desc: "3pc broasted chicken with rice", price: 24 },
+    { id: "m23", category: "Fried Chicken", name: "Chicken Strips (5pc)", desc: "Crispy strips with dipping sauce", price: 22 },
+    { id: "m24", category: "Extras", name: "Garlic Sauce Extra", desc: "Signature garlic dip", price: 5 },
+  ],
+  7: [
+    { id: "m25", category: "Mandi", name: "Mandi Chicken", desc: "Slow-smoked chicken over rice", price: 45 },
+    { id: "m26", category: "Mandi", name: "Mandi Lamb (large)", desc: "Full lamb shoulder, serves 3", price: 78 },
+    { id: "m27", category: "Sides", name: "Saudi Salad", desc: "Fresh tomato, cucumber, onion", price: 10 },
+  ],
+  8: [
+    { id: "m28", category: "Pasta", name: "Spaghetti Bolognese", desc: "Slow-cooked beef ragu", price: 38 },
+    { id: "m29", category: "Pasta", name: "Fettuccine Alfredo", desc: "Creamy parmesan sauce", price: 42 },
+    { id: "m30", category: "Pasta", name: "Penne Arrabbiata", desc: "Spicy tomato and garlic", price: 34 },
+  ],
+  9: [
+    { id: "m31", category: "Sushi", name: "Salmon Sushi Set", desc: "8pc fresh salmon nigiri & rolls", price: 55 },
+    { id: "m32", category: "Sushi", name: "California Roll (8pc)", desc: "Crab, avocado, cucumber", price: 32 },
+    { id: "m33", category: "Sushi", name: "Spicy Tuna Roll (8pc)", desc: "Tuna, spicy mayo, sesame", price: 36 },
+  ],
 };
+
+/* Generates a reasonable default menu for restaurants that don't have a hand-built one yet (e.g. newly added in Admin) */
+function getMenuForRestaurant(restaurant) {
+  if (!restaurant) return [];
+  if (MENU[restaurant.id]) return MENU[restaurant.id];
+  const cat = restaurant.foodCategory || "rice";
+  const base = [
+    { id: `${restaurant.id}-1`, category: "Chef's Picks", name: "House Special", desc: "Our most popular dish, chef's recommendation", price: 35 },
+    { id: `${restaurant.id}-2`, category: "Chef's Picks", name: "Signature Platter", desc: "A generous sharing platter for 2", price: 60 },
+    { id: `${restaurant.id}-3`, category: "Mains", name: `${restaurant.cuisine || "House"} Classic`, desc: "A well-loved classic done right", price: 28 },
+    { id: `${restaurant.id}-4`, category: "Sides", name: "Side of the Day", desc: "Ask your driver what's fresh today", price: 12 },
+    { id: `${restaurant.id}-5`, category: "Drinks", name: "Soft Drink", desc: "Chilled can, various flavors", price: 6 },
+  ];
+  return base;
+}
 
 /* ---------- FOOD PHOTO (real, category-matched images from a live food-photo API) ---------- */
 function FoodPhoto({ category, alt, className, style }) {
@@ -1323,7 +1584,9 @@ function FoodDelivery({ goBack, navigate }) {
   const allRestaurants = [...dbRestaurants, ...RESTAURANTS];
   function addItem(item) { setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 })); }
   function removeItem(item) { setCart((c) => { const n = { ...c }; if (n[item.id] > 1) n[item.id]--; else delete n[item.id]; return n; }); }
-  const menu = openRestaurant ? (MENU[openRestaurant.id] || []) : [];
+  const menu = getMenuForRestaurant(openRestaurant);
+  const menuByCategory = menu.reduce((acc, m) => { (acc[m.category] = acc[m.category] || []).push(m); return acc; }, {});
+  const cartItems = menu.filter((m) => cart[m.id]);
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
   const cartTotal = menu.reduce((s, m) => s + (cart[m.id] || 0) * m.price, 0);
   const cityOptions = ["All Cities", ...Array.from(new Set(allRestaurants.map((r) => r.city)))];
@@ -1331,6 +1594,8 @@ function FoodDelivery({ goBack, navigate }) {
     (city === "All Cities" || r.city === city) &&
     (r.name.toLowerCase().includes(query.toLowerCase()) || r.cuisine.toLowerCase().includes(query.toLowerCase()))
   );
+
+  function openMenu(r) { setOpenRestaurant(r); setCart({}); setStage("menu"); }
 
   if (stage === "confirmed") return (
     <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
@@ -1347,37 +1612,110 @@ function FoodDelivery({ goBack, navigate }) {
       <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
     </div>
   );
-  if (openRestaurant) return (
+
+  if (stage === "cart" && openRestaurant) return (
     <div style={{ color: TEXT }}>
-      <Header title={openRestaurant.name} onBack={() => setOpenRestaurant(null)} />
-      <div className="mx-5 mb-4 rounded-2xl overflow-hidden" style={{ height: 140, background: CARD, border: `1px solid ${BORDER}` }}>
-        <FoodPhoto category={openRestaurant.foodCategory} alt={openRestaurant.name} className="w-full h-full object-cover" />
-      </div>
-      {menu.length === 0 ? (
-        <div className="px-5 flex flex-col items-center text-center py-10">
-          <UtensilsCrossed size={28} color={FAINT} />
-          <p className="text-sm font-semibold mt-3">Menu coming soon</p>
-          <p className="text-xs mt-1" style={{ color: FAINT }}>This restaurant hasn't added their menu yet — check back soon.</p>
-        </div>
-      ) : (
-      <div className="px-5 flex flex-col gap-2">
-        {menu.map((m) => (
-          <div key={m.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div><p className="text-sm font-semibold">{m.name}</p><p className="text-xs mt-0.5" style={{ color: FAINT }}>{m.price} SAR</p></div>
-            {cart[m.id] ? (
-              <div className="flex items-center gap-3">
+      <Header title="Your cart" onBack={() => setStage("menu")} />
+      <div className="px-5">
+        <p className="text-xs mb-3" style={{ color: FAINT }}>{openRestaurant.name}</p>
+        <div className="flex flex-col gap-2 mb-5">
+          {cartItems.map((m) => (
+            <div key={m.id} className="flex items-center gap-3 rounded-xl px-3 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <FoodPhoto category={openRestaurant.foodCategory} alt={m.name} className="w-12 h-12 rounded-lg object-cover shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold">{m.name}</p>
+                <p className="text-[11px]" style={{ color: GOLD }}>{m.price} SAR</p>
+              </div>
+              <div className="flex items-center gap-2">
                 <button onClick={() => removeItem(m)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: BORDER }}><Minus size={12} color={TEXT} /></button>
                 <span className="text-sm w-3 text-center">{cart[m.id]}</span>
                 <button onClick={() => addItem(m)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: GOLD }}><Plus size={12} color={BG} /></button>
               </div>
-            ) : <button onClick={() => addItem(m)} className="px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: GOLD, color: BG }}>Add</button>}
+            </div>
+          ))}
+          {cartItems.length === 0 && <p className="text-sm text-center py-8" style={{ color: FAINT }}>Your cart is empty.</p>}
+        </div>
+        {cartItems.length > 0 && (
+          <>
+            <div className="rounded-xl px-4 py-3 mb-4 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <p className="text-sm font-semibold" style={{ color: MUTE }}>Total</p>
+              <p className="text-lg font-semibold" style={{ color: GOLD }}>{cartTotal} SAR</p>
+            </div>
+            <button onClick={() => setStage("confirmed")} className="w-full rounded-full py-3.5 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Checkout</button>
+          </>
+        )}
+      </div>
+      <div className="h-8" />
+    </div>
+  );
+
+  if (stage === "menu" && openRestaurant) return (
+    <div style={{ color: TEXT }}>
+      <Header title={openRestaurant.name} onBack={() => { setOpenRestaurant(null); setStage("browse"); }} />
+      <div className="mx-5 mb-4 rounded-2xl overflow-hidden" style={{ height: 140, background: CARD, border: `1px solid ${BORDER}` }}>
+        <FoodPhoto category={openRestaurant.foodCategory} alt={openRestaurant.name} className="w-full h-full object-cover" />
+      </div>
+      <div className="px-5 mb-2">
+        <p className="text-xs" style={{ color: GOLD }}>{openRestaurant.cuisine}</p>
+        <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px]" style={{ color: FAINT }}>
+          <span className="flex items-center gap-1"><MapPin size={11} /> {openRestaurant.city}</span>
+          <span className="flex items-center gap-1"><Clock size={11} /> {openRestaurant.hours}</span>
+          <span className="flex items-center gap-1"><Star size={11} color={GOLD} /> {openRestaurant.rating}</span>
+          <span className="flex items-center gap-1"><Truck size={11} color={GREEN} /> Delivery available</span>
+          <a
+            href={`https://wa.me/${SUPPORT_WHATSAPP_NUMBER}?text=${encodeURIComponent(`Hi, I have a question about ${openRestaurant.name} on SayyaraDrive.`)}`}
+            target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1" style={{ color: GREEN }}
+          >
+            <MessageCircle size={11} /> WhatsApp
+          </a>
+        </div>
+      </div>
+
+      <div className="px-5 flex flex-col gap-5 mt-4">
+        {Object.entries(menuByCategory).map(([cat, items]) => (
+          <div key={cat}>
+            <div className="flex items-center gap-2 mb-2.5">
+              <div className="w-1 h-4 rounded-full" style={{ background: GOLD }} />
+              <p className="text-sm font-semibold">{cat}</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              {items.map((m) => (
+                <div key={m.id} className="flex items-center gap-3 rounded-xl px-3 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <FoodPhoto category={openRestaurant.foodCategory} alt={m.name} className="w-14 h-14 rounded-lg object-cover shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold">{m.name}</p>
+                    <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{m.desc}</p>
+                    <p className="text-xs font-semibold mt-1" style={{ color: GOLD }}>{m.price.toFixed(2)} SAR</p>
+                  </div>
+                  {cart[m.id] ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={() => removeItem(m)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: BORDER }}><Minus size={12} color={TEXT} /></button>
+                      <span className="text-sm w-3 text-center">{cart[m.id]}</span>
+                      <button onClick={() => addItem(m)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: GOLD }}><Plus size={12} color={BG} /></button>
+                    </div>
+                  ) : (
+                    <button onClick={() => addItem(m)} className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: GOLD }}><Plus size={15} color={BG} /></button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         ))}
       </div>
+
+      {cartCount > 0 && (
+        <div className="px-5 mt-6 sticky bottom-3">
+          <button onClick={() => setStage("cart")} className="w-full rounded-full py-3.5 text-sm font-semibold flex items-center justify-between px-5" style={{ background: GOLD, color: BG, boxShadow: "0 8px 20px rgba(217,166,83,0.35)" }}>
+            <span className="flex items-center gap-2"><Bag size={15} /> {cartCount} item{cartCount > 1 ? "s" : ""}</span>
+            <span>View cart · {cartTotal} SAR</span>
+          </button>
+        </div>
       )}
-      {cartCount > 0 && <div className="px-5 mt-4"><button onClick={() => setStage("confirmed")} className="w-full rounded-full py-3.5 text-sm font-semibold flex items-center justify-between px-5" style={{ background: GOLD, color: BG }}><span className="flex items-center gap-2"><Bag size={15} /> {cartCount} items</span><span>{cartTotal} SAR</span></button></div>}
+      <div className="h-8" />
     </div>
   );
+
   return (
     <div style={{ color: TEXT }}>
       <Header title="Food delivery" onBack={goBack} />
@@ -1423,7 +1761,7 @@ function FoodDelivery({ goBack, navigate }) {
       {/* Restaurant cards */}
       <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
         {filteredRestaurants.map((r) => (
-          <button key={r.id} onClick={() => setOpenRestaurant(r)} className="text-left rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <button key={r.id} onClick={() => openMenu(r)} className="text-left rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="relative" style={{ height: 130 }}>
               <FoodPhoto category={r.foodCategory} alt={r.name} className="w-full h-full object-cover" />
               <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[9px] font-semibold flex items-center gap-1" style={{ background: "rgba(91,143,212,0.85)", color: "#fff" }}>
@@ -1458,16 +1796,28 @@ function FoodDelivery({ goBack, navigate }) {
 
 /* ---------- LOGISTICS ---------- */
 const PARCEL_SIZES = [{ id: "small", label: "Small", sub: "Up to 5kg", price: 20 }, { id: "medium", label: "Medium", sub: "Up to 20kg", price: 40 }, { id: "large", label: "Large", sub: "Needs a van", price: 90 }];
+const COURIER_PARTNERS = [
+  { name: "Aramex", coverage: "220+ countries · full KSA coverage", tiers: [{ label: "Standard", eta: "2-3 days", price: 20 }, { label: "Express", eta: "Next day", price: 28 }] },
+  { name: "SMSA Express", coverage: "Nationwide, strong last-mile network", tiers: [{ label: "Standard", eta: "1-2 days", price: 25 }, { label: "Express", eta: "Same day (select cities)", price: 38 }] },
+  { name: "Naqel Express", coverage: "Nationwide, backed by Saudi Post", tiers: [{ label: "Standard", eta: "2 days", price: 22 }, { label: "Express", eta: "Next day", price: 32 }] },
+  { name: "Zajil Express", coverage: "Riyadh–Jeddah–Dammam corridor specialist", tiers: [{ label: "Standard", eta: "1-2 days", price: 18 }, { label: "Super Express", eta: "Next day AM", price: 45 }] },
+  { name: "Barq Express", coverage: "Hyperlocal same-day in Riyadh & Jeddah", tiers: [{ label: "2-Hour Delivery", eta: "Within 2 hours", price: 35 }, { label: "Same Day", eta: "By end of day", price: 25 }] },
+  { name: "Saudi Post (SPL)", coverage: "Official postal service, all of KSA", tiers: [{ label: "Economy", eta: "3-5 days", price: 15 }, { label: "Express", eta: "1-2 days", price: 30 }] },
+];
+
 function Logistics({ goBack, navigate }) {
+  const [view, setView] = useState("request");
+  const [openCourier, setOpenCourier] = useState(null);
   const [pickupAddress, setPickupAddress] = useState(""); const [dropoffAddress, setDropoffAddress] = useState("");
   const [pickupContact, setPickupContact] = useState(""); const [dropoffContact, setDropoffContact] = useState("");
   const [size, setSize] = useState("small"); const [stage, setStage] = useState("input");
+  const [chosenTier, setChosenTier] = useState(null);
   const chosen = PARCEL_SIZES.find((s) => s.id === size);
   const can = pickupAddress.trim() && dropoffAddress.trim() && pickupContact.trim() && dropoffContact.trim();
   if (stage === "confirmed") return (
     <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
       <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Pickup requested</h2>
-      <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver will contact you on WhatsApp.</p>
+      <p className="mt-1 text-sm" style={{ color: MUTE }}>{openCourier ? `${openCourier.name} will contact you on WhatsApp.` : "Driver will contact you on WhatsApp."}</p>
       <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
       <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel pickup</button>
     </div>
@@ -1479,25 +1829,70 @@ function Logistics({ goBack, navigate }) {
       <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
     </div>
   );
+
+  if (openCourier) return (
+    <div style={{ color: TEXT }}>
+      <Header title={openCourier.name} onBack={() => setOpenCourier(null)} />
+      <div className="px-5 mb-4">
+        <p className="text-xs" style={{ color: FAINT }}>{openCourier.coverage}</p>
+      </div>
+      <div className="px-5 flex flex-col gap-2 mb-4">
+        {openCourier.tiers.map((t) => (
+          <div key={t.label} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div><p className="text-sm font-semibold">{t.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{t.eta}</p></div>
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-semibold" style={{ color: GOLD }}>~{t.price} SAR</p>
+              <button onClick={() => { setChosenTier(t); setStage("input"); setView("request"); }} className="px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: GOLD, color: BG }}>Select</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="px-5 text-[10px]" style={{ color: FAINT }}>Rates shown are estimates — final pricing is confirmed by {openCourier.name} at pickup.</p>
+    </div>
+  );
+
   return (
     <div style={{ color: TEXT }}>
       <Header title="Send a parcel" onBack={goBack} />
       <div className="mx-5 mb-4 rounded-2xl overflow-hidden" style={{ height: 130, background: CARD, border: `1px solid ${BORDER}` }}>
         <img src="https://loremflickr.com/500/260/delivery-van,courier/all?lock=51" alt="Logistics" className="w-full h-full object-cover" />
       </div>
-      <div className="px-5 mb-4">
-        <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: FAINT }}>Delivery partners</p>
-        <div className="flex gap-2 flex-wrap">
-          {["Aramex", "SMSA Express", "Zajil", "Barq"].map((p) => (
-            <span key={p} className="px-3 py-1.5 rounded-full text-[11px] font-medium" style={{ background: CARD, border: `1px solid ${BORDER}`, color: MUTE }}>{p}</span>
+
+      <div className="px-5 mb-4 flex gap-2">
+        <button onClick={() => setView("request")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "request" ? GOLD : CARD, color: view === "request" ? BG : MUTE, border: view === "request" ? "none" : `1px solid ${BORDER}` }}>
+          <Package size={12} /> Request Pickup
+        </button>
+        <button onClick={() => setView("couriers")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "couriers" ? GOLD : CARD, color: view === "couriers" ? BG : MUTE, border: view === "couriers" ? "none" : `1px solid ${BORDER}` }}>
+          <Truck size={12} /> Courier Partners
+        </button>
+      </div>
+
+      {view === "couriers" && (
+        <div className="px-5 flex flex-col gap-2">
+          {COURIER_PARTNERS.map((c) => (
+            <button key={c.name} onClick={() => setOpenCourier(c)} className="flex items-center justify-between rounded-xl px-4 py-3 text-left" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div>
+                <p className="text-sm font-semibold">{c.name}</p>
+                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{c.coverage}</p>
+              </div>
+              <ChevronRight size={14} color={FAINT} />
+            </button>
           ))}
         </div>
-      </div>
+      )}
+
+      {view === "request" && (
       <div className="px-5">
         <button onClick={() => navigate("register_logistics")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
           <span className="flex items-center gap-2 text-sm font-semibold"><Truck size={15} color={GOLD} /> Become a delivery partner</span>
           <ChevronRight size={14} color={GOLD} />
         </button>
+        {chosenTier && (
+          <div className="rounded-xl px-4 py-3 mb-4 flex items-center justify-between" style={{ background: "rgba(217,166,83,0.1)", border: `1px solid rgba(217,166,83,0.3)` }}>
+            <p className="text-xs" style={{ color: MUTE }}>Selected: <span style={{ color: GOLD, fontWeight: 600 }}>{openCourier?.name || chosenTier.label}</span></p>
+            <button onClick={() => setChosenTier(null)} className="text-[11px]" style={{ color: "#C0755B" }}>Clear</button>
+          </div>
+        )}
         <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>PICKUP</p>
         <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><MapPin size={14} color={GREEN} /><input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} placeholder="Pickup address" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
@@ -1519,8 +1914,9 @@ function Logistics({ goBack, navigate }) {
             );
           })}
         </div>
-        <button onClick={() => can && setStage("confirmed")} disabled={!can} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>Request pickup — {chosen.price} SAR</button>
+        <button onClick={() => can && setStage("confirmed")} disabled={!can} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>Request pickup — {chosenTier ? chosenTier.price : chosen.price} SAR</button>
       </div>
+      )}
     </div>
   );
 }
@@ -2518,9 +2914,21 @@ function DriverProfile({ goBack, navigate, currentDriver, onLogout }) {
         </div>
       )}
 
-      <div className="px-5 mb-5">
+      <div className="px-5 mb-5 flex flex-col gap-2">
         <button onClick={() => navigate("driver_trips")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <span className="flex items-center gap-3 text-sm"><Route size={15} color={GOLD} /> Trip history & earnings</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
+        <button onClick={() => navigate("notifications")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><Bell size={15} color={GOLD} /> Notifications</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
+        <button onClick={() => navigate("driver_messages")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><MessageCircle size={15} color={GOLD} /> Messages</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
+        <button onClick={() => navigate("push_settings")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><Zap size={15} color={GOLD} /> Push notification settings</span>
           <ChevronRight size={14} color="#5C736D" />
         </button>
       </div>
@@ -2529,6 +2937,264 @@ function DriverProfile({ goBack, navigate, currentDriver, onLogout }) {
         <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: "#C0755B" }}>
           <LogOut size={15} /> Log out
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- NOTIFICATIONS ---------- */
+function NotificationsScreen({ goBack, currentDriver, currentAdmin }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  async function loadNotifications() {
+    setLoading(true);
+    let query = supabase.from("notifications").select("*").order("created_at", { ascending: false });
+    if (currentAdmin) {
+      query = query.eq("recipient_type", "admin");
+    } else if (currentDriver?.profile) {
+      query = query.or(`recipient_phone.eq.${currentDriver.profile.mobile_number},recipient_type.eq.all`);
+    } else {
+      query = query.eq("recipient_type", "all");
+    }
+    const { data } = await query;
+    setItems(data || []);
+    setLoading(false);
+  }
+  useEffect(() => { loadNotifications(); }, []);
+
+  async function markRead(n) {
+    if (!n.read) {
+      await supabase.from("notifications").update({ read: true }).eq("id", n.id);
+      loadNotifications();
+    }
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Notifications" onBack={goBack} />
+      <div className="px-5">
+        {loading && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>Loading…</p>}
+        {!loading && items.length === 0 && (
+          <div className="flex flex-col items-center text-center py-12">
+            <Bell size={32} color={FAINT} />
+            <p className="text-sm font-semibold mt-3">No notifications yet</p>
+            <p className="text-xs mt-1" style={{ color: FAINT }}>Updates about your account and activity will show up here.</p>
+          </div>
+        )}
+        <div className="flex flex-col gap-2">
+          {items.map((n) => (
+            <button key={n.id} onClick={() => markRead(n)} className="w-full text-left rounded-xl px-4 py-3" style={{ background: n.read ? CARD : "rgba(217,166,83,0.08)", border: `1px solid ${n.read ? BORDER : "rgba(217,166,83,0.3)"}` }}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">{n.title}</p>
+                {!n.read && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: GOLD }} />}
+              </div>
+              {n.body && <p className="text-[11px] mt-1" style={{ color: FAINT }}>{n.body}</p>}
+              <p className="text-[10px] mt-1.5" style={{ color: FAINT }}>{new Date(n.created_at).toLocaleString()}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- CONTACT / MESSAGE MODAL (reusable) ---------- */
+function ContactModal({ context, referenceTitle, recipientPhone, whatsappNumber, whatsappMessage, onClose }) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const can = name.trim() && phone.trim() && body.trim();
+
+  async function send() {
+    setSending(true);
+    try {
+      await supabase.from("messages").insert({
+        context,
+        reference_title: referenceTitle,
+        sender_name: name,
+        sender_phone: phone,
+        recipient_phone: recipientPhone || null,
+        body,
+      });
+      setSent(true);
+    } catch (e) { /* still show sent state so user isn't blocked */ setSent(true); }
+    setSending(false);
+  }
+
+  return (
+    <div className="fixed inset-0 flex items-end justify-center z-50" style={{ background: "rgba(0,0,0,0.6)" }}>
+      <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+        {!sent ? (
+          <>
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-base font-semibold">Send a message</h2>
+              <button onClick={onClose}><X size={18} color={MUTE} /></button>
+            </div>
+            {referenceTitle && <p className="text-xs mb-4" style={{ color: FAINT }}>About: <span style={{ color: GOLD }}>{referenceTitle}</span></p>}
+            <div className="flex flex-col gap-3">
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Your phone" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+              <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Write your message…" rows={3} className="rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+              <button onClick={send} disabled={!can || sending} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>
+                {sending ? "Sending…" : "Send message"}
+              </button>
+              {whatsappNumber && (
+                <a
+                  href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(whatsappMessage || "Hi, I have a question.")}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-1.5 rounded-full py-3 text-xs font-semibold"
+                  style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
+                >
+                  <MessageCircle size={13} /> Or continue on WhatsApp
+                </a>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col items-center text-center py-4">
+            <CheckCircle2 size={40} color={GREEN} /><h2 className="mt-3 text-base font-semibold">Message sent</h2>
+            <p className="text-xs mt-1" style={{ color: MUTE }}>They'll get back to you soon.</p>
+            <button onClick={onClose} className="w-full mt-4 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Done</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- push notifications ---------- */
+const VAPID_PUBLIC_KEY = "BIF6pt0TZ39nUQfCCOfyXIqqlj5vQJ6TZ3nziSBlCE5KgL16zjnaluHgcLlGs_sFfHw2TU-hL5dXJGQNqqK623Q";
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+/* ---------- DRIVER MESSAGES ---------- */
+function DriverMessages({ goBack, currentDriver }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const phone = currentDriver?.profile?.mobile_number;
+
+  useEffect(() => {
+    async function load() {
+      if (!phone) { setLoading(false); return; }
+      const { data } = await supabase.from("messages").select("*").eq("recipient_phone", phone).order("created_at", { ascending: false });
+      setItems(data || []);
+      setLoading(false);
+    }
+    load();
+  }, [phone]);
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Messages" onBack={goBack} />
+      <div className="px-5">
+        {!phone && <p className="text-sm text-center mt-6" style={{ color: FAINT }}>Log in to see your messages.</p>}
+        {loading && phone && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>Loading…</p>}
+        {!loading && phone && items.length === 0 && (
+          <div className="flex flex-col items-center text-center py-12">
+            <MessageCircle size={32} color={FAINT} />
+            <p className="text-sm font-semibold mt-3">No messages yet</p>
+          </div>
+        )}
+        <div className="flex flex-col gap-2">
+          {items.map((m) => (
+            <div key={m.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">{m.sender_name}</p>
+                <p className="text-[10px]" style={{ color: FAINT }}>{new Date(m.created_at).toLocaleDateString()}</p>
+              </div>
+              {m.reference_title && <p className="text-[11px] mt-0.5" style={{ color: GOLD }}>About: {m.reference_title}</p>}
+              <p className="text-xs mt-1.5" style={{ color: MUTE }}>{m.body}</p>
+              <p className="text-[10px] mt-1.5 flex items-center gap-1" style={{ color: FAINT }}><Phone size={9} /> {m.sender_phone}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- PUSH NOTIFICATION SETTINGS ---------- */
+function PushSettings({ goBack, currentDriver }) {
+  const [status, setStatus] = useState("checking"); // checking | unsupported | denied | off | on | working
+  const [error, setError] = useState("");
+  const phone = currentDriver?.profile?.mobile_number;
+
+  useEffect(() => {
+    async function check() {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) { setStatus("unsupported"); return; }
+      if (Notification.permission === "denied") { setStatus("denied"); return; }
+      try {
+        const reg = await navigator.serviceWorker.register("/sw.js");
+        const sub = await reg.pushManager.getSubscription();
+        setStatus(sub ? "on" : "off");
+      } catch (e) { setStatus("off"); }
+    }
+    check();
+  }, []);
+
+  async function enablePush() {
+    if (!phone) { setError("Log in as a driver first."); return; }
+    setStatus("working");
+    setError("");
+    try {
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") { setStatus("denied"); return; }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+      await supabase.from("push_subscriptions").insert({ driver_phone: phone, subscription: sub.toJSON() });
+      setStatus("on");
+    } catch (e) {
+      setError("Couldn't enable push notifications on this device.");
+      setStatus("off");
+    }
+  }
+
+  async function disablePush() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+    } catch (e) { /* ignore */ }
+    setStatus("off");
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Push notifications" onBack={goBack} />
+      <div className="px-5">
+        <div className="rounded-2xl px-4 py-4 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="flex items-center gap-3 mb-2">
+            <Zap size={18} color={GOLD} />
+            <p className="text-sm font-semibold">Get notified instantly</p>
+          </div>
+          <p className="text-xs" style={{ color: MUTE }}>Turn on push notifications to get alerted about new ride requests, warnings, and account updates — even when the app is closed.</p>
+        </div>
+
+        {status === "unsupported" && <p className="text-xs text-center" style={{ color: FAINT }}>Push notifications aren't supported on this browser/device.</p>}
+        {status === "denied" && <p className="text-xs text-center" style={{ color: "#C0755B" }}>Notifications are blocked for this site. Enable them in your browser settings to turn this on.</p>}
+        {error && <p className="text-xs text-center mb-2" style={{ color: "#C0755B" }}>{error}</p>}
+
+        {(status === "on") && (
+          <button onClick={disablePush} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(192,117,91,0.12)", color: "#C0755B" }}>Turn off push notifications</button>
+        )}
+        {(status === "off" || status === "working") && (
+          <button onClick={enablePush} disabled={status === "working"} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+            {status === "working" ? "Enabling…" : "Turn on push notifications"}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2591,7 +3257,7 @@ function AdminLogin({ goBack, navigate, onLoggedIn }) {
 }
 
 /* ---------- GENERIC ADMIN LIST (drivers, passengers, companies, marketplace, jobs, food, logistics, fleet, violations) ---------- */
-function AdminListPage({ goBack, title, table, columns, showDriverActions, deletable, addFields, statusToggle }) {
+function AdminListPage({ goBack, title, table, columns, showDriverActions, deletable, addFields, statusToggle, approvalActions }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2610,21 +3276,46 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
 
   useEffect(() => { loadRows(); }, []);
 
+  async function sendPush(driverPhone, title, body) {
+    try {
+      await fetch("/.netlify/functions/send-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driverPhone, title, body }),
+      });
+    } catch (e) { /* push is best-effort; in-app notification already saved */ }
+  }
+
   async function addWarning(driver) {
     const newCount = (driver.warning_count || 0) + 1;
     const newStatus = newCount >= 5 ? "blocked" : "warned";
     await supabase.from("violations").insert({ driver_id: driver.id, reason: "Manual warning from admin" });
     await supabase.from("drivers").update({ warning_count: newCount, status: newStatus }).eq("id", driver.id);
+    const title = newStatus === "blocked" ? "Your account has been blocked" : "You received a warning";
+    const body = newStatus === "blocked" ? "You've reached 5 warnings and your account is now blocked. Contact support." : `Warning ${newCount}/5. Please review SayyaraDrive's driver guidelines.`;
+    await supabase.from("notifications").insert({ recipient_phone: driver.mobile_number, recipient_type: "driver", title, body });
+    sendPush(driver.mobile_number, title, body);
     loadRows();
   }
 
   async function unblockDriver(driver) {
     await supabase.from("drivers").update({ status: "active", warning_count: 0 }).eq("id", driver.id);
+    const title = "Your account has been unblocked";
+    const body = "You can now go online and accept rides again.";
+    await supabase.from("notifications").insert({ recipient_phone: driver.mobile_number, recipient_type: "driver", title, body });
+    sendPush(driver.mobile_number, title, body);
     loadRows();
   }
 
   async function toggleVerified(driver) {
-    await supabase.from("drivers").update({ verified: !driver.verified }).eq("id", driver.id);
+    const nowVerified = !driver.verified;
+    await supabase.from("drivers").update({ verified: nowVerified }).eq("id", driver.id);
+    if (nowVerified) {
+      const title = "You're verified!";
+      const body = "Your documents have been approved. You now have a verified badge.";
+      await supabase.from("notifications").insert({ recipient_phone: driver.mobile_number, recipient_type: "driver", title, body });
+      sendPush(driver.mobile_number, title, body);
+    }
     loadRows();
   }
 
@@ -2635,6 +3326,17 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
 
   async function toggleSold(row) {
     await supabase.from(table).update({ status: row.status === "sold" ? "active" : "sold" }).eq("id", row.id);
+    loadRows();
+  }
+
+  async function setApplicationStatus(row, newStatus) {
+    await supabase.from(table).update({ status: newStatus }).eq("id", row.id);
+    if (table === "partner_applications" && (newStatus === "approved" || newStatus === "rejected")) {
+      const title = newStatus === "approved" ? "Your application was approved" : "Your application was not approved";
+      const body = newStatus === "approved" ? `Your ${row.type} application has been approved. Our team will be in touch.` : `Your ${row.type} application was not approved this time.`;
+      await supabase.from("notifications").insert({ recipient_phone: row.phone, recipient_type: "driver", title, body });
+      sendPush(row.phone, title, body);
+    }
     loadRows();
   }
 
@@ -2676,7 +3378,7 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
         {!loading && displayRows.length === 0 && <p className="text-sm text-center mt-6" style={{ color: FAINT }}>No records here.</p>}
         <div className="flex flex-col gap-2">
           {displayRows.map((r) => {
-            const statusColor = r.status === "blocked" ? "#C0755B" : r.status === "warned" ? GOLD : GREEN;
+            const statusColor = r.status === "blocked" || r.status === "rejected" ? "#C0755B" : r.status === "warned" || r.status === "pending" ? GOLD : GREEN;
             return (
               <div key={r.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                 <div className="flex items-center justify-between mb-1">
@@ -2721,6 +3423,21 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
                     {r.status === "sold" ? "Mark as available again" : "Mark as sold"}
                   </button>
                 )}
+                {approvalActions && r.status === "pending" && (
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => setApplicationStatus(r, "rejected")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: "rgba(192,117,91,0.12)", color: "#C0755B" }}>
+                      Reject
+                    </button>
+                    <button onClick={() => setApplicationStatus(r, "approved")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: "rgba(91,143,212,0.15)", color: GREEN }}>
+                      Approve
+                    </button>
+                  </div>
+                )}
+                {approvalActions && r.status !== "pending" && (
+                  <button onClick={() => setApplicationStatus(r, "pending")} className="w-full mt-3 rounded-full py-2 text-xs font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: MUTE }}>
+                    Reset to pending
+                  </button>
+                )}
               </div>
             );
           })}
@@ -2758,10 +3475,64 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
   );
 }
 
+/* ---------- ADMIN BROADCAST ---------- */
+function AdminBroadcast({ goBack }) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [audience, setAudience] = useState("all");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const can = title.trim();
+
+  async function send() {
+    setSending(true);
+    await supabase.from("notifications").insert({
+      recipient_type: audience,
+      recipient_phone: null,
+      title,
+      body,
+    });
+    setSending(false);
+    setSent(true);
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Send announcement" onBack={goBack} />
+      <div className="px-5">
+        {!sent ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs" style={{ color: MUTE }}>This appears in the notification bell for everyone in the audience you pick.</p>
+            <div className="rounded-xl px-4 py-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <select value={audience} onChange={(e) => setAudience(e.target.value)} className="bg-transparent outline-none text-sm w-full py-3" style={{ color: TEXT }}>
+                <option value="all" style={{ background: CARD }}>Everyone (passengers & drivers)</option>
+                <option value="driver" style={{ background: CARD }}>All drivers only</option>
+              </select>
+            </div>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (e.g. Eid holiday hours)" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Message (optional)" rows={3} className="rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+            <button onClick={send} disabled={!can || sending} className="w-full rounded-full py-3 text-sm font-semibold mt-1" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>
+              {sending ? "Sending…" : "Send announcement"}
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center text-center py-8">
+            <CheckCircle2 size={44} color={GREEN} />
+            <h2 className="mt-4 text-lg font-semibold">Announcement sent</h2>
+            <button onClick={() => { setSent(false); setTitle(""); setBody(""); }} className="w-full max-w-xs mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Send another</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- ADMIN OVERVIEW (sidebar-style dashboard) ---------- */
 const ADMIN_SECTIONS = [
   { id: "drivers", label: "Drivers", table: "drivers", icon: Car },
   { id: "passengers", label: "Passengers", table: "passengers", icon: Users },
+  { id: "partner_applications", label: "Applications", table: "partner_applications", icon: Briefcase },
+  { id: "messages", label: "Messages", table: "messages", icon: MessageCircle },
   { id: "companies", label: "Companies", table: "companies", icon: Briefcase },
   { id: "marketplace_listings", label: "Marketplace", table: "marketplace_listings", icon: ShoppingBag },
   { id: "restaurants", label: "Restaurants", table: "restaurants", icon: UtensilsCrossed },
@@ -2803,9 +3574,14 @@ function AdminOverview({ navigate, goBack, onLogout }) {
         </button>
       </div>
 
-      <div className="px-5 sm:px-8 mb-6">
-        <p className="text-sm font-semibold mb-1">Platform overview</p>
-        <p className="text-[11px]" style={{ color: FAINT }}>Live stats across all modules</p>
+      <div className="px-5 sm:px-8 mb-6 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold mb-1">Platform overview</p>
+          <p className="text-[11px]" style={{ color: FAINT }}>Live stats across all modules</p>
+        </div>
+        <button onClick={() => navigate("admin_broadcast")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: GOLD, color: BG }}>
+          <Bell size={13} /> Announce
+        </button>
       </div>
 
       <div className="px-5 sm:px-8 grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -2889,6 +3665,9 @@ export default function SayyaraDriveApp() {
     driver: <DriverApp goBack={goBack} navigate={navigate} currentDriver={currentDriver} />,
     driver_profile: <DriverProfile goBack={goBack} navigate={navigate} currentDriver={currentDriver} onLogout={driverLogout} />,
     driver_trips: <DriverTripHistory goBack={goBack} currentDriver={currentDriver} />,
+    notifications: <NotificationsScreen goBack={goBack} currentDriver={currentDriver} currentAdmin={currentAdmin} />,
+    driver_messages: <DriverMessages goBack={goBack} currentDriver={currentDriver} />,
+    push_settings: <PushSettings goBack={goBack} currentDriver={currentDriver} />,
     airport: <BookRide goBack={goBack} />,
     intercity: <BookRide goBack={goBack} />,
     rentals: <CarRental goBack={goBack} navigate={navigate} />,
@@ -2913,9 +3692,12 @@ export default function SayyaraDriveApp() {
     admin_drivers: <AdminListPage goBack={goBack} title="Drivers" table="drivers" showDriverActions columns={[{key:"full_name",label:"Name"},{key:"iqama_number",label:"Iqama"},{key:"vehicle_number",label:"Vehicle"},{key:"mobile_number",label:"Mobile"},{key:"city_type",label:"City type"}]} />,
     admin_passengers: <AdminListPage goBack={goBack} title="Passengers" table="passengers" columns={[{key:"full_name",label:"Name"},{key:"mobile_number",label:"Mobile"}]} />,
     admin_companies: <AdminListPage goBack={goBack} title="Companies" table="companies" columns={[{key:"name",label:"Name"},{key:"contact_name",label:"Contact"},{key:"mobile_number",label:"Mobile"},{key:"fleet_size",label:"Fleet size"}]} />,
-    admin_marketplace_listings: <AdminListPage goBack={goBack} title="Marketplace" table="marketplace_listings" deletable statusToggle columns={[{key:"title",label:"Title"},{key:"seller_name",label:"Seller"},{key:"price",label:"Price"},{key:"category",label:"Category"},{key:"location",label:"Location"}]} addFields={[{key:"title",label:"Title",required:true},{key:"price",label:"Price (SAR)",required:true},{key:"category",label:"Category",type:"select",options:["Cars","Electronics","Furniture","Fashion","Spare parts"],required:true},{key:"location",label:"City",required:true},{key:"seller_name",label:"Seller name"},{key:"image_url",label:"Image URL (optional)"}]} />,
+    admin_marketplace_listings: <AdminListPage goBack={goBack} title="Marketplace" table="marketplace_listings" deletable statusToggle columns={[{key:"title",label:"Title"},{key:"seller_name",label:"Seller"},{key:"price",label:"Price"},{key:"category",label:"Category"},{key:"location",label:"Location"}]} addFields={[{key:"title",label:"Title",required:true},{key:"price",label:"Price (SAR)",required:true},{key:"category",label:"Category",type:"select",options:["Cars","Electronics","Furniture","Fashion","Spare parts"],required:true},{key:"location",label:"City",required:true},{key:"seller_name",label:"Seller name"},{key:"seller_phone",label:"Seller phone"},{key:"condition",label:"Condition (e.g. Excellent, Like New)"},{key:"year",label:"Year (cars only)"},{key:"km",label:"Mileage (cars only)"},{key:"image_url",label:"Image URL (optional)"}]} />,
     admin_restaurants: <AdminListPage goBack={goBack} title="Restaurants" table="restaurants" deletable columns={[{key:"name",label:"Name"},{key:"cuisine",label:"Cuisine"},{key:"city",label:"City"},{key:"hours",label:"Hours"}]} addFields={[{key:"name",label:"Restaurant name",required:true},{key:"cuisine",label:"Cuisine (e.g. Arabic, Fast food)",required:true},{key:"city",label:"City",required:true},{key:"hours",label:"Hours (e.g. 10:00–23:00)"},{key:"food_category",label:"Photo type",type:"select",options:["rice","burger","dessert","pasta","butter-chicken"],required:true}]} />,
     admin_jobs: <AdminListPage goBack={goBack} title="Jobs" table="jobs" deletable columns={[{key:"title",label:"Title"},{key:"company",label:"Company"},{key:"location",label:"Location"},{key:"pay",label:"Pay"}]} addFields={[{key:"title",label:"Job title",required:true},{key:"company",label:"Company name",required:true},{key:"location",label:"City",required:true},{key:"pay",label:"Pay",required:true},{key:"job_type",label:"Type",type:"select",options:["Full-time","Part-time","Flexible","Freelance"]},{key:"phone",label:"Contact phone"},{key:"description",label:"Description"}]} />,
+    admin_partner_applications: <AdminListPage goBack={goBack} title="Applications" table="partner_applications" deletable approvalActions columns={[{key:"full_name",label:"Name"},{key:"type",label:"Type"},{key:"phone",label:"Phone"},{key:"email",label:"Email"},{key:"city",label:"City"},{key:"district",label:"District"},{key:"details",label:"Details"}]} />,
+    admin_messages: <AdminListPage goBack={goBack} title="Messages" table="messages" deletable columns={[{key:"sender_name",label:"From"},{key:"sender_phone",label:"Phone"},{key:"context",label:"About"},{key:"reference_title",label:"Reference"},{key:"body",label:"Message"}]} />,
+    admin_broadcast: <AdminBroadcast goBack={goBack} />,
     admin_food_orders: <AdminListPage goBack={goBack} title="Food Delivery" table="food_orders" columns={[{key:"restaurant_name",label:"Restaurant"},{key:"customer_name",label:"Customer"},{key:"total",label:"Total"}]} />,
     admin_logistics_parcels: <AdminListPage goBack={goBack} title="Logistics" table="logistics_parcels" columns={[{key:"sender_name",label:"Sender"},{key:"pickup_address",label:"Pickup"},{key:"dropoff_address",label:"Dropoff"}]} />,
     admin_fleet_vehicles: <AdminListPage goBack={goBack} title="Fleet" table="fleet_vehicles" columns={[{key:"plate_number",label:"Plate"},{key:"model",label:"Model"},{key:"driver_name",label:"Driver"}]} />,
