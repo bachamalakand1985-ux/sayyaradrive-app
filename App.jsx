@@ -8,8 +8,11 @@ import {
   Plus, Tag, X, Star, ShoppingBag as Bag, Minus,
   Package, Phone, DollarSign,
   Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check,
-  Link, Globe, Trophy
+  Link, Globe, Trophy, MessageCircle
 } from "lucide-react";
+
+/* ---------- support contact ---------- */
+const SUPPORT_WHATSAPP_NUMBER = "966581965361";
 
 /* ---------- shared tokens ---------- */
 const BG = "#070E1F", CARD = "#101B36", BORDER = "#1E2E52";
@@ -311,7 +314,7 @@ function Home({ navigate, lang, setLang, t }) {
           <h2 className="text-sm font-semibold">{t("services")}</h2>
           <span className="text-xs" style={{ color: GREEN }}>{SERVICES.length} {t("available")}</span>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 lg:grid-cols-5 gap-3">
           {SERVICES.map((s) => {
             const Icon = s.icon;
             return (
@@ -574,6 +577,15 @@ function BookRide({ goBack }) {
           <h2 className="mt-4 text-lg font-semibold">Ride confirmed</h2>
           <p className="mt-1 text-sm" style={{ color: MUTE }}>Looking for a nearby driver. You'll be connected by WhatsApp.</p>
           <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+          <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>
+        </div>
+      )}
+      {mode === "city" && stage === "cancelled" && (
+        <div className="px-5 mt-8 flex flex-col items-center text-center">
+          <X size={44} color="#C0755B" />
+          <h2 className="mt-4 text-lg font-semibold">Ride cancelled</h2>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>No charge — your ride has been cancelled.</p>
+          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
         </div>
       )}
 
@@ -636,6 +648,14 @@ function BookRide({ goBack }) {
           <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Transfer booked</h2>
           <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver details shared via WhatsApp.</p>
           <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+          <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>
+        </div>
+      )}
+      {mode === "airport" && stage === "cancelled" && (
+        <div className="px-5 mt-8 flex flex-col items-center text-center">
+          <X size={44} color="#C0755B" /><h2 className="mt-4 text-lg font-semibold">Transfer cancelled</h2>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>No charge — your transfer has been cancelled.</p>
+          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
         </div>
       )}
 
@@ -674,6 +694,14 @@ function BookRide({ goBack }) {
         <div className="px-5 mt-8 flex flex-col items-center text-center">
           <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Trip booked</h2>
           <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver details on WhatsApp before departure.</p>
+          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+          <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>
+        </div>
+      )}
+      {mode === "intercity" && stage === "cancelled" && (
+        <div className="px-5 mt-8 flex flex-col items-center text-center">
+          <X size={44} color="#C0755B" /><h2 className="mt-4 text-lg font-semibold">Trip cancelled</h2>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>No charge — your trip has been cancelled.</p>
           <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
         </div>
       )}
@@ -778,10 +806,13 @@ function DriverApp({ goBack, navigate, currentDriver }) {
       } />
       {currentDriver?.profile && (
         <div className="px-5 mb-3">
-          <div className="rounded-xl px-4 py-2.5 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <button onClick={() => navigate("driver_profile")} className="w-full rounded-xl px-4 py-2.5 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <p className="text-xs" style={{ color: MUTE }}>Logged in as <span style={{ color: TEXT, fontWeight: 600 }}>{currentDriver.profile.full_name}</span></p>
-            <span className="text-[10px]" style={{ color: FAINT }}>{currentDriver.profile.city_type === "intercity" ? "Intercity" : "Inside-city"}</span>
-          </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px]" style={{ color: FAINT }}>{currentDriver.profile.city_type === "intercity" ? "Intercity" : "Inside-city"}</span>
+              <ChevronRight size={13} color={FAINT} />
+            </div>
+          </button>
         </div>
       )}
       <div className="mx-5 rounded-2xl overflow-hidden relative" style={{ height: 220, background: CARD, border: `1px solid ${BORDER}` }}>
@@ -1107,7 +1138,7 @@ function CarRental({ goBack, navigate }) {
       {stage === "choose" && (
         <div className="px-5">
           <p className="text-xs mb-3" style={{ color: FAINT }}>{district}, {city} · {pickupDate} → {returnDate} · {days} day{days > 1 ? "s" : ""}</p>
-          <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
             {CARS.map((c) => {
               const isSel = carId === c.id;
               return (
@@ -1125,6 +1156,14 @@ function CarRental({ goBack, navigate }) {
         <div className="px-5 mt-8 flex flex-col items-center text-center">
           <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Reservation confirmed</h2>
           <p className="mt-1 text-sm" style={{ color: MUTE }}>Bring your ID and license at pickup.</p>
+          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+          <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel reservation</button>
+        </div>
+      )}
+      {stage === "cancelled" && (
+        <div className="px-5 mt-8 flex flex-col items-center text-center">
+          <X size={44} color="#C0755B" /><h2 className="mt-4 text-lg font-semibold">Reservation cancelled</h2>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>No charge — your reservation has been cancelled.</p>
           <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
         </div>
       )}
@@ -1154,7 +1193,29 @@ const LISTINGS = [
 ];
 function Marketplace({ goBack, navigate }) {
   const [category, setCategory] = useState("All"); const [query, setQuery] = useState("");
-  const filtered = LISTINGS.filter((l) => (category === "All" || l.category === category) && l.title.toLowerCase().includes(query.toLowerCase()));
+  const [dbListings, setDbListings] = useState([]);
+
+  useEffect(() => {
+    async function loadListings() {
+      const { data } = await supabase.from("marketplace_listings").select("*").eq("status", "active").order("created_at", { ascending: false });
+      if (data) {
+        setDbListings(data.map((r) => ({
+          id: `db-${r.id}`,
+          title: r.title,
+          price: r.price || 0,
+          category: r.category || "Cars",
+          location: r.location || "Riyadh",
+          tag: r.tag || null,
+          seller: r.seller_name || "Individual seller",
+          img: r.image_url || "https://loremflickr.com/400/300/product/all",
+        })));
+      }
+    }
+    loadListings();
+  }, []);
+
+  const allListings = [...dbListings, ...LISTINGS];
+  const filtered = allListings.filter((l) => (category === "All" || l.category === category) && l.title.toLowerCase().includes(query.toLowerCase()));
   return (
     <div style={{ color: TEXT }}>
       <Header title="Marketplace" onBack={goBack} right={<button onClick={() => navigate("register_seller")} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: GOLD }}><Plus size={18} color={BG} /></button>} />
@@ -1168,7 +1229,7 @@ function Marketplace({ goBack, navigate }) {
       <div className="px-5 mb-4 flex gap-2 overflow-x-auto">
         {CATEGORIES.map((c) => <button key={c} onClick={() => setCategory(c)} className="px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap shrink-0" style={{ background: category === c ? GOLD : CARD, color: category === c ? BG : MUTE, border: category === c ? "none" : `1px solid ${BORDER}` }}>{c}</button>)}
       </div>
-      <div className="px-5 grid grid-cols-2 gap-3">
+      <div className="px-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {filtered.map((l) => (
           <div key={l.id} className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="h-24 relative" style={{ background: BORDER }}>
@@ -1238,13 +1299,35 @@ function FoodDelivery({ goBack, navigate }) {
   const [cart, setCart] = useState({}); const [stage, setStage] = useState("browse");
   const [query, setQuery] = useState("");
   const [city, setCity] = useState("All Cities");
+  const [dbRestaurants, setDbRestaurants] = useState([]);
+
+  useEffect(() => {
+    async function loadRestaurants() {
+      const { data } = await supabase.from("restaurants").select("*").eq("status", "active").order("created_at", { ascending: false });
+      if (data) {
+        setDbRestaurants(data.map((r) => ({
+          id: `db-${r.id}`,
+          name: r.name,
+          cuisine: r.cuisine || "Restaurant",
+          rating: r.rating || 4.5,
+          eta: r.eta || "20-30 min",
+          city: r.city || "Riyadh",
+          hours: r.hours || "10:00–23:00",
+          foodCategory: r.food_category || "rice",
+        })));
+      }
+    }
+    loadRestaurants();
+  }, []);
+
+  const allRestaurants = [...dbRestaurants, ...RESTAURANTS];
   function addItem(item) { setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 })); }
   function removeItem(item) { setCart((c) => { const n = { ...c }; if (n[item.id] > 1) n[item.id]--; else delete n[item.id]; return n; }); }
-  const menu = openRestaurant ? MENU[openRestaurant.id] : [];
+  const menu = openRestaurant ? (MENU[openRestaurant.id] || []) : [];
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
   const cartTotal = menu.reduce((s, m) => s + (cart[m.id] || 0) * m.price, 0);
-  const cityOptions = ["All Cities", ...Array.from(new Set(RESTAURANTS.map((r) => r.city)))];
-  const filteredRestaurants = RESTAURANTS.filter((r) =>
+  const cityOptions = ["All Cities", ...Array.from(new Set(allRestaurants.map((r) => r.city)))];
+  const filteredRestaurants = allRestaurants.filter((r) =>
     (city === "All Cities" || r.city === city) &&
     (r.name.toLowerCase().includes(query.toLowerCase()) || r.cuisine.toLowerCase().includes(query.toLowerCase()))
   );
@@ -1254,6 +1337,14 @@ function FoodDelivery({ goBack, navigate }) {
       <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Order placed</h2>
       <p className="mt-1 text-sm" style={{ color: MUTE }}>{openRestaurant.name} is preparing your order.</p>
       <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+      <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel order</button>
+    </div>
+  );
+  if (stage === "cancelled") return (
+    <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
+      <X size={44} color="#C0755B" /><h2 className="mt-4 text-lg font-semibold">Order cancelled</h2>
+      <p className="mt-1 text-sm" style={{ color: MUTE }}>No charge — your order has been cancelled.</p>
+      <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
     </div>
   );
   if (openRestaurant) return (
@@ -1262,6 +1353,13 @@ function FoodDelivery({ goBack, navigate }) {
       <div className="mx-5 mb-4 rounded-2xl overflow-hidden" style={{ height: 140, background: CARD, border: `1px solid ${BORDER}` }}>
         <FoodPhoto category={openRestaurant.foodCategory} alt={openRestaurant.name} className="w-full h-full object-cover" />
       </div>
+      {menu.length === 0 ? (
+        <div className="px-5 flex flex-col items-center text-center py-10">
+          <UtensilsCrossed size={28} color={FAINT} />
+          <p className="text-sm font-semibold mt-3">Menu coming soon</p>
+          <p className="text-xs mt-1" style={{ color: FAINT }}>This restaurant hasn't added their menu yet — check back soon.</p>
+        </div>
+      ) : (
       <div className="px-5 flex flex-col gap-2">
         {menu.map((m) => (
           <div key={m.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -1276,6 +1374,7 @@ function FoodDelivery({ goBack, navigate }) {
           </div>
         ))}
       </div>
+      )}
       {cartCount > 0 && <div className="px-5 mt-4"><button onClick={() => setStage("confirmed")} className="w-full rounded-full py-3.5 text-sm font-semibold flex items-center justify-between px-5" style={{ background: GOLD, color: BG }}><span className="flex items-center gap-2"><Bag size={15} /> {cartCount} items</span><span>{cartTotal} SAR</span></button></div>}
     </div>
   );
@@ -1322,7 +1421,7 @@ function FoodDelivery({ goBack, navigate }) {
       </div>
 
       {/* Restaurant cards */}
-      <div className="px-5 flex flex-col gap-4">
+      <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
         {filteredRestaurants.map((r) => (
           <button key={r.id} onClick={() => setOpenRestaurant(r)} className="text-left rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="relative" style={{ height: 130 }}>
@@ -1369,6 +1468,14 @@ function Logistics({ goBack, navigate }) {
     <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
       <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Pickup requested</h2>
       <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver will contact you on WhatsApp.</p>
+      <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+      <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel pickup</button>
+    </div>
+  );
+  if (stage === "cancelled") return (
+    <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
+      <X size={44} color="#C0755B" /><h2 className="mt-4 text-lg font-semibold">Pickup cancelled</h2>
+      <p className="mt-1 text-sm" style={{ color: MUTE }}>No charge — your pickup request has been cancelled.</p>
       <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
     </div>
   );
@@ -1449,7 +1556,7 @@ function JobsPortal({ goBack }) {
   const [tab, setTab] = useState("openings");
   const [category, setCategory] = useState("All");
   const [query, setQuery] = useState("");
-  const [postedJobs, setPostedJobs] = useState([]);
+  const [dbJobs, setDbJobs] = useState([]);
   const [applyJob, setApplyJob] = useState(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "", cv: null, extraDocs: null, cover: "" });
   const [submitted, setSubmitted] = useState(false);
@@ -1460,7 +1567,25 @@ function JobsPortal({ goBack }) {
   const [postDone, setPostDone] = useState(false);
   const postCan = postForm.title.trim() && postForm.company.trim() && postForm.city.trim() && postForm.jobType.trim() && postForm.description.trim() && postForm.phone.trim();
 
-  const allJobs = [...postedJobs, ...JOBS];
+  async function loadJobs() {
+    const { data } = await supabase.from("jobs").select("*").eq("status", "active").order("created_at", { ascending: false });
+    if (data) {
+      setDbJobs(data.map((r) => ({
+        id: `db-${r.id}`,
+        title: r.title,
+        company: r.company || "Employer",
+        location: r.location,
+        pay: r.pay,
+        type: r.job_type || "Full-time",
+        category: r.category || "Driving",
+        phone: r.phone,
+        description: r.description,
+      })));
+    }
+  }
+  useEffect(() => { loadJobs(); }, []);
+
+  const allJobs = [...dbJobs, ...JOBS];
   const filtered = allJobs.filter((j) =>
     (category === "All" || j.category === category) &&
     (j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase()) || j.location.toLowerCase().includes(query.toLowerCase()))
@@ -1471,23 +1596,21 @@ function JobsPortal({ goBack }) {
     const pay = postForm.minSalary && postForm.maxSalary
       ? `${postForm.minSalary}–${postForm.maxSalary} SAR/mo`
       : postForm.minSalary ? `From ${postForm.minSalary} SAR/mo` : "Salary on request";
-    const newJob = {
-      id: `local-${Date.now()}`,
-      title: postForm.title,
-      company: postForm.company,
-      location: postForm.city,
-      pay,
-      type: postForm.jobType,
-      category: "Driving",
-      phone: postForm.phone,
-      email: postForm.email,
-      description: postForm.description || "No description provided.",
-      requirements: postForm.requirements,
-    };
     try {
-      await supabase.from("jobs").insert({ title: postForm.title, location: postForm.city, pay, status: "active" });
-    } catch (e) { /* still show locally even if Supabase insert fails */ }
-    setPostedJobs((p) => [newJob, ...p]);
+      await supabase.from("jobs").insert({
+        title: postForm.title,
+        company: postForm.company,
+        location: postForm.city,
+        pay,
+        job_type: postForm.jobType,
+        category: "Driving",
+        phone: postForm.phone,
+        email: postForm.email,
+        description: postForm.description || "No description provided.",
+        status: "active",
+      });
+      await loadJobs();
+    } catch (e) { /* insert failed, job just won't show up until retried */ }
     setPostSubmitting(false);
     setPostDone(true);
   }
@@ -1541,7 +1664,7 @@ function JobsPortal({ goBack }) {
             </div>
           </div>
 
-          <div className="px-5 flex flex-col gap-2.5">
+          <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2.5">
             {filtered.map((j) => (
               <div key={j.id} className="rounded-2xl px-4 py-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                 <div className="flex items-start gap-3">
@@ -1837,7 +1960,7 @@ function FleetManagement({ goBack, navigate }) {
           <ChevronRight size={14} color={GOLD} />
         </button>
       </div>
-      <div className="px-5 flex flex-col gap-2">
+      <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2">
         {fleet.map((c) => {
           const meta = STATUS_META[c.status];
           return (
@@ -1879,10 +2002,16 @@ function Profile({ goBack, navigate }) {
           <span className="flex items-center gap-3 text-sm"><Car size={15} color={GOLD} /> Switch to driver mode</span>
           <ChevronRight size={14} color="#5C736D" />
         </button>
-        <button onClick={() => navigate("admin")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <span className="flex items-center gap-3 text-sm"><Shield size={15} color={GOLD} /> Admin dashboard</span>
+        <a
+          href={`https://wa.me/${SUPPORT_WHATSAPP_NUMBER}?text=${encodeURIComponent("Hi SayyaraDrive, I need help with the app.")}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full flex items-center justify-between rounded-2xl px-4 py-3"
+          style={{ background: CARD, border: `1px solid ${BORDER}` }}
+        >
+          <span className="flex items-center gap-3 text-sm"><MessageCircle size={15} color="#25D366" /> Contact support</span>
           <ChevronRight size={14} color="#5C736D" />
-        </button>
+        </a>
       </div>
       <div className="px-5"><button className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: "#C0755B" }}><LogOut size={15} /> Log out</button></div>
     </div>
@@ -1903,7 +2032,7 @@ function TripHistory({ goBack }) {
     <div style={{ color: TEXT }}>
       <Header title="Activity" onBack={goBack} />
       <div className="px-5 mb-4"><div className="rounded-2xl px-4 py-3 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}><div><p className="text-xs" style={{ color: FAINT }}>Total spent</p><p className="text-lg font-semibold" style={{ color: GOLD }}>{totalSpent} SAR</p></div><div className="text-right"><p className="text-xs" style={{ color: FAINT }}>Total trips</p><p className="text-lg font-semibold">{TRIPS.length}</p></div></div></div>
-      <div className="px-5 flex flex-col gap-2">
+      <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2">
         {TRIPS.map((t) => {
           const meta = TYPE_META[t.type]; const Icon = meta.icon;
           return (
@@ -1918,6 +2047,47 @@ function TripHistory({ goBack }) {
   );
 }
 
+/* ---------- DRIVER TRIP HISTORY ---------- */
+const DRIVER_TRIPS = [
+  { id: 1, type: "ride", date: "Jul 8, 2026", rider: "Faisal A.", from: "Al Olaya Street", to: "King Fahd Rd", fare: 24 },
+  { id: 2, type: "airport", date: "Jul 6, 2026", rider: "Sara M.", from: "Home", to: "RUH Airport", fare: 85 },
+  { id: 3, type: "ride", date: "Jul 4, 2026", rider: "Ahmed T.", from: "Al Malaz", to: "Panorama Mall", fare: 19 },
+  { id: 4, type: "ride", date: "Jul 3, 2026", rider: "Nourah S.", from: "Diriyah", to: "King Fahd District", fare: 27 },
+  { id: 5, type: "airport", date: "Jun 30, 2026", rider: "Khalid B.", from: "JED Airport", to: "Al Hamra", fare: 62 },
+];
+
+function DriverTripHistory({ goBack, currentDriver }) {
+  const totalEarned = DRIVER_TRIPS.reduce((s, t) => s + t.fare, 0);
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Trip history" onBack={goBack} />
+      <div className="px-5 mb-4">
+        <div className="rounded-2xl px-4 py-3 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div><p className="text-xs" style={{ color: FAINT }}>Total earned</p><p className="text-lg font-semibold" style={{ color: GOLD }}>{totalEarned} SAR</p></div>
+          <div className="text-right"><p className="text-xs" style={{ color: FAINT }}>Trips completed</p><p className="text-lg font-semibold">{DRIVER_TRIPS.length}</p></div>
+        </div>
+      </div>
+      <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2">
+        {DRIVER_TRIPS.map((t) => {
+          const meta = TYPE_META[t.type]; const Icon = meta.icon;
+          return (
+            <div key={t.id} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.12)" }}><Icon size={17} color={GOLD} /></div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between"><p className="text-sm font-semibold">{t.rider}</p><p className="text-sm font-semibold" style={{ color: GREEN }}>+{t.fare} SAR</p></div>
+                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{meta.label} · {t.from} → {t.to}</p>
+                <p className="text-[10px] mt-1" style={{ color: FAINT }}>{t.date}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {!currentDriver?.profile && (
+        <p className="px-5 mt-4 text-[11px] text-center" style={{ color: FAINT }}>Log in to see your real earnings once trips start syncing.</p>
+      )}
+    </div>
+  );
+}
 /* ---------- WALLET (placeholder tab) ---------- */
 function WalletTab({ goBack }) {
   return (
@@ -2049,7 +2219,7 @@ const TABS = [
 ];
 function BottomNav({ screen, navigate, t }) {
   return (
-    <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md flex justify-around items-center py-3 px-5" style={{ background: "#0F211E", borderTop: `1px solid ${BORDER}` }}>
+    <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md lg:max-w-5xl flex justify-around items-center py-3 px-5" style={{ background: "#0F211E", borderTop: `1px solid ${BORDER}` }}>
       {TABS.map((tab) => (
         <button key={tab.id} onClick={() => navigate(tab.id)} className="flex flex-col items-center gap-1" style={{ color: screen === tab.id ? GOLD : "#6C847E" }}>
           <div className="w-1.5 h-1.5 rounded-full" style={{ background: screen === tab.id ? GOLD : "transparent" }} />
@@ -2066,25 +2236,43 @@ function WelcomeScreen({ navigate }) {
     <div className="min-h-screen relative overflow-hidden flex flex-col justify-end" style={{ background: BG, color: TEXT }}>
       <SkylineBackground opacity={1} />
       <div className="relative z-10 px-6 pb-10 flex flex-col items-center text-center">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-5" style={{ background: "rgba(217,166,83,0.14)", border: `1px solid rgba(217,166,83,0.3)` }}>
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />
+          <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: GOLD }}>Proudly Saudi · Est. 2026</span>
+        </div>
+
         <div className="flex items-center gap-2.5 mb-3">
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: `linear-gradient(135deg, ${GOLD}, #B8863B)`, boxShadow: `0 4px 14px rgba(217,166,83,0.35)` }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style={{ background: `linear-gradient(135deg, ${GOLD}, #B8863B)`, boxShadow: `0 6px 18px rgba(217,166,83,0.4)` }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
               <path d="M4 20 L4 10 L12 4 L20 10 L20 20" stroke={BG} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               <path d="M9 20 V13 H15 V20" stroke={BG} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 32, fontWeight: 700, letterSpacing: "-0.02em" }}>
+          <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 34, fontWeight: 700, letterSpacing: "-0.02em" }}>
             سيارة<span style={{ color: GOLD }}>Drive</span>
           </h1>
         </div>
-        <p className="text-sm mb-8" style={{ color: MUTE }}>One app. Every way to move, earn, and deliver.</p>
 
-        <button onClick={() => navigate("home")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: GOLD, color: BG }}>
+        <h2 className="text-lg font-semibold leading-snug max-w-xs" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          Saudi Arabia's everyday mobility platform
+        </h2>
+        <p className="text-sm mt-2 mb-6 max-w-xs" style={{ color: MUTE }}>
+          Rides, rentals, deliveries, and driver earnings — all in one trusted app, built for the Kingdom.
+        </p>
+
+        <div className="flex items-center gap-4 mb-7 text-[11px]" style={{ color: FAINT }}>
+          <span className="flex items-center gap-1.5"><Shield size={12} color={GREEN} /> Verified drivers</span>
+          <span className="flex items-center gap-1.5"><DollarSign size={12} color={GREEN} /> Cash on delivery</span>
+          <span className="flex items-center gap-1.5"><MapPin size={12} color={GREEN} /> All major cities</span>
+        </div>
+
+        <button onClick={() => navigate("home")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: GOLD, color: BG, boxShadow: "0 8px 20px rgba(217,166,83,0.3)" }}>
           Continue as passenger
         </button>
-        <button onClick={() => navigate("driver_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+        <button onClick={() => navigate("driver_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-4" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
           Driver login / sign up
         </button>
+        <p className="text-[10px]" style={{ color: FAINT }}>By continuing, you agree to use SayyaraDrive responsibly and respectfully.</p>
       </div>
     </div>
   );
@@ -2109,6 +2297,18 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
   async function handleSignup() {
     setError(""); setLoading(true);
     try {
+      if (isDriver) {
+        const { data: existingDriver } = await supabase.from("drivers").select("status").eq("iqama_number", iqama).maybeSingle();
+        if (existingDriver) {
+          if (existingDriver.status === "blocked") {
+            setError("This Iqama number belongs to a blocked driver account. Contact support for help.");
+          } else {
+            setError("An account already exists with this Iqama number. Please log in instead.");
+          }
+          setLoading(false);
+          return;
+        }
+      }
       const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
       if (signUpError) throw signUpError;
       const authUserId = data.user?.id;
@@ -2253,6 +2453,87 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
   );
 }
 
+/* ---------- DRIVER PROFILE ---------- */
+function DriverProfile({ goBack, navigate, currentDriver, onLogout }) {
+  const profile = currentDriver?.profile;
+  const statusColor = profile?.status === "blocked" ? "#C0755B" : profile?.status === "warned" ? GOLD : GREEN;
+
+  if (!profile) {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="My profile" onBack={goBack} />
+        <div className="px-5 flex flex-col items-center text-center py-12">
+          <User size={32} color={FAINT} />
+          <p className="text-sm font-semibold mt-3">No profile loaded</p>
+          <p className="text-xs mt-1" style={{ color: FAINT }}>Log in with your mobile number to see your driver profile.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="My profile" onBack={goBack} />
+      <div className="px-5 flex flex-col items-center text-center mb-5">
+        <div className="w-20 h-20 rounded-full flex items-center justify-center text-xl font-semibold" style={{ background: BORDER, color: GOLD }}>
+          {profile.full_name?.charAt(0) || "D"}
+        </div>
+        <div className="flex items-center gap-1.5 mt-3">
+          <h2 className="text-base font-semibold">{profile.full_name}</h2>
+          {profile.verified && <CheckCircle2 size={15} color={GREEN} />}
+        </div>
+        {profile.verified ? (
+          <p className="text-[11px] mt-1" style={{ color: GREEN }}>Verified driver</p>
+        ) : (
+          <p className="text-[11px] mt-1" style={{ color: GOLD }}>Verification pending</p>
+        )}
+        <span className="mt-2 px-2.5 py-1 rounded-full text-[10px] font-semibold" style={{ background: `${statusColor}22`, color: statusColor }}>
+          {profile.status || "active"} · {profile.warning_count || 0}/5 warnings
+        </span>
+      </div>
+
+      <div className="px-5 mb-5">
+        <div className="rounded-2xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+            <Phone size={14} color={FAINT} /><span className="text-sm">{profile.mobile_number}</span>
+          </div>
+          <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+            <User size={14} color={FAINT} /><span className="text-sm">Iqama: {profile.iqama_number}</span>
+          </div>
+          <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+            <Car size={14} color={FAINT} /><span className="text-sm">{profile.vehicle_number}</span>
+          </div>
+          <div className="flex items-center gap-3 py-3">
+            <MapPin size={14} color={FAINT} /><span className="text-sm">{profile.city_type === "intercity" ? "Intercity driver" : "Inside-city driver"}</span>
+          </div>
+        </div>
+      </div>
+
+      {profile.status === "blocked" && (
+        <div className="px-5 mb-5">
+          <div className="rounded-2xl px-4 py-3" style={{ background: "rgba(192,117,91,0.12)", border: `1px solid rgba(192,117,91,0.35)` }}>
+            <p className="text-xs font-semibold" style={{ color: "#C0755B" }}>Your account is blocked</p>
+            <p className="text-[11px] mt-1" style={{ color: MUTE }}>Contact SayyaraDrive support to resolve this.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="px-5 mb-5">
+        <button onClick={() => navigate("driver_trips")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><Route size={15} color={GOLD} /> Trip history & earnings</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
+      </div>
+
+      <div className="px-5">
+        <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: "#C0755B" }}>
+          <LogOut size={15} /> Log out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- ADMIN LOGIN ---------- */
 function AdminLogin({ goBack, navigate, onLoggedIn }) {
   const [email, setEmail] = useState("");
@@ -2310,10 +2591,14 @@ function AdminLogin({ goBack, navigate, onLoggedIn }) {
 }
 
 /* ---------- GENERIC ADMIN LIST (drivers, passengers, companies, marketplace, jobs, food, logistics, fleet, violations) ---------- */
-function AdminListPage({ goBack, title, table, columns, showDriverActions }) {
+function AdminListPage({ goBack, title, table, columns, showDriverActions, deletable, addFields, statusToggle }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newRow, setNewRow] = useState({});
+  const [addSubmitting, setAddSubmitting] = useState(false);
 
   async function loadRows() {
     setLoading(true);
@@ -2338,31 +2623,88 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions }) {
     loadRows();
   }
 
+  async function toggleVerified(driver) {
+    await supabase.from("drivers").update({ verified: !driver.verified }).eq("id", driver.id);
+    loadRows();
+  }
+
+  async function deleteRow(row) {
+    await supabase.from(table).delete().eq("id", row.id);
+    loadRows();
+  }
+
+  async function toggleSold(row) {
+    await supabase.from(table).update({ status: row.status === "sold" ? "active" : "sold" }).eq("id", row.id);
+    loadRows();
+  }
+
+  async function submitNewRow() {
+    setAddSubmitting(true);
+    const payload = { ...newRow, status: "active" };
+    await supabase.from(table).insert(payload);
+    setAddSubmitting(false);
+    setShowAddForm(false);
+    setNewRow({});
+    loadRows();
+  }
+
+  const displayRows = showDriverActions
+    ? rows.filter((r) => filter === "all" ? true : filter === "pending" ? !r.verified : r.verified)
+    : rows;
+  const pendingCount = showDriverActions ? rows.filter((r) => !r.verified).length : 0;
+  const addCan = addFields ? addFields.every((f) => !f.required || (newRow[f.key] || "").toString().trim()) : false;
+
   return (
     <div style={{ color: TEXT }}>
-      <Header title={title} onBack={goBack} />
+      <Header title={title} onBack={goBack} right={addFields ? (
+        <button onClick={() => setShowAddForm(true)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: GOLD }}><Plus size={18} color={BG} /></button>
+      ) : null} />
+      {showDriverActions && (
+        <div className="px-5 mb-4 flex gap-2">
+          {[
+            { id: "all", label: "All" },
+            { id: "pending", label: `Pending (${pendingCount})` },
+            { id: "verified", label: "Verified" },
+          ].map((f) => (
+            <button key={f.id} onClick={() => setFilter(f.id)} className="px-3.5 py-1.5 rounded-full text-xs font-medium" style={{ background: filter === f.id ? GOLD : CARD, color: filter === f.id ? BG : MUTE, border: filter === f.id ? "none" : `1px solid ${BORDER}` }}>{f.label}</button>
+          ))}
+        </div>
+      )}
       <div className="px-5">
         {loading && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>Loading…</p>}
         {error && <p className="text-sm text-center mt-6" style={{ color: "#C0755B" }}>{error}</p>}
-        {!loading && rows.length === 0 && <p className="text-sm text-center mt-6" style={{ color: FAINT }}>No records yet.</p>}
+        {!loading && displayRows.length === 0 && <p className="text-sm text-center mt-6" style={{ color: FAINT }}>No records here.</p>}
         <div className="flex flex-col gap-2">
-          {rows.map((r) => {
+          {displayRows.map((r) => {
             const statusColor = r.status === "blocked" ? "#C0755B" : r.status === "warned" ? GOLD : GREEN;
             return (
               <div key={r.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm font-semibold">{columns.map((c) => r[c.key]).filter(Boolean)[0] || "—"}</p>
-                  {r.status && (
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${statusColor}22`, color: statusColor }}>
-                      {r.status}{showDriverActions ? ` · ${r.warning_count || 0}/5 warnings` : ""}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-semibold">{columns.map((c) => r[c.key]).filter(Boolean)[0] || "—"}</p>
+                    {showDriverActions && r.verified && <CheckCircle2 size={13} color={GREEN} />}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {r.status && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${statusColor}22`, color: statusColor }}>
+                        {r.status}{showDriverActions ? ` · ${r.warning_count || 0}/5 warnings` : ""}
+                      </span>
+                    )}
+                    {deletable && (
+                      <button onClick={() => deleteRow(r)} aria-label="Delete">
+                        <X size={14} color="#C0755B" />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {columns.slice(1).map((c) => r[c.key] ? (
                   <p key={c.key} className="text-[11px]" style={{ color: FAINT }}>{c.label}: {String(r[c.key])}</p>
                 ) : null)}
                 {showDriverActions && (
                   <div className="flex gap-2 mt-3">
+                    <button onClick={() => toggleVerified(r)} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2 text-xs font-semibold" style={{ background: r.verified ? "rgba(192,117,91,0.12)" : "rgba(91,143,212,0.15)", color: r.verified ? "#C0755B" : GREEN }}>
+                      <CheckCircle2 size={12} /> {r.verified ? "Unverify" : "Verify driver"}
+                    </button>
                     {r.status !== "blocked" ? (
                       <button onClick={() => addWarning(r)} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: "rgba(217,166,83,0.15)", color: GOLD }}>
                         Add warning
@@ -2374,11 +2716,44 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions }) {
                     )}
                   </div>
                 )}
+                {statusToggle && (
+                  <button onClick={() => toggleSold(r)} className="w-full mt-3 rounded-full py-2 text-xs font-semibold" style={{ background: r.status === "sold" ? "rgba(91,143,212,0.15)" : "rgba(192,117,91,0.12)", color: r.status === "sold" ? GREEN : "#C0755B" }}>
+                    {r.status === "sold" ? "Mark as available again" : "Mark as sold"}
+                  </button>
+                )}
               </div>
             );
           })}
         </div>
       </div>
+
+      {showAddForm && addFields && (
+        <div className="fixed inset-0 flex items-end justify-center z-40" style={{ background: "rgba(0,0,0,0.6)" }}>
+          <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}`, maxHeight: "85vh", overflowY: "auto" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold">Add new</h2>
+              <button onClick={() => { setShowAddForm(false); setNewRow({}); }}><X size={18} color={MUTE} /></button>
+            </div>
+            <div className="flex flex-col gap-3">
+              {addFields.map((f) => (
+                f.type === "select" ? (
+                  <div key={f.key} className="rounded-xl px-4 py-1" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                    <select value={newRow[f.key] || ""} onChange={(e) => setNewRow({ ...newRow, [f.key]: e.target.value })} className="bg-transparent outline-none text-sm w-full py-3" style={{ color: newRow[f.key] ? TEXT : FAINT }}>
+                      <option value="" style={{ background: CARD }}>{f.label}</option>
+                      {f.options.map((o) => <option key={o} value={o} style={{ background: CARD }}>{o}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <input key={f.key} value={newRow[f.key] || ""} onChange={(e) => setNewRow({ ...newRow, [f.key]: e.target.value })} placeholder={f.label} className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+                )
+              ))}
+              <button onClick={submitNewRow} disabled={!addCan || addSubmitting} className="w-full rounded-full py-3 text-sm font-semibold mt-1" style={{ background: addCan ? GOLD : BORDER, color: addCan ? BG : "#5C736D" }}>
+                {addSubmitting ? "Adding…" : "Add"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2389,8 +2764,9 @@ const ADMIN_SECTIONS = [
   { id: "passengers", label: "Passengers", table: "passengers", icon: Users },
   { id: "companies", label: "Companies", table: "companies", icon: Briefcase },
   { id: "marketplace_listings", label: "Marketplace", table: "marketplace_listings", icon: ShoppingBag },
+  { id: "restaurants", label: "Restaurants", table: "restaurants", icon: UtensilsCrossed },
   { id: "jobs", label: "Jobs", table: "jobs", icon: Briefcase },
-  { id: "food_orders", label: "Food Delivery", table: "food_orders", icon: UtensilsCrossed },
+  { id: "food_orders", label: "Food Orders", table: "food_orders", icon: UtensilsCrossed },
   { id: "logistics_parcels", label: "Logistics", table: "logistics_parcels", icon: Truck },
   { id: "fleet_vehicles", label: "Fleet", table: "fleet_vehicles", icon: Car },
   { id: "violations", label: "Violations", table: "violations", icon: Shield },
@@ -2460,10 +2836,41 @@ export default function SayyaraDriveApp() {
   const [history, setHistory] = useState([isAdminLink ? "admin_login" : "welcome"]);
   const [currentDriver, setCurrentDriver] = useState(null);
   const [currentAdmin, setCurrentAdmin] = useState(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [showAI, setShowAI] = useState(false);
   const [lang, setLang] = useState("en");
   const screen = history[history.length - 1];
   const t = (key) => TRANSLATIONS[lang][key] || key;
+
+  useEffect(() => {
+    async function restoreSession() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.email) {
+          const email = session.user.email;
+          const { data: adminRow } = await supabase.from("admins").select("*").eq("email", email).maybeSingle();
+          if (adminRow) {
+            setCurrentAdmin(adminRow);
+            setHistory(["admin"]);
+          } else {
+            const { data: driverRow } = await supabase.from("drivers").select("*").eq("auth_user_id", session.user.id).maybeSingle();
+            if (driverRow) {
+              setCurrentDriver({ email, type: "driver", profile: driverRow });
+              setHistory(["driver"]);
+            }
+          }
+        }
+      } catch (e) { /* no active session, stay logged out */ }
+      setSessionChecked(true);
+    }
+    restoreSession();
+  }, []);
+
+  function driverLogout() {
+    supabase.auth.signOut();
+    setCurrentDriver(null);
+    setHistory(["welcome"]);
+  }
 
   function navigate(next) {
     if (TAB_SCREENS.includes(next)) setHistory([next]);
@@ -2480,6 +2887,8 @@ export default function SayyaraDriveApp() {
     home: <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />,
     ride: <BookRide goBack={goBack} />,
     driver: <DriverApp goBack={goBack} navigate={navigate} currentDriver={currentDriver} />,
+    driver_profile: <DriverProfile goBack={goBack} navigate={navigate} currentDriver={currentDriver} onLogout={driverLogout} />,
+    driver_trips: <DriverTripHistory goBack={goBack} currentDriver={currentDriver} />,
     airport: <BookRide goBack={goBack} />,
     intercity: <BookRide goBack={goBack} />,
     rentals: <CarRental goBack={goBack} navigate={navigate} />,
@@ -2504,8 +2913,9 @@ export default function SayyaraDriveApp() {
     admin_drivers: <AdminListPage goBack={goBack} title="Drivers" table="drivers" showDriverActions columns={[{key:"full_name",label:"Name"},{key:"iqama_number",label:"Iqama"},{key:"vehicle_number",label:"Vehicle"},{key:"mobile_number",label:"Mobile"},{key:"city_type",label:"City type"}]} />,
     admin_passengers: <AdminListPage goBack={goBack} title="Passengers" table="passengers" columns={[{key:"full_name",label:"Name"},{key:"mobile_number",label:"Mobile"}]} />,
     admin_companies: <AdminListPage goBack={goBack} title="Companies" table="companies" columns={[{key:"name",label:"Name"},{key:"contact_name",label:"Contact"},{key:"mobile_number",label:"Mobile"},{key:"fleet_size",label:"Fleet size"}]} />,
-    admin_marketplace_listings: <AdminListPage goBack={goBack} title="Marketplace" table="marketplace_listings" columns={[{key:"title",label:"Title"},{key:"seller_name",label:"Seller"},{key:"price",label:"Price"},{key:"category",label:"Category"}]} />,
-    admin_jobs: <AdminListPage goBack={goBack} title="Jobs" table="jobs" columns={[{key:"title",label:"Title"},{key:"location",label:"Location"},{key:"pay",label:"Pay"}]} />,
+    admin_marketplace_listings: <AdminListPage goBack={goBack} title="Marketplace" table="marketplace_listings" deletable statusToggle columns={[{key:"title",label:"Title"},{key:"seller_name",label:"Seller"},{key:"price",label:"Price"},{key:"category",label:"Category"},{key:"location",label:"Location"}]} addFields={[{key:"title",label:"Title",required:true},{key:"price",label:"Price (SAR)",required:true},{key:"category",label:"Category",type:"select",options:["Cars","Electronics","Furniture","Fashion","Spare parts"],required:true},{key:"location",label:"City",required:true},{key:"seller_name",label:"Seller name"},{key:"image_url",label:"Image URL (optional)"}]} />,
+    admin_restaurants: <AdminListPage goBack={goBack} title="Restaurants" table="restaurants" deletable columns={[{key:"name",label:"Name"},{key:"cuisine",label:"Cuisine"},{key:"city",label:"City"},{key:"hours",label:"Hours"}]} addFields={[{key:"name",label:"Restaurant name",required:true},{key:"cuisine",label:"Cuisine (e.g. Arabic, Fast food)",required:true},{key:"city",label:"City",required:true},{key:"hours",label:"Hours (e.g. 10:00–23:00)"},{key:"food_category",label:"Photo type",type:"select",options:["rice","burger","dessert","pasta","butter-chicken"],required:true}]} />,
+    admin_jobs: <AdminListPage goBack={goBack} title="Jobs" table="jobs" deletable columns={[{key:"title",label:"Title"},{key:"company",label:"Company"},{key:"location",label:"Location"},{key:"pay",label:"Pay"}]} addFields={[{key:"title",label:"Job title",required:true},{key:"company",label:"Company name",required:true},{key:"location",label:"City",required:true},{key:"pay",label:"Pay",required:true},{key:"job_type",label:"Type",type:"select",options:["Full-time","Part-time","Flexible","Freelance"]},{key:"phone",label:"Contact phone"},{key:"description",label:"Description"}]} />,
     admin_food_orders: <AdminListPage goBack={goBack} title="Food Delivery" table="food_orders" columns={[{key:"restaurant_name",label:"Restaurant"},{key:"customer_name",label:"Customer"},{key:"total",label:"Total"}]} />,
     admin_logistics_parcels: <AdminListPage goBack={goBack} title="Logistics" table="logistics_parcels" columns={[{key:"sender_name",label:"Sender"},{key:"pickup_address",label:"Pickup"},{key:"dropoff_address",label:"Dropoff"}]} />,
     admin_fleet_vehicles: <AdminListPage goBack={goBack} title="Fleet" table="fleet_vehicles" columns={[{key:"plate_number",label:"Plate"},{key:"model",label:"Model"},{key:"driver_name",label:"Driver"}]} />,
@@ -2515,12 +2925,25 @@ export default function SayyaraDriveApp() {
   return (
     <div className="min-h-screen w-full flex justify-center relative" style={{ background: BG, fontFamily: "'Inter', sans-serif" }}>
       <div className="fixed inset-0 pointer-events-none z-0 flex justify-center">
-        <div className="w-full max-w-md relative h-full">
+        <div className={`w-full relative h-full ${screen === "admin" ? "max-w-6xl" : "max-w-md lg:max-w-5xl"}`}>
           <SkylineBackground opacity={0.25} />
         </div>
       </div>
-      <div className={`w-full relative z-10 ${screen === "admin" ? "max-w-5xl" : "max-w-md"}`} style={{ paddingBottom: isTab ? 70 : 20 }}>
+      <div className={`w-full relative z-10 ${screen === "admin" ? "max-w-6xl" : "max-w-md lg:max-w-5xl"}`} style={{ paddingBottom: isTab ? 70 : 20 }}>
         {SCREEN_MAP[screen] || <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />}
+
+        {screen !== "welcome" && screen !== "admin" && screen !== "admin_login" && (
+          <a
+            href={`https://wa.me/${SUPPORT_WHATSAPP_NUMBER}?text=${encodeURIComponent("Hi SayyaraDrive, I need help with the app.")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="fixed right-5 w-12 h-12 rounded-full flex items-center justify-center shadow-lg z-40"
+            style={{ background: "#25D366", bottom: isTab ? 86 : 24 }}
+            aria-label="Contact support on WhatsApp"
+          >
+            <MessageCircle size={21} color="#fff" fill="#fff" />
+          </a>
+        )}
 
         {isTab && <BottomNav screen={screen} navigate={navigate} t={t} />}
       </div>
