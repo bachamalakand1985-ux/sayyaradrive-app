@@ -8,7 +8,7 @@ import {
   Plus, Tag, X, Star, ShoppingBag as Bag, Minus,
   Package, Phone, DollarSign,
   Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check,
-  Link, Globe, Trophy, MessageCircle
+  Link, Globe, Trophy, MessageCircle, Mic
 } from "lucide-react";
 
 /* ---------- support contact ---------- */
@@ -19,6 +19,127 @@ const BG = "#070E1F", CARD = "#101B36", BORDER = "#1E2E52";
 const GOLD = "#D9A653", GREEN = "#5B8FD4", TEXT = "#F1F5FB";
 const MUTE = "#9FB0CE", FAINT = "#6C7FA6";
 const HERE_API_KEY = "-ZUX_FxV-ok4896M-TXR2aqAShTd04KfYRqS_3_JGAM";
+
+/* ---------- shared HERE Maps SDK loader ---------- */
+let hereSdkPromise = null;
+function loadHereMapsSDK() {
+  if (hereSdkPromise) return hereSdkPromise;
+  hereSdkPromise = new Promise((resolve, reject) => {
+    function loadScript(src) {
+      return new Promise((res, rej) => {
+        if (document.querySelector(`script[src="${src}"]`)) return res();
+        const s = document.createElement("script"); s.src = src; s.async = true;
+        s.onload = res; s.onerror = () => rej(new Error("fail"));
+        document.head.appendChild(s);
+      });
+    }
+    function loadCss(href) {
+      if (document.querySelector(`link[href="${href}"]`)) return;
+      const l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; document.head.appendChild(l);
+    }
+    (async () => {
+      try {
+        loadCss("https://js.api.here.com/v3/3.1/mapsjs-ui.css");
+        await loadScript("https://js.api.here.com/v3/3.1/mapsjs-core.js");
+        await loadScript("https://js.api.here.com/v3/3.1/mapsjs-service.js");
+        await loadScript("https://js.api.here.com/v3/3.1/mapsjs-ui.js");
+        await loadScript("https://js.api.here.com/v3/3.1/mapsjs-mapevents.js");
+        resolve();
+      } catch (e) { reject(e); }
+    })();
+  });
+  return hereSdkPromise;
+}
+
+const SAUDI_CITY_COORDS = {
+  Riyadh: { lat: 24.7136, lng: 46.6753 },
+  Jeddah: { lat: 21.4858, lng: 39.1925 },
+  Makkah: { lat: 21.3891, lng: 39.8579 },
+  Madinah: { lat: 24.5247, lng: 39.5692 },
+  Dammam: { lat: 26.4207, lng: 50.0888 },
+  Khobar: { lat: 26.2172, lng: 50.1971 },
+  Taif: { lat: 21.2703, lng: 40.4158 },
+  Abha: { lat: 18.2164, lng: 42.5053 },
+  Tabuk: { lat: 28.3838, lng: 36.5550 },
+  Najran: { lat: 17.4924, lng: 44.1277 },
+  Jazan: { lat: 16.8892, lng: 42.5511 },
+  "Al Kharj": { lat: 24.1556, lng: 47.3350 },
+  Buraidah: { lat: 26.3260, lng: 43.9750 },
+  "Khamis Mushait": { lat: 18.3000, lng: 42.7333 },
+  Hofuf: { lat: 25.3833, lng: 49.5833 },
+  Sakaka: { lat: 29.9697, lng: 40.2064 },
+};
+
+/* ---------- reusable draggable pickup pin map ---------- */
+function PinMapPicker({ coords, onMove, height = 150 }) {
+  const mapDivRef = useRef(null);
+  const mapObjRef = useRef(null);
+  const markerRef = useRef(null);
+  const [status, setStatus] = useState("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function init() {
+      try {
+        await loadHereMapsSDK();
+        if (cancelled || !window.H || !mapDivRef.current) return;
+        const platform = new window.H.service.Platform({ apikey: HERE_API_KEY });
+        const defaultLayers = platform.createDefaultLayers();
+        const map = new window.H.Map(mapDivRef.current, defaultLayers.vector.normal.map, { zoom: 14, center: coords, pixelRatio: window.devicePixelRatio || 1 });
+        const behavior = new window.H.mapevents.Behavior(new window.H.mapevents.MapEvents(map));
+        const icon = new window.H.map.Icon(
+          "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30"><circle cx="15" cy="15" r="9" fill="#D9A653" stroke="#0F211E" stroke-width="3"/></svg>`),
+          { size: { w: 30, h: 30 }, anchor: { x: 15, y: 15 } }
+        );
+        const marker = new window.H.map.Marker(coords, { icon, volatility: true });
+        marker.draggable = true;
+        map.addObject(marker);
+        map.addEventListener("dragstart", (ev) => { if (ev.target === marker) map.getViewPort().element.style.cursor = "grabbing"; });
+        map.addEventListener("drag", (ev) => {
+          if (ev.target !== marker) return;
+          const pointer = ev.currentPointer;
+          marker.setGeometry(map.screenToGeo(pointer.viewportX, pointer.viewportY));
+        });
+        map.addEventListener("dragend", (ev) => {
+          if (ev.target !== marker) return;
+          map.getViewPort().element.style.cursor = "default";
+          const geo = marker.getGeometry();
+          onMove({ lat: geo.lat, lng: geo.lng });
+        });
+        map.addEventListener("tap", (ev) => {
+          if (ev.target !== map) return;
+          const pointer = ev.currentPointer;
+          const geo = map.screenToGeo(pointer.viewportX, pointer.viewportY);
+          marker.setGeometry(geo);
+          onMove({ lat: geo.lat, lng: geo.lng });
+        });
+        markerRef.current = marker;
+        mapObjRef.current = map;
+        window.addEventListener("resize", () => map.getViewPort().resize());
+        setStatus("ready");
+      } catch (e) { if (!cancelled) setStatus("error"); }
+    }
+    init();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (mapObjRef.current && markerRef.current && status === "ready") {
+      mapObjRef.current.setCenter(coords);
+      markerRef.current.setGeometry(coords);
+    }
+  }, [coords.lat, coords.lng]);
+
+  return (
+    <div className="rounded-2xl overflow-hidden relative mb-4" style={{ height, background: CARD, border: `1px solid ${BORDER}` }}>
+      <div ref={mapDivRef} className="w-full h-full" />
+      {status === "loading" && <div className="absolute inset-0 flex items-center justify-center" style={{ background: CARD }}><Navigation size={18} color={GOLD} /></div>}
+      {status === "error" && <div className="absolute inset-0 flex items-center justify-center px-6 text-center" style={{ background: CARD }}><p className="text-[11px]" style={{ color: FAINT }}>Map couldn't load — check connection.</p></div>}
+      {status === "ready" && <p className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full text-[10px]" style={{ background: "rgba(15,33,30,0.85)", color: FAINT }}>Drag the pin to set pickup point</p>}
+    </div>
+  );
+}
+
 
 /* ---------- Saudi Arabia cities & districts ---------- */
 const SAUDI_CITIES = {
@@ -69,8 +190,10 @@ function detectLocation({ onStart, onSuccess, onError }) {
           return;
         }
         const data = await res.json();
-        const label = data?.items?.[0]?.address?.label || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-        onSuccess && onSuccess({ lat: latitude, lng: longitude, label });
+        const address = data?.items?.[0]?.address;
+        const label = address?.label || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+        const city = address?.city || null;
+        onSuccess && onSuccess({ lat: latitude, lng: longitude, label, city });
       } catch (e) {
         console.error("Reverse geocode error:", e);
         onSuccess && onSuccess({ lat: latitude, lng: longitude, label: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` });
@@ -358,6 +481,9 @@ const INTERCITY_OPTIONS = [{ id: "shared", label: "Shared seat", sub: "Share wit
 function BookRide({ goBack }) {
   const [mode, setMode] = useState("city"); // city | airport | intercity
   const [stage, setStage] = useState("input");
+  const [bookingRef, setBookingRef] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  useEffect(() => { if (stage === "confirmed" && !bookingRef) setBookingRef(`RIDE-${Date.now().toString(36).toUpperCase()}`); if (stage === "input") setBookingRef(null); }, [stage]);
 
   // --- city ride state ---
   const mapRef = useRef(null);
@@ -366,13 +492,15 @@ function BookRide({ goBack }) {
   const [mapStatus, setMapStatus] = useState("loading");
   const [pickup, setPickup] = useState("Current location");
   const [pickupCoords, setPickupCoords] = useState({ lat: 24.7136, lng: 46.6753 });
+  const [pickupCity, setPickupCity] = useState("Riyadh");
   const [dropoff, setDropoff] = useState("");
   const [activeField, setActiveField] = useState(null); // "pickup" | "dropoff" | null
+  const cityPlaces = SAUDI_PLACES.filter((p) => p.city === pickupCity);
   const pickupSuggestions = activeField === "pickup" && pickup.trim()
-    ? SAUDI_PLACES.filter((p) => p.label.toLowerCase().includes(pickup.toLowerCase())).slice(0, 6)
+    ? cityPlaces.filter((p) => p.label.toLowerCase().includes(pickup.toLowerCase())).slice(0, 6)
     : [];
   const dropoffSuggestions = activeField === "dropoff" && dropoff.trim()
-    ? SAUDI_PLACES.filter((p) => p.label.toLowerCase().includes(dropoff.toLowerCase())).slice(0, 6)
+    ? cityPlaces.filter((p) => p.label.toLowerCase().includes(dropoff.toLowerCase())).slice(0, 6)
     : [];
   const [rideType, setRideType] = useState("economy");
   const [locating, setLocating] = useState(false);
@@ -422,9 +550,14 @@ function BookRide({ goBack }) {
   function useMyLocationCity() {
     detectLocation({
       onStart: () => { setLocating(true); setLocError(""); },
-      onSuccess: ({ lat, lng, label }) => {
+      onSuccess: ({ lat, lng, label, city }) => {
         setPickup(label);
         setPickupCoords({ lat, lng });
+        if (city) {
+          const matched = SAUDI_CITY_LIST.find((c) => c.toLowerCase() === city.toLowerCase()) ||
+            SAUDI_CITY_LIST.find((c) => city.toLowerCase().includes(c.toLowerCase()) || c.toLowerCase().includes(city.toLowerCase()));
+          if (matched) setPickupCity(matched);
+        }
         setLocating(false);
         if (mapObjRef.current && markerRef.current) {
           mapObjRef.current.setCenter({ lat, lng });
@@ -440,6 +573,7 @@ function BookRide({ goBack }) {
   const [airport, setAirport] = useState(AIRPORTS[0]);
   const [district, setDistrict] = useState(SAUDI_CITIES[AIRPORT_CITY[AIRPORTS[0]]][0]);
   const [address, setAddress] = useState("");
+  const [aptCoords, setAptCoords] = useState(SAUDI_CITY_COORDS[AIRPORT_CITY[AIRPORTS[0]]] || SAUDI_CITY_COORDS.Riyadh);
   const [aptLocating, setAptLocating] = useState(false);
   const [aptLocError, setAptLocError] = useState("");
   const [aptDate, setAptDate] = useState(""); const [aptTime, setAptTime] = useState("");
@@ -447,17 +581,39 @@ function BookRide({ goBack }) {
   const chosenVehicle = AIRPORT_VEHICLES.find((v) => v.id === vehicle);
   const cityForAirport = AIRPORT_CITY[airport];
 
+  async function reverseGeocodeCoords(lat, lng) {
+    try {
+      const res = await fetch(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${lat},${lng}&lang=en-US&apiKey=${HERE_API_KEY}`);
+      const data = await res.json();
+      return data?.items?.[0]?.address?.label || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    } catch (e) { return `${lat.toFixed(4)}, ${lng.toFixed(4)}`; }
+  }
+
+  async function onAptPinMove(coords) {
+    setAptCoords(coords);
+    const label = await reverseGeocodeCoords(coords.lat, coords.lng);
+    setAddress(label);
+  }
+
   function useMyLocationAirport() {
     detectLocation({
       onStart: () => { setAptLocating(true); setAptLocError(""); },
-      onSuccess: ({ label }) => { setAddress(label); setAptLocating(false); },
+      onSuccess: ({ label, lat, lng }) => { setAddress(label); setAptCoords({ lat, lng }); setAptLocating(false); },
       onError: (msg) => { setAptLocating(false); setAptLocError(msg); },
     });
   }
 
   // --- intercity state ---
   const [icFrom, setIcFrom] = useState("Riyadh"); const [icTo, setIcTo] = useState("Jeddah");
-  const [icDate, setIcDate] = useState("");
+  const [icDate, setIcDate] = useState(""); const [icTime, setIcTime] = useState("");
+  const [icPickupCoords, setIcPickupCoords] = useState(SAUDI_CITY_COORDS.Riyadh);
+  const [icPickupLabel, setIcPickupLabel] = useState("");
+
+  async function onIcPinMove(coords) {
+    setIcPickupCoords(coords);
+    const label = await reverseGeocodeCoords(coords.lat, coords.lng);
+    setIcPickupLabel(label);
+  }
   const [icOption, setIcOption] = useState("shared");
   const chosenIntercity = INTERCITY_OPTIONS.find((o) => o.id === icOption);
 
@@ -469,7 +625,7 @@ function BookRide({ goBack }) {
   const canContinue =
     mode === "city" ? dropoff.trim() :
     mode === "airport" ? (aptDate && aptTime) :
-    (icFrom !== icTo && icDate);
+    (icFrom !== icTo && icDate && icTime);
 
   function goChoose() {
     if (canContinue) setStage("choose");
@@ -585,7 +741,8 @@ function BookRide({ goBack }) {
           <CheckCircle2 size={44} color={GREEN} />
           <h2 className="mt-4 text-lg font-semibold">Ride confirmed</h2>
           <p className="mt-1 text-sm" style={{ color: MUTE }}>Looking for a nearby driver. You'll be connected by WhatsApp.</p>
-          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+          <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this ride</button>
+          <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
           <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>
         </div>
       )}
@@ -608,7 +765,7 @@ function BookRide({ goBack }) {
           <div className="rounded-2xl px-4 py-2 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
               <Plane size={15} color={GOLD} />
-              <select value={airport} onChange={(e) => { setAirport(e.target.value); setDistrict(SAUDI_CITIES[AIRPORT_CITY[e.target.value]][0]); }} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
+              <select value={airport} onChange={(e) => { setAirport(e.target.value); const newCity = AIRPORT_CITY[e.target.value]; setDistrict(SAUDI_CITIES[newCity][0]); setAptCoords(SAUDI_CITY_COORDS[newCity] || SAUDI_CITY_COORDS.Riyadh); }} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>
                 {AIRPORTS.map((a) => <option key={a} style={{ background: CARD }}>{a}</option>)}
               </select>
             </div>
@@ -623,6 +780,7 @@ function BookRide({ goBack }) {
               <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Building / street (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
             </div>
           </div>
+          <PinMapPicker coords={aptCoords} onMove={onAptPinMove} height={130} />
           <button onClick={useMyLocationAirport} disabled={aptLocating} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(217,166,83,0.12)", color: GOLD }}>
             <Navigation size={13} className={aptLocating ? "animate-pulse" : ""} /> {aptLocating ? "Detecting location…" : "Use my current location"}
           </button>
@@ -656,7 +814,8 @@ function BookRide({ goBack }) {
         <div className="px-5 mt-8 flex flex-col items-center text-center">
           <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Transfer booked</h2>
           <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver details shared via WhatsApp.</p>
-          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+          <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this transfer</button>
+          <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
           <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>
         </div>
       )}
@@ -672,18 +831,22 @@ function BookRide({ goBack }) {
       {mode === "intercity" && stage === "input" && (
         <div className="px-5">
           <div className="rounded-2xl px-4 py-2 mb-4 relative" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><MapPin size={14} color={GREEN} /><select value={icFrom} onChange={(e) => setIcFrom(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>{CITIES.map((c) => <option key={c} style={{ background: CARD }}>{c}</option>)}</select></div>
+            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><MapPin size={14} color={GREEN} /><select value={icFrom} onChange={(e) => { setIcFrom(e.target.value); setIcPickupCoords(SAUDI_CITY_COORDS[e.target.value] || SAUDI_CITY_COORDS.Riyadh); setIcPickupLabel(""); }} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>{CITIES.map((c) => <option key={c} style={{ background: CARD }}>{c}</option>)}</select></div>
             <div className="flex items-center gap-3 py-3"><MapPin size={14} color={GOLD} /><select value={icTo} onChange={(e) => setIcTo(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }}>{CITIES.map((c) => <option key={c} style={{ background: CARD }}>{c}</option>)}</select></div>
             <button onClick={() => { setIcFrom(icTo); setIcTo(icFrom); }} className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: BORDER }}><ArrowRightLeft size={14} color={GOLD} /></button>
           </div>
-          <div className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Calendar size={15} color={GOLD} /><input type="date" value={icDate} onChange={(e) => setIcDate(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+          <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: FAINT }}>Exact pickup point in {icFrom}</p>
+          <PinMapPicker coords={icPickupCoords} onMove={onIcPinMove} />
+          {icPickupLabel && <p className="text-[11px] mb-4 -mt-2 flex items-center gap-1" style={{ color: FAINT }}><MapPin size={11} color={GOLD} /> {icPickupLabel}</p>}
+          <div className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Calendar size={15} color={GOLD} /><input type="date" value={icDate} onChange={(e) => setIcDate(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+          <div className="flex items-center gap-3 rounded-2xl px-4 py-3 mb-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}><Clock size={15} color={GOLD} /><input type="time" value={icTime} onChange={(e) => setIcTime(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
           <button onClick={goChoose} disabled={!canContinue} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: canContinue ? GOLD : BORDER, color: canContinue ? BG : "#5C736D" }}>See options</button>
         </div>
       )}
 
       {mode === "intercity" && stage === "choose" && (
         <div className="px-5">
-          <div className="rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}><p className="text-sm font-semibold">{icFrom} → {icTo}</p><p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: FAINT }}><Route size={11} /> {icDate}</p></div>
+          <div className="rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}><p className="text-sm font-semibold">{icFrom} → {icTo}</p><p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: FAINT }}><Route size={11} /> {icDate} at {icTime}</p></div>
           <div className="flex flex-col gap-2">
             {INTERCITY_OPTIONS.map((o) => {
               const isSel = icOption === o.id;
@@ -702,8 +865,10 @@ function BookRide({ goBack }) {
       {mode === "intercity" && stage === "confirmed" && (
         <div className="px-5 mt-8 flex flex-col items-center text-center">
           <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Trip booked</h2>
-          <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver details on WhatsApp before departure.</p>
-          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>{icFrom} → {icTo} · {icDate} at {icTime}</p>
+          <p className="mt-2 text-xs flex items-center gap-1.5" style={{ color: GREEN }}><MessageCircle size={13} /> Your driver will message you on WhatsApp with pickup details before departure.</p>
+          <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this trip</button>
+          <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
           <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>
         </div>
       )}
@@ -716,6 +881,9 @@ function BookRide({ goBack }) {
       )}
 
       <div className="h-10" />
+      {chatOpen && bookingRef && (
+        <RideChat bookingRef={bookingRef} contextLabel={mode === "city" ? "City ride" : mode === "airport" ? "Airport transfer" : "Intercity trip"} onClose={() => setChatOpen(false)} />
+      )}
     </div>
   );
 }
@@ -1121,22 +1289,78 @@ function PartnerRegister({ goBack, type }) {
 
 /* ---------- CAR RENTAL ---------- */
 const CARS = [
-  { id: "eco", label: "Economy", model: "Hyundai Accent", price: 95, provider: "Lumi Rent a Car", img: "https://loremflickr.com/400/300/hyundai,sedan/all?lock=11" },
-  { id: "eco2", label: "Economy", model: "Toyota Yaris", price: 90, provider: "Lumi Rent a Car", img: "https://loremflickr.com/400/300/toyota,yaris/all?lock=17" },
-  { id: "sedan", label: "Sedan", model: "Toyota Camry", price: 145, provider: "Theeb Rent a Car", img: "https://loremflickr.com/400/300/toyota,camry/all?lock=12" },
-  { id: "sedan2", label: "Sedan", model: "Honda Accord", price: 135, provider: "Theeb Rent a Car", img: "https://loremflickr.com/400/300/honda,accord/all?lock=18" },
-  { id: "suv", label: "SUV", model: "Toyota Fortuner", price: 220, provider: "Yelo Rent a Car", img: "https://loremflickr.com/400/300/suv,car/all?lock=13" },
-  { id: "suv2", label: "SUV", model: "Nissan Patrol", price: 310, provider: "Yelo Rent a Car", img: "https://loremflickr.com/400/300/nissan,patrol/all?lock=19" },
-  { id: "luxury", label: "Luxury", model: "Lexus ES", price: 380, provider: "Sixt Rent a Car", img: "https://loremflickr.com/400/300/lexus,luxury-car/all?lock=14" },
-  { id: "luxury2", label: "Luxury", model: "BMW 5 Series", price: 420, provider: "Sixt Rent a Car", img: "https://loremflickr.com/400/300/bmw,luxury-sedan/all?lock=20" },
-  { id: "van", label: "Minivan", model: "Hyundai Staria", price: 260, provider: "Hanco Rent a Car", img: "https://loremflickr.com/400/300/minivan,van/all?lock=15" },
-  { id: "pickup", label: "Pickup", model: "Toyota Hilux", price: 190, provider: "Key Rent a Car", img: "https://loremflickr.com/400/300/pickup-truck/all?lock=16" },
-  { id: "budget1", label: "Economy", model: "Kia Pegas", price: 85, provider: "Budget Saudi Arabia", img: "https://loremflickr.com/400/300/kia,sedan/all?lock=41" },
-  { id: "ejar1", label: "Sedan", model: "Hyundai Sonata", price: 130, provider: "Ejar", img: "https://loremflickr.com/400/300/hyundai,sonata/all?lock=42" },
+  // Lumi Rent a Car
+  { id: "eco", label: "Economy", model: "Hyundai Accent", price: 95, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,sedan/all?lock=11" },
+  { id: "eco2", label: "Economy", model: "Toyota Yaris", price: 90, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,yaris/all?lock=17" },
+  { id: "lumi_compact", label: "Compact", model: "Kia Rio", price: 92, provider: "Lumi Rent a Car", transmission: "Manual", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,rio/all?lock=67" },
+  { id: "lumi_sedan", label: "Sedan", model: "Nissan Sunny", price: 115, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,sedan/all?lock=51" },
+  { id: "lumi_suv", label: "SUV", model: "Hyundai Tucson", price: 195, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,tucson/all?lock=52" },
+  { id: "lumi_van", label: "Minivan", model: "Hyundai Staria", price: 255, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,staria/all?lock=68" },
+  // Theeb Rent a Car
+  { id: "theeb_eco", label: "Economy", model: "Kia Cerato", price: 100, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,cerato/all?lock=53" },
+  { id: "sedan", label: "Sedan", model: "Toyota Camry", price: 145, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,camry/all?lock=12" },
+  { id: "sedan2", label: "Sedan", model: "Honda Accord", price: 135, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/honda,accord/all?lock=18" },
+  { id: "theeb_suv", label: "SUV", model: "Hyundai Santa Fe", price: 240, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,santa-fe/all?lock=54" },
+  { id: "theeb_suv2", label: "SUV", model: "Toyota Fortuner", price: 225, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 7, fuel: "Diesel", img: "https://loremflickr.com/400/300/toyota,fortuner/all?lock=69" },
+  { id: "theeb_van", label: "Minivan", model: "Toyota Hiace", price: 235, provider: "Theeb Rent a Car", transmission: "Manual", seats: 12, fuel: "Diesel", img: "https://loremflickr.com/400/300/toyota,hiace/all?lock=62" },
+  { id: "theeb_pickup", label: "Pickup", model: "Toyota Hilux", price: 195, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/pickup-truck/all?lock=16" },
+  // Yelo Rent a Car
+  { id: "yelo_eco", label: "Economy", model: "Toyota Yaris", price: 88, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,yaris-red/all?lock=70" },
+  { id: "yelo_sedan", label: "Sedan", model: "Toyota Corolla", price: 120, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,corolla/all?lock=55" },
+  { id: "suv", label: "SUV", model: "Toyota Fortuner", price: 220, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 7, fuel: "Diesel", img: "https://loremflickr.com/400/300/suv,car/all?lock=13" },
+  { id: "suv2", label: "SUV", model: "Nissan Patrol", price: 310, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,patrol/all?lock=19" },
+  { id: "yelo_luxury", label: "Luxury", model: "Genesis G80", price: 390, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/genesis,luxury-sedan/all?lock=56" },
+  { id: "yelo_pickup", label: "Pickup", model: "Ford Ranger", price: 210, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/ford,ranger/all?lock=71" },
+  // Sixt Rent a Car
+  { id: "sixt_sedan", label: "Sedan", model: "Mercedes C-Class", price: 350, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/mercedes,sedan/all?lock=57" },
+  { id: "luxury", label: "Luxury", model: "Lexus ES", price: 380, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Hybrid", img: "https://loremflickr.com/400/300/lexus,luxury-car/all?lock=14" },
+  { id: "luxury2", label: "Luxury", model: "BMW 5 Series", price: 420, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/bmw,luxury-sedan/all?lock=20" },
+  { id: "sixt_suv", label: "SUV", model: "Range Rover Sport", price: 550, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/range-rover,suv/all?lock=58" },
+  { id: "sixt_suv2", label: "SUV", model: "Porsche Cayenne", price: 620, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/porsche,cayenne/all?lock=72" },
+  { id: "sixt_convertible", label: "Convertible", model: "BMW 4 Series", price: 480, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/bmw,convertible/all?lock=73" },
+  // Hanco Rent a Car
+  { id: "hanco_eco", label: "Economy", model: "Chevrolet Aveo", price: 88, provider: "Hanco Rent a Car", transmission: "Manual", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/chevrolet,aveo/all?lock=60" },
+  { id: "hanco_eco2", label: "Economy", model: "Hyundai Accent", price: 92, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,accent/all?lock=74" },
+  { id: "hanco_sedan", label: "Sedan", model: "Toyota Camry", price: 140, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,camry-white/all?lock=59" },
+  { id: "hanco_suv", label: "SUV", model: "Hyundai Tucson", price: 200, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,tucson-black/all?lock=75" },
+  { id: "van", label: "Minivan", model: "Hyundai Staria", price: 260, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/minivan,van/all?lock=15" },
+  { id: "hanco_pickup", label: "Pickup", model: "Toyota Hilux", price: 190, provider: "Hanco Rent a Car", transmission: "Manual", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/pickup-hilux/all?lock=76" },
+  // Key Rent a Car
+  { id: "key_eco", label: "Economy", model: "Kia Picanto", price: 80, provider: "Key Rent a Car", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,picanto/all?lock=77" },
+  { id: "key_sedan", label: "Sedan", model: "Nissan Sunny", price: 112, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,sunny/all?lock=78" },
+  { id: "key_suv", label: "SUV", model: "GMC Yukon", price: 340, provider: "Key Rent a Car", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/gmc,yukon/all?lock=61" },
+  { id: "pickup", label: "Pickup", model: "Toyota Hilux", price: 190, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/pickup-truck/all?lock=16" },
+  { id: "key_pickup2", label: "Pickup", model: "Ford F-150", price: 260, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/ford,f150/all?lock=79" },
+  { id: "key_van", label: "Minivan", model: "Toyota Hiace", price: 230, provider: "Key Rent a Car", transmission: "Manual", seats: 12, fuel: "Diesel", img: "https://loremflickr.com/400/300/toyota,hiace-van/all?lock=80" },
+  // Budget Saudi Arabia
+  { id: "budget_eco", label: "Economy", model: "Chevrolet Spark", price: 78, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/chevrolet,spark/all?lock=81" },
+  { id: "budget1", label: "Economy", model: "Kia Pegas", price: 85, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,sedan/all?lock=41" },
+  { id: "budget_eco2", label: "Economy", model: "Hyundai Accent", price: 90, provider: "Budget Saudi Arabia", transmission: "Manual", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,accent-blue/all?lock=82" },
+  { id: "budget_sedan", label: "Sedan", model: "Nissan Altima", price: 125, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,altima/all?lock=63" },
+  { id: "budget_sedan2", label: "Sedan", model: "Toyota Corolla", price: 118, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,corolla-silver/all?lock=83" },
+  { id: "budget_suv", label: "SUV", model: "Kia Sportage", price: 200, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,sportage/all?lock=64" },
+  // Ejar
+  { id: "ejar_eco", label: "Economy", model: "Suzuki Ciaz", price: 82, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/suzuki,ciaz/all?lock=65" },
+  { id: "ejar_eco2", label: "Economy", model: "Kia Picanto", price: 78, provider: "Ejar", transmission: "Manual", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,picanto-white/all?lock=84" },
+  { id: "ejar1", label: "Sedan", model: "Hyundai Sonata", price: 130, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,sonata/all?lock=42" },
+  { id: "ejar_sedan2", label: "Sedan", model: "Nissan Sunny", price: 110, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,sunny-white/all?lock=85" },
+  { id: "ejar_suv", label: "SUV", model: "Hyundai Tucson", price: 205, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,tucson-red/all?lock=86" },
+  { id: "ejar_luxury", label: "Luxury", model: "Audi A6", price: 400, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/audi,a6/all?lock=66" },
 ];
+const RENTAL_COMPANY_INFO = {
+  "Lumi Rent a Car": { branches: "Riyadh, Jeddah, Dammam", rating: 4.5 },
+  "Theeb Rent a Car": { branches: "All major cities + airports", rating: 4.6 },
+  "Yelo Rent a Car": { branches: "Riyadh, Jeddah, Khobar, Madinah", rating: 4.4 },
+  "Sixt Rent a Car": { branches: "Riyadh, Jeddah + King Khalid & King Abdulaziz airports", rating: 4.7 },
+  "Hanco Rent a Car": { branches: "Riyadh, Jeddah, Dammam, Makkah", rating: 4.3 },
+  "Key Rent a Car": { branches: "Riyadh, Khobar, Dammam", rating: 4.2 },
+  "Budget Saudi Arabia": { branches: "Riyadh, Jeddah + major airports", rating: 4.4 },
+  "Ejar": { branches: "Riyadh, Jeddah, Madinah", rating: 4.3 },
+};
 const RENTAL_COMPANIES = Array.from(new Set(CARS.map((c) => c.provider))).map((name) => ({
   name,
   count: CARS.filter((c) => c.provider === name).length,
+  ...RENTAL_COMPANY_INFO[name],
 }));
 
 function CarRental({ goBack, navigate }) {
@@ -1146,6 +1370,9 @@ function CarRental({ goBack, navigate }) {
   const [district, setDistrict] = useState(SAUDI_CITIES["Riyadh"][0]);
   const [pickupDate, setPickupDate] = useState(""); const [returnDate, setReturnDate] = useState("");
   const [stage, setStage] = useState("input"); const [carId, setCarId] = useState("sedan");
+  const [bookingRef, setBookingRef] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  useEffect(() => { if (stage === "confirmed" && !bookingRef) setBookingRef(`RENTAL-${Date.now().toString(36).toUpperCase()}`); if (stage === "input") setBookingRef(null); }, [stage]);
   const chosen = CARS.find((c) => c.id === carId);
   const can = pickupDate && returnDate && returnDate >= pickupDate;
   const days = can ? Math.max(1, Math.round((new Date(returnDate) - new Date(pickupDate)) / 86400000) || 1) : 0;
@@ -1178,7 +1405,8 @@ function CarRental({ goBack, navigate }) {
               </div>
               <div className="flex-1">
                 <p className="text-sm font-semibold">{co.name}</p>
-                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{co.count} vehicle{co.count > 1 ? "s" : ""} available</p>
+                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{co.count} vehicle{co.count > 1 ? "s" : ""} available{co.rating ? ` · ★ ${co.rating}` : ""}</p>
+                {co.branches && <p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: FAINT }}><MapPin size={9} /> {co.branches}</p>}
               </div>
               <ChevronRight size={14} color={FAINT} />
             </button>
@@ -1219,19 +1447,23 @@ function CarRental({ goBack, navigate }) {
       )}
       {stage === "choose" && (
         <div className="px-5">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-1">
             <p className="text-xs" style={{ color: FAINT }}>
               {companyFilter ? companyFilter : can ? `${district}, ${city} · ${pickupDate} → ${returnDate} · ${days} day${days > 1 ? "s" : ""}` : "All available vehicles"}
             </p>
             {companyFilter && <button onClick={() => { setCompanyFilter(null); setStage("input"); setView("companies"); }} className="text-[11px]" style={{ color: GOLD }}>Change company</button>}
           </div>
+          {companyFilter && RENTAL_COMPANY_INFO[companyFilter] && (
+            <p className="text-[11px] mb-3 flex items-center gap-1" style={{ color: FAINT }}><MapPin size={11} color={GOLD} /> {RENTAL_COMPANY_INFO[companyFilter].branches} · ★ {RENTAL_COMPANY_INFO[companyFilter].rating}</p>
+          )}
+          {!companyFilter && <div className="mb-3" />}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
             {(companyFilter ? CARS.filter((c) => c.provider === companyFilter) : CARS).map((c) => {
               const isSel = carId === c.id;
               return (
                 <button key={c.id} onClick={() => setCarId(c.id)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-left" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
                   <img src={c.img} alt={c.model} className="w-16 h-14 rounded-lg object-cover shrink-0" style={{ background: BORDER }} />
-                  <div className="flex-1"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{c.label}</p><p className="text-sm font-semibold">{c.price} SAR/day</p></div><p className="text-[11px]" style={{ color: FAINT }}>{c.model}</p><p className="text-[10px] mt-0.5" style={{ color: GOLD }}>{c.provider}</p></div>
+                  <div className="flex-1"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{c.label}</p><p className="text-sm font-semibold">{c.price} SAR/day</p></div><p className="text-[11px]" style={{ color: FAINT }}>{c.model}</p><p className="text-[10px] mt-0.5 flex items-center gap-2" style={{ color: FAINT }}><span>⚙ {c.transmission}</span><span>👤 {c.seats}</span><span>⛽ {c.fuel}</span></p><p className="text-[10px] mt-0.5" style={{ color: GOLD }}>{c.provider}</p></div>
                 </button>
               );
             })}
@@ -1245,7 +1477,8 @@ function CarRental({ goBack, navigate }) {
         <div className="px-5 mt-8 flex flex-col items-center text-center">
           <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Reservation confirmed</h2>
           <p className="mt-1 text-sm" style={{ color: MUTE }}>{chosen?.provider} will contact you on WhatsApp to confirm pickup details.</p>
-          <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+          <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this reservation</button>
+          <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
           <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel reservation</button>
         </div>
       )}
@@ -1255,6 +1488,9 @@ function CarRental({ goBack, navigate }) {
           <p className="mt-1 text-sm" style={{ color: MUTE }}>No charge — your reservation has been cancelled.</p>
           <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
         </div>
+      )}
+      {chatOpen && bookingRef && (
+        <RideChat bookingRef={bookingRef} contextLabel={`Car rental — ${chosen?.provider || ""}`} onClose={() => setChatOpen(false)} />
       )}
     </div>
   );
@@ -1561,6 +1797,9 @@ function FoodDelivery({ goBack, navigate }) {
   const [query, setQuery] = useState("");
   const [city, setCity] = useState("All Cities");
   const [dbRestaurants, setDbRestaurants] = useState([]);
+  const [bookingRef, setBookingRef] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  useEffect(() => { if (stage === "confirmed" && !bookingRef) setBookingRef(`ORDER-${Date.now().toString(36).toUpperCase()}`); if (stage === "browse") setBookingRef(null); }, [stage]);
 
   useEffect(() => {
     async function loadRestaurants() {
@@ -1601,8 +1840,12 @@ function FoodDelivery({ goBack, navigate }) {
     <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
       <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Order placed</h2>
       <p className="mt-1 text-sm" style={{ color: MUTE }}>{openRestaurant.name} is preparing your order.</p>
-      <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+      <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this order</button>
+      <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
       <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel order</button>
+      {chatOpen && bookingRef && (
+        <RideChat bookingRef={bookingRef} contextLabel={`Food order — ${openRestaurant.name}`} onClose={() => setChatOpen(false)} />
+      )}
     </div>
   );
   if (stage === "cancelled") return (
@@ -1814,12 +2057,19 @@ function Logistics({ goBack, navigate }) {
   const [chosenTier, setChosenTier] = useState(null);
   const chosen = PARCEL_SIZES.find((s) => s.id === size);
   const can = pickupAddress.trim() && dropoffAddress.trim() && pickupContact.trim() && dropoffContact.trim();
+  const [bookingRef, setBookingRef] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  useEffect(() => { if (stage === "confirmed" && !bookingRef) setBookingRef(`PARCEL-${Date.now().toString(36).toUpperCase()}`); if (stage === "input") setBookingRef(null); }, [stage]);
   if (stage === "confirmed") return (
     <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
       <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Pickup requested</h2>
       <p className="mt-1 text-sm" style={{ color: MUTE }}>{openCourier ? `${openCourier.name} will contact you on WhatsApp.` : "Driver will contact you on WhatsApp."}</p>
-      <button onClick={goBack} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
+      <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this pickup</button>
+      <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
       <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel pickup</button>
+      {chatOpen && bookingRef && (
+        <RideChat bookingRef={bookingRef} contextLabel={openCourier ? `Logistics — ${openCourier.name}` : "Logistics pickup"} onClose={() => setChatOpen(false)} />
+      )}
     </div>
   );
   if (stage === "cancelled") return (
@@ -3000,6 +3250,135 @@ function NotificationsScreen({ goBack, currentDriver, currentAdmin }) {
 }
 
 /* ---------- CONTACT / MESSAGE MODAL (reusable) ---------- */
+/* ---------- RIDE CHAT (real in-app passenger <-> driver/support messaging) ---------- */
+function RideChat({ bookingRef, contextLabel, onClose }) {
+  const [items, setItems] = useState([]);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordError, setRecordError] = useState("");
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+
+  async function load() {
+    const { data } = await supabase.from("messages").select("*").eq("booking_ref", bookingRef).order("created_at", { ascending: true });
+    setItems(data || []);
+  }
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function send() {
+    if (!text.trim()) return;
+    setSending(true);
+    await supabase.from("messages").insert({
+      context: "ride",
+      reference_title: contextLabel,
+      booking_ref: bookingRef,
+      sender_role: "passenger",
+      sender_name: "Passenger",
+      sender_phone: "N/A",
+      body: text.trim(),
+    });
+    setText("");
+    setSending(false);
+    load();
+  }
+
+  async function startRecording() {
+    setRecordError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        await uploadVoice(blob);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+    } catch (e) {
+      setRecordError("Couldn't access your microphone. Check browser permissions.");
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorderRef.current) mediaRecorderRef.current.stop();
+    setRecording(false);
+  }
+
+  async function uploadVoice(blob) {
+    setSending(true);
+    try {
+      const fileName = `${bookingRef}-${Date.now()}.webm`;
+      const { error: uploadError } = await supabase.storage.from("voice-messages").upload(fileName, blob, { contentType: "audio/webm" });
+      if (uploadError) throw uploadError;
+      const { data: publicData } = supabase.storage.from("voice-messages").getPublicUrl(fileName);
+      await supabase.from("messages").insert({
+        context: "ride",
+        reference_title: contextLabel,
+        booking_ref: bookingRef,
+        sender_role: "passenger",
+        sender_name: "Passenger",
+        sender_phone: "N/A",
+        body: "🎤 Voice message",
+        audio_url: publicData.publicUrl,
+      });
+      load();
+    } catch (e) {
+      setRecordError("Couldn't send voice message. Please try again.");
+    }
+    setSending(false);
+  }
+
+  return (
+    <div className="fixed inset-0 flex items-end justify-center z-50" style={{ background: "rgba(0,0,0,0.6)" }}>
+      <div className="w-full max-w-md rounded-t-3xl flex flex-col" style={{ background: CARD, border: `1px solid ${BORDER}`, height: "70vh" }}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
+          <div>
+            <p className="text-sm font-semibold">Chat about your trip</p>
+            <p className="text-[11px]" style={{ color: FAINT }}>{contextLabel}</p>
+          </div>
+          <button onClick={onClose}><X size={18} color={MUTE} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-2">
+          {items.length === 0 && (
+            <p className="text-xs text-center mt-6" style={{ color: FAINT }}>Send a message and our team or your driver will reply here.</p>
+          )}
+          {items.map((m) => (
+            <div key={m.id} className={`max-w-[80%] rounded-xl px-3.5 py-2.5 ${m.sender_role === "passenger" ? "self-end" : "self-start"}`} style={{ background: m.sender_role === "passenger" ? GOLD : BG, border: m.sender_role === "passenger" ? "none" : `1px solid ${BORDER}` }}>
+              {m.audio_url ? (
+                <audio controls src={m.audio_url} style={{ height: 32, width: 180 }} />
+              ) : (
+                <p className="text-xs" style={{ color: m.sender_role === "passenger" ? BG : TEXT }}>{m.body}</p>
+              )}
+              <p className="text-[9px] mt-1" style={{ color: m.sender_role === "passenger" ? "rgba(15,33,30,0.6)" : FAINT }}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+            </div>
+          ))}
+        </div>
+        {recordError && <p className="px-5 text-[11px] mb-1" style={{ color: "#C0755B" }}>{recordError}</p>}
+        <div className="flex items-center gap-2 px-5 py-4" style={{ borderTop: `1px solid ${BORDER}` }}>
+          <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder={recording ? "Recording…" : "Type a message…"} disabled={recording} className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+          <button
+            onClick={recording ? stopRecording : startRecording}
+            disabled={sending}
+            className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: recording ? "#C0755B" : "rgba(91,143,212,0.16)" }}
+          >
+            <Mic size={15} color={recording ? "#fff" : GREEN} className={recording ? "animate-pulse" : ""} />
+          </button>
+          <button onClick={send} disabled={sending || !text.trim() || recording} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}><Send size={15} color={BG} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ContactModal({ context, referenceTitle, recipientPhone, whatsappNumber, whatsappMessage, onClose }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -3476,6 +3855,98 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
 }
 
 /* ---------- ADMIN BROADCAST ---------- */
+/* ---------- ADMIN RIDE CHATS ---------- */
+function AdminRideChats({ goBack }) {
+  const [threads, setThreads] = useState([]);
+  const [openThread, setOpenThread] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [reply, setReply] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  async function loadThreads() {
+    setLoading(true);
+    const { data } = await supabase.from("messages").select("*").eq("context", "ride").not("booking_ref", "is", null).order("created_at", { ascending: false });
+    const grouped = {};
+    (data || []).forEach((m) => {
+      if (!grouped[m.booking_ref]) grouped[m.booking_ref] = { booking_ref: m.booking_ref, reference_title: m.reference_title, last: m, count: 0 };
+      grouped[m.booking_ref].count++;
+      if (new Date(m.created_at) > new Date(grouped[m.booking_ref].last.created_at)) grouped[m.booking_ref].last = m;
+    });
+    setThreads(Object.values(grouped).sort((a, b) => new Date(b.last.created_at) - new Date(a.last.created_at)));
+    setLoading(false);
+  }
+  useEffect(() => { loadThreads(); }, []);
+
+  async function openChat(t) {
+    setOpenThread(t);
+    const { data } = await supabase.from("messages").select("*").eq("booking_ref", t.booking_ref).order("created_at", { ascending: true });
+    setMessages(data || []);
+  }
+
+  async function sendReply() {
+    if (!reply.trim() || !openThread) return;
+    await supabase.from("messages").insert({
+      context: "ride",
+      reference_title: openThread.reference_title,
+      booking_ref: openThread.booking_ref,
+      sender_role: "driver",
+      sender_name: "SayyaraDrive Team",
+      sender_phone: "N/A",
+      body: reply.trim(),
+    });
+    setReply("");
+    openChat(openThread);
+  }
+
+  if (openThread) return (
+    <div style={{ color: TEXT }}>
+      <Header title={openThread.reference_title || "Chat"} onBack={() => { setOpenThread(null); loadThreads(); }} />
+      <div className="px-5 flex flex-col gap-2 mb-4" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+        {messages.map((m) => (
+          <div key={m.id} className={`max-w-[80%] rounded-xl px-3.5 py-2.5 ${m.sender_role === "passenger" ? "self-start" : "self-end ml-auto"}`} style={{ background: m.sender_role === "passenger" ? CARD : GOLD, border: m.sender_role === "passenger" ? `1px solid ${BORDER}` : "none" }}>
+            {m.audio_url ? (
+              <audio controls src={m.audio_url} style={{ height: 32, width: 180 }} />
+            ) : (
+              <p className="text-xs" style={{ color: m.sender_role === "passenger" ? TEXT : BG }}>{m.body}</p>
+            )}
+            <p className="text-[9px] mt-1" style={{ color: m.sender_role === "passenger" ? FAINT : "rgba(15,33,30,0.6)" }}>{new Date(m.created_at).toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
+      <div className="px-5 flex items-center gap-2">
+        <input value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendReply()} placeholder="Reply as SayyaraDrive Team…" className="flex-1 rounded-full px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+        <button onClick={sendReply} className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}><Send size={16} color={BG} /></button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Ride chats" onBack={goBack} />
+      <div className="px-5">
+        {loading && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>Loading…</p>}
+        {!loading && threads.length === 0 && (
+          <div className="flex flex-col items-center text-center py-12">
+            <MessageCircle size={32} color={FAINT} />
+            <p className="text-sm font-semibold mt-3">No active chats</p>
+          </div>
+        )}
+        <div className="flex flex-col gap-2">
+          {threads.map((t) => (
+            <button key={t.booking_ref} onClick={() => openChat(t)} className="w-full text-left rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">{t.reference_title || t.booking_ref}</p>
+                <span className="text-[10px]" style={{ color: FAINT }}>{t.count} msg{t.count > 1 ? "s" : ""}</span>
+              </div>
+              <p className="text-[11px] mt-1 truncate" style={{ color: FAINT }}>{t.last.sender_role === "passenger" ? "Passenger: " : "You: "}{t.last.body}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminBroadcast({ goBack }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -3579,9 +4050,14 @@ function AdminOverview({ navigate, goBack, onLogout }) {
           <p className="text-sm font-semibold mb-1">Platform overview</p>
           <p className="text-[11px]" style={{ color: FAINT }}>Live stats across all modules</p>
         </div>
-        <button onClick={() => navigate("admin_broadcast")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: GOLD, color: BG }}>
-          <Bell size={13} /> Announce
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => navigate("admin_ride_chats")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+            <MessageCircle size={13} /> Chats
+          </button>
+          <button onClick={() => navigate("admin_broadcast")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: GOLD, color: BG }}>
+            <Bell size={13} /> Announce
+          </button>
+        </div>
       </div>
 
       <div className="px-5 sm:px-8 grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -3698,6 +4174,7 @@ export default function SayyaraDriveApp() {
     admin_partner_applications: <AdminListPage goBack={goBack} title="Applications" table="partner_applications" deletable approvalActions columns={[{key:"full_name",label:"Name"},{key:"type",label:"Type"},{key:"phone",label:"Phone"},{key:"email",label:"Email"},{key:"city",label:"City"},{key:"district",label:"District"},{key:"details",label:"Details"}]} />,
     admin_messages: <AdminListPage goBack={goBack} title="Messages" table="messages" deletable columns={[{key:"sender_name",label:"From"},{key:"sender_phone",label:"Phone"},{key:"context",label:"About"},{key:"reference_title",label:"Reference"},{key:"body",label:"Message"}]} />,
     admin_broadcast: <AdminBroadcast goBack={goBack} />,
+    admin_ride_chats: <AdminRideChats goBack={goBack} />,
     admin_food_orders: <AdminListPage goBack={goBack} title="Food Delivery" table="food_orders" columns={[{key:"restaurant_name",label:"Restaurant"},{key:"customer_name",label:"Customer"},{key:"total",label:"Total"}]} />,
     admin_logistics_parcels: <AdminListPage goBack={goBack} title="Logistics" table="logistics_parcels" columns={[{key:"sender_name",label:"Sender"},{key:"pickup_address",label:"Pickup"},{key:"dropoff_address",label:"Dropoff"}]} />,
     admin_fleet_vehicles: <AdminListPage goBack={goBack} title="Fleet" table="fleet_vehicles" columns={[{key:"plate_number",label:"Plate"},{key:"model",label:"Model"},{key:"driver_name",label:"Driver"}]} />,
