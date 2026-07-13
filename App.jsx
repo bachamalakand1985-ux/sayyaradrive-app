@@ -3657,7 +3657,7 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
 
   async function sendPush(driverPhone, title, body) {
     try {
-      await fetch("/.netlify/functions/send-push", {
+      await fetch("/api/send-push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ driverPhone, title, body }),
