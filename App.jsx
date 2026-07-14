@@ -1035,12 +1035,11 @@ function BookRide({ goBack }) {
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "rgba(217,166,83,0.12)" }}><Icon size={17} color={GOLD} /></div>
                     <div className="text-left"><p className="text-sm font-semibold">{r.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{r.eta} away</p></div>
                   </div>
-                  <p className="text-sm font-semibold">{fareFor(r)} SAR</p>
                 </button>
               );
             })}
           </div>
-          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Book {chosenRide.label} — {fareFor(chosenRide)} SAR</button>
+          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Book {chosenRide.label}</button>
         </div>
       )}
 
@@ -1484,7 +1483,12 @@ function DriverApp({ goBack, navigate, currentDriver }) {
         </div>
       )}
       {online && !request && tripState === "idle" && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>You're online — waiting for requests…</p>}
-      {!online && (
+      {!online && currentDriver?.profile && (
+        <div className="px-5 mt-6">
+          <p className="text-sm text-center" style={{ color: FAINT }}>Go online to start receiving ride requests.</p>
+        </div>
+      )}
+      {!online && !currentDriver?.profile && (
         <div className="px-5 mt-6">
           <p className="text-sm text-center" style={{ color: FAINT }}>Go online to start receiving ride requests.</p>
           <button onClick={() => navigate("driver_login")} className="w-full mt-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
@@ -1838,6 +1842,15 @@ const CARS = [
   { id: "lumi_sedan", label: "Sedan", model: "Nissan Sunny", price: 115, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,sedan/all?lock=51" },
   { id: "lumi_suv", label: "SUV", model: "Hyundai Tucson", price: 195, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,tucson/all?lock=52" },
   { id: "lumi_van", label: "Minivan", model: "Hyundai Staria", price: 255, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,staria/all?lock=68" },
+  { id: "lumi_101", label: "Economy", model: "Suzuki Swift", price: 85, provider: "Lumi Rent a Car", transmission: "Manual", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/suzuki,swift/all?lock=101" },
+  { id: "lumi_102", label: "Compact", model: "Honda City", price: 98, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/honda,city/all?lock=102" },
+  { id: "lumi_103", label: "Sedan", model: "Toyota Corolla", price: 110, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,corolla/all?lock=103" },
+  { id: "lumi_104", label: "Sedan", model: "Kia K5", price: 125, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,k5/all?lock=104" },
+  { id: "lumi_105", label: "SUV", model: "Kia Sportage", price: 190, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,sportage/all?lock=105" },
+  { id: "lumi_106", label: "SUV", model: "Nissan X-Trail", price: 210, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,xtrail/all?lock=106" },
+  { id: "lumi_107", label: "Pickup", model: "Toyota Hilux", price: 180, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/toyota,hilux/all?lock=107" },
+  { id: "lumi_108", label: "Minivan", model: "Kia Carnival", price: 245, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,carnival/all?lock=108" },
+  { id: "lumi_109", label: "Luxury", model: "Toyota Camry", price: 165, provider: "Lumi Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,camry/all?lock=109" },
   // Theeb Rent a Car
   { id: "theeb_eco", label: "Economy", model: "Kia Cerato", price: 100, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,cerato/all?lock=53" },
   { id: "sedan", label: "Sedan", model: "Toyota Camry", price: 145, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,camry/all?lock=12" },
@@ -1846,6 +1859,14 @@ const CARS = [
   { id: "theeb_suv2", label: "SUV", model: "Toyota Fortuner", price: 225, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 7, fuel: "Diesel", img: "https://loremflickr.com/400/300/toyota,fortuner/all?lock=69" },
   { id: "theeb_van", label: "Minivan", model: "Toyota Hiace", price: 235, provider: "Theeb Rent a Car", transmission: "Manual", seats: 12, fuel: "Diesel", img: "https://loremflickr.com/400/300/toyota,hiace/all?lock=62" },
   { id: "theeb_pickup", label: "Pickup", model: "Toyota Hilux", price: 195, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/pickup-truck/all?lock=16" },
+  { id: "theeb_110", label: "Economy", model: "Nissan Sunny", price: 95, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,sunny/all?lock=110" },
+  { id: "theeb_111", label: "Compact", model: "Hyundai Elantra", price: 108, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,elantra/all?lock=111" },
+  { id: "theeb_112", label: "Sedan", model: "Mazda 6", price: 130, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/mazda,6/all?lock=112" },
+  { id: "theeb_113", label: "SUV", model: "Ford Explorer", price: 260, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/ford,explorer/all?lock=113" },
+  { id: "theeb_114", label: "SUV", model: "Chevrolet Traverse", price: 245, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/chevrolet,traverse/all?lock=114" },
+  { id: "theeb_115", label: "Luxury", model: "Lexus ES", price: 340, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Hybrid", img: "https://loremflickr.com/400/300/lexus,es/all?lock=115" },
+  { id: "theeb_116", label: "Minivan", model: "GMC Savana", price: 250, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 12, fuel: "Petrol", img: "https://loremflickr.com/400/300/gmc,savana/all?lock=116" },
+  { id: "theeb_170", label: "Pickup", model: "Ford F-150", price: 240, provider: "Theeb Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/ford,f150-theeb/all?lock=170" },
   // Yelo Rent a Car
   { id: "yelo_eco", label: "Economy", model: "Toyota Yaris", price: 88, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,yaris-red/all?lock=70" },
   { id: "yelo_sedan", label: "Sedan", model: "Toyota Corolla", price: 120, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,corolla/all?lock=55" },
@@ -1853,6 +1874,15 @@ const CARS = [
   { id: "suv2", label: "SUV", model: "Nissan Patrol", price: 310, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,patrol/all?lock=19" },
   { id: "yelo_luxury", label: "Luxury", model: "Genesis G80", price: 390, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/genesis,luxury-sedan/all?lock=56" },
   { id: "yelo_pickup", label: "Pickup", model: "Ford Ranger", price: 210, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/ford,ranger/all?lock=71" },
+  { id: "yelo_117", label: "Economy", model: "Kia Picanto", price: 80, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,picanto/all?lock=117" },
+  { id: "yelo_118", label: "Compact", model: "Hyundai Accent", price: 96, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,accent/all?lock=118" },
+  { id: "yelo_119", label: "Sedan", model: "Nissan Altima", price: 128, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,altima/all?lock=119" },
+  { id: "yelo_120", label: "SUV", model: "Hyundai Tucson", price: 200, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,tucson/all?lock=120" },
+  { id: "yelo_121", label: "SUV", model: "Kia Sorento", price: 230, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,sorento/all?lock=121" },
+  { id: "yelo_122", label: "Minivan", model: "Toyota Hiace", price: 240, provider: "Yelo Rent a Car", transmission: "Manual", seats: 12, fuel: "Diesel", img: "https://loremflickr.com/400/300/toyota,hiace/all?lock=122" },
+  { id: "yelo_123", label: "Luxury", model: "Mercedes E-Class", price: 400, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/mercedes,eclass/all?lock=123" },
+  { id: "yelo_124", label: "Pickup", model: "Toyota Hilux", price: 200, provider: "Yelo Rent a Car", transmission: "Manual", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/toyota,hilux-red/all?lock=124" },
+  { id: "yelo_125", label: "Compact", model: "Honda Civic", price: 115, provider: "Yelo Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/honda,civic/all?lock=125" },
   // Sixt Rent a Car
   { id: "sixt_sedan", label: "Sedan", model: "Mercedes C-Class", price: 350, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/mercedes,sedan/all?lock=57" },
   { id: "luxury", label: "Luxury", model: "Lexus ES", price: 380, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Hybrid", img: "https://loremflickr.com/400/300/lexus,luxury-car/all?lock=14" },
@@ -1860,6 +1890,15 @@ const CARS = [
   { id: "sixt_suv", label: "SUV", model: "Range Rover Sport", price: 550, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/range-rover,suv/all?lock=58" },
   { id: "sixt_suv2", label: "SUV", model: "Porsche Cayenne", price: 620, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/porsche,cayenne/all?lock=72" },
   { id: "sixt_convertible", label: "Convertible", model: "BMW 4 Series", price: 480, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/bmw,convertible/all?lock=73" },
+  { id: "sixt_126", label: "Economy", model: "Toyota Corolla", price: 130, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,corolla-white/all?lock=126" },
+  { id: "sixt_127", label: "Sedan", model: "Audi A4", price: 340, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/audi,a4/all?lock=127" },
+  { id: "sixt_128", label: "Luxury", model: "Audi A8", price: 550, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/audi,a8/all?lock=128" },
+  { id: "sixt_129", label: "Luxury", model: "Mercedes S-Class", price: 650, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/mercedes,sclass/all?lock=129" },
+  { id: "sixt_130", label: "SUV", model: "BMW X5", price: 500, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/bmw,x5/all?lock=130" },
+  { id: "sixt_131", label: "SUV", model: "Land Cruiser", price: 480, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,landcruiser/all?lock=131" },
+  { id: "sixt_132", label: "Sports", model: "Mustang GT", price: 450, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/ford,mustang/all?lock=132" },
+  { id: "sixt_133", label: "Convertible", model: "Mercedes C-Class Cabriolet", price: 520, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/mercedes,cabriolet/all?lock=133" },
+  { id: "sixt_134", label: "Van", model: "Mercedes V-Class", price: 400, provider: "Sixt Rent a Car", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/mercedes,vclass/all?lock=134" },
   // Hanco Rent a Car
   { id: "hanco_eco", label: "Economy", model: "Chevrolet Aveo", price: 88, provider: "Hanco Rent a Car", transmission: "Manual", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/chevrolet,aveo/all?lock=60" },
   { id: "hanco_eco2", label: "Economy", model: "Hyundai Accent", price: 92, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,accent/all?lock=74" },
@@ -1867,13 +1906,31 @@ const CARS = [
   { id: "hanco_suv", label: "SUV", model: "Hyundai Tucson", price: 200, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,tucson-black/all?lock=75" },
   { id: "van", label: "Minivan", model: "Hyundai Staria", price: 260, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/minivan,van/all?lock=15" },
   { id: "hanco_pickup", label: "Pickup", model: "Toyota Hilux", price: 190, provider: "Hanco Rent a Car", transmission: "Manual", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/pickup-hilux/all?lock=76" },
+  { id: "hanco_135", label: "Compact", model: "Kia Rio", price: 95, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,rio-black/all?lock=135" },
+  { id: "hanco_136", label: "Sedan", model: "Nissan Sunny", price: 112, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,sunny-black/all?lock=136" },
+  { id: "hanco_137", label: "SUV", model: "Chevrolet Trailblazer", price: 220, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/chevrolet,trailblazer/all?lock=137" },
+  { id: "hanco_138", label: "SUV", model: "Jeep Grand Cherokee", price: 260, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/jeep,grandcherokee/all?lock=138" },
+  { id: "hanco_139", label: "Luxury", model: "Nissan Maxima", price: 175, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,maxima/all?lock=139" },
+  { id: "hanco_140", label: "Pickup", model: "GMC Sierra", price: 250, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/gmc,sierra/all?lock=140" },
+  { id: "hanco_141", label: "Minivan", model: "Kia Carnival", price: 250, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,carnival-black/all?lock=141" },
+  { id: "hanco_142", label: "Economy", model: "Kia Picanto", price: 80, provider: "Hanco Rent a Car", transmission: "Manual", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,picanto-black/all?lock=142" },
+  { id: "hanco_143", label: "Compact", model: "Toyota Yaris", price: 90, provider: "Hanco Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,yaris-black/all?lock=143" },
   // Key Rent a Car
   { id: "key_eco", label: "Economy", model: "Kia Picanto", price: 80, provider: "Key Rent a Car", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,picanto/all?lock=77" },
   { id: "key_sedan", label: "Sedan", model: "Nissan Sunny", price: 112, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,sunny/all?lock=78" },
   { id: "key_suv", label: "SUV", model: "GMC Yukon", price: 340, provider: "Key Rent a Car", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/gmc,yukon/all?lock=61" },
-  { id: "pickup", label: "Pickup", model: "Toyota Hilux", price: 190, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/pickup-truck/all?lock=16" },
+  { id: "pickup", label: "Pickup", model: "Toyota Hilux", price: 190, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/pickup-truck/all?lock=144" },
   { id: "key_pickup2", label: "Pickup", model: "Ford F-150", price: 260, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/ford,f150/all?lock=79" },
   { id: "key_van", label: "Minivan", model: "Toyota Hiace", price: 230, provider: "Key Rent a Car", transmission: "Manual", seats: 12, fuel: "Diesel", img: "https://loremflickr.com/400/300/toyota,hiace-van/all?lock=80" },
+  { id: "key_145", label: "Economy", model: "Chevrolet Spark", price: 76, provider: "Key Rent a Car", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/chevrolet,spark-key/all?lock=145" },
+  { id: "key_146", label: "Compact", model: "Hyundai Accent", price: 95, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,accent-key/all?lock=146" },
+  { id: "key_147", label: "Sedan", model: "Toyota Corolla", price: 118, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,corolla-key/all?lock=147" },
+  { id: "key_148", label: "SUV", model: "Hyundai Creta", price: 175, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,creta/all?lock=148" },
+  { id: "key_149", label: "SUV", model: "Kia Seltos", price: 185, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,seltos/all?lock=149" },
+  { id: "key_150", label: "Luxury", model: "Infiniti Q50", price: 300, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/infiniti,q50/all?lock=150" },
+  { id: "key_151", label: "Pickup", model: "Nissan Navara", price: 230, provider: "Key Rent a Car", transmission: "Automatic", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/nissan,navara/all?lock=151" },
+  { id: "key_152", label: "Minivan", model: "Chevrolet Suburban", price: 320, provider: "Key Rent a Car", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/chevrolet,suburban/all?lock=152" },
+  { id: "key_171", label: "Luxury", model: "Cadillac Escalade", price: 450, provider: "Key Rent a Car", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/cadillac,escalade/all?lock=171" },
   // Budget Saudi Arabia
   { id: "budget_eco", label: "Economy", model: "Chevrolet Spark", price: 78, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/chevrolet,spark/all?lock=81" },
   { id: "budget1", label: "Economy", model: "Kia Pegas", price: 85, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,sedan/all?lock=41" },
@@ -1881,6 +1938,15 @@ const CARS = [
   { id: "budget_sedan", label: "Sedan", model: "Nissan Altima", price: 125, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,altima/all?lock=63" },
   { id: "budget_sedan2", label: "Sedan", model: "Toyota Corolla", price: 118, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,corolla-silver/all?lock=83" },
   { id: "budget_suv", label: "SUV", model: "Kia Sportage", price: 200, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,sportage/all?lock=64" },
+  { id: "budget_153", label: "Economy", model: "Suzuki Celerio", price: 72, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/suzuki,celerio/all?lock=153" },
+  { id: "budget_154", label: "Compact", model: "Toyota Yaris", price: 92, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,yaris-budget/all?lock=154" },
+  { id: "budget_155", label: "Sedan", model: "Hyundai Elantra", price: 110, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,elantra-budget/all?lock=155" },
+  { id: "budget_156", label: "SUV", model: "Nissan Kicks", price: 175, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,kicks/all?lock=156" },
+  { id: "budget_157", label: "SUV", model: "Hyundai Tucson", price: 190, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,tucson-budget/all?lock=157" },
+  { id: "budget_158", label: "Minivan", model: "Toyota Innova", price: 215, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,innova/all?lock=158" },
+  { id: "budget_159", label: "Pickup", model: "Isuzu D-Max", price: 175, provider: "Budget Saudi Arabia", transmission: "Manual", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/isuzu,dmax/all?lock=159" },
+  { id: "budget_160", label: "Economy", model: "Kia Picanto", price: 75, provider: "Budget Saudi Arabia", transmission: "Manual", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,picanto-budget/all?lock=160" },
+  { id: "budget_161", label: "Sedan", model: "Chevrolet Malibu", price: 132, provider: "Budget Saudi Arabia", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/chevrolet,malibu/all?lock=161" },
   // Ejar
   { id: "ejar_eco", label: "Economy", model: "Suzuki Ciaz", price: 82, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/suzuki,ciaz/all?lock=65" },
   { id: "ejar_eco2", label: "Economy", model: "Kia Picanto", price: 78, provider: "Ejar", transmission: "Manual", seats: 4, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,picanto-white/all?lock=84" },
@@ -1888,6 +1954,15 @@ const CARS = [
   { id: "ejar_sedan2", label: "Sedan", model: "Nissan Sunny", price: 110, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,sunny-white/all?lock=85" },
   { id: "ejar_suv", label: "SUV", model: "Hyundai Tucson", price: 205, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,tucson-red/all?lock=86" },
   { id: "ejar_luxury", label: "Luxury", model: "Audi A6", price: 400, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/audi,a6/all?lock=66" },
+  { id: "ejar_162", label: "Economy", model: "Toyota Yaris", price: 88, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/toyota,yaris-ejar/all?lock=162" },
+  { id: "ejar_163", label: "Compact", model: "Honda City", price: 96, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/honda,city-ejar/all?lock=163" },
+  { id: "ejar_164", label: "Sedan", model: "Kia K5", price: 128, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,k5-ejar/all?lock=164" },
+  { id: "ejar_165", label: "SUV", model: "Kia Sorento", price: 235, provider: "Ejar", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/kia,sorento-ejar/all?lock=165" },
+  { id: "ejar_166", label: "SUV", model: "Nissan X-Trail", price: 210, provider: "Ejar", transmission: "Automatic", seats: 7, fuel: "Petrol", img: "https://loremflickr.com/400/300/nissan,xtrail-ejar/all?lock=166" },
+  { id: "ejar_167", label: "Luxury", model: "BMW 3 Series", price: 380, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/bmw,3series/all?lock=167" },
+  { id: "ejar_168", label: "Minivan", model: "Hyundai Staria", price: 250, provider: "Ejar", transmission: "Automatic", seats: 8, fuel: "Petrol", img: "https://loremflickr.com/400/300/hyundai,staria-ejar/all?lock=168" },
+  { id: "ejar_169", label: "Pickup", model: "Toyota Hilux", price: 195, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Diesel", img: "https://loremflickr.com/400/300/toyota,hilux-ejar/all?lock=169" },
+  { id: "ejar_172", label: "Sedan", model: "Mazda 6", price: 132, provider: "Ejar", transmission: "Automatic", seats: 5, fuel: "Petrol", img: "https://loremflickr.com/400/300/mazda,6-ejar/all?lock=172" },
 ];
 const RENTAL_COMPANY_INFO = {
   "Lumi Rent a Car": { branches: "Riyadh, Jeddah, Dammam", rating: 4.5 },
@@ -2306,6 +2381,11 @@ const MENU = {
     { id: "m4", category: "Rice & Mandi", name: "Kabsa Chicken", desc: "Spiced rice with tender chicken", price: 42 },
     { id: "m5", category: "Rice & Mandi", name: "Mandi Lamb", desc: "Slow-cooked lamb over saffron rice", price: 58 },
     { id: "m6", category: "BBQ Platters", name: "Mixed Grill Platter", desc: "Chicken, kebab, and kofta for 2", price: 75 },
+    { id: "m1-7", category: "BBQ Platters", name: "Lamb Kofta Skewers", desc: "Grilled minced lamb skewers with herbs", price: 40 },
+    { id: "m1-8", category: "Starters", name: "Hummus Plate", desc: "Creamy hummus with olive oil and pita", price: 16 },
+    { id: "m1-9", category: "Starters", name: "Fattoush Salad", desc: "Fresh greens with toasted bread and sumac", price: 18 },
+    { id: "m1-10", category: "Drinks", name: "Saudi Champagne", desc: "Apple, mint, and soda mocktail", price: 12 },
+    { id: "m1-11", category: "Desserts", name: "Basbousa", desc: "Sweet semolina cake with syrup", price: 14 },
   ],
   2: [
     { id: "m7", category: "Burgers", name: "Classic Beef Burger", desc: "Beef patty, cheddar, house sauce", price: 28 },
@@ -2313,42 +2393,96 @@ const MENU = {
     { id: "m9", category: "Burgers", name: "Double Smash Burger", desc: "Two smashed patties, double cheese", price: 36 },
     { id: "m10", category: "Sides", name: "Fries", desc: "Crispy golden fries", price: 12 },
     { id: "m11", category: "Sides", name: "Onion Rings", desc: "Crunchy battered onion rings", price: 14 },
+    { id: "m2-12", category: "Burgers", name: "Mushroom Swiss Burger", desc: "Sauteed mushrooms, swiss cheese", price: 34 },
+    { id: "m2-13", category: "Burgers", name: "BBQ Bacon Burger", desc: "Smoky BBQ sauce, crispy beef bacon", price: 38 },
+    { id: "m2-14", category: "Sides", name: "Loaded Fries", desc: "Fries topped with cheese sauce and jalapenos", price: 20 },
+    { id: "m2-15", category: "Sides", name: "Coleslaw", desc: "Creamy shredded cabbage salad", price: 10 },
+    { id: "m2-16", category: "Drinks", name: "Milkshake", desc: "Vanilla, chocolate, or strawberry", price: 16 },
+    { id: "m2-17", category: "Drinks", name: "Soft Drink", desc: "Chilled can, various flavors", price: 6 },
   ],
   3: [
     { id: "m12", category: "Bowls", name: "Grilled Chicken Bowl", desc: "Grilled chicken, greens, tahini dressing", price: 34 },
     { id: "m13", category: "Bowls", name: "Quinoa Salad", desc: "Quinoa, roasted veg, lemon dressing", price: 30 },
     { id: "m14", category: "Bowls", name: "Falafel Bowl", desc: "Crispy falafel, hummus, pickled veg", price: 28 },
     { id: "m15", category: "Juices", name: "Fresh Orange Juice", desc: "Cold-pressed, no sugar added", price: 14 },
+    { id: "m3-18", category: "Bowls", name: "Salmon Poke Bowl", desc: "Fresh salmon, avocado, edamame, rice", price: 44 },
+    { id: "m3-19", category: "Bowls", name: "Mediterranean Bowl", desc: "Grilled halloumi, olives, tabbouleh", price: 32 },
+    { id: "m3-20", category: "Salads", name: "Caesar Salad", desc: "Romaine, parmesan, grilled chicken", price: 30 },
+    { id: "m3-21", category: "Salads", name: "Greek Salad", desc: "Feta, cucumber, tomato, olives", price: 26 },
+    { id: "m3-22", category: "Juices", name: "Green Detox Juice", desc: "Kale, apple, celery, lemon", price: 16 },
+    { id: "m3-23", category: "Snacks", name: "Protein Energy Balls (3pc)", desc: "Dates, oats, and nut butter", price: 12 },
   ],
   4: [
     { id: "m16", category: "Desserts", name: "Kunafa Slice", desc: "Crispy kunafa with sweet cheese", price: 18 },
     { id: "m17", category: "Desserts", name: "Date Cake", desc: "Moist cake with Saudi dates", price: 15 },
     { id: "m18", category: "Desserts", name: "Umm Ali", desc: "Warm bread pudding with nuts", price: 20 },
+    { id: "m4-24", category: "Desserts", name: "Baklava Box (6pc)", desc: "Layered pastry with pistachios and honey", price: 25 },
+    { id: "m4-25", category: "Desserts", name: "Chocolate Lava Cake", desc: "Warm cake with molten chocolate center", price: 22 },
+    { id: "m4-26", category: "Desserts", name: "Cheesecake Slice", desc: "Classic New York style cheesecake", price: 19 },
+    { id: "m4-27", category: "Date Treats", name: "Stuffed Dates (8pc)", desc: "Dates filled with almonds and cream cheese", price: 24 },
+    { id: "m4-28", category: "Date Treats", name: "Date Maamoul (6pc)", desc: "Traditional date-filled cookies", price: 20 },
+    { id: "m4-29", category: "Drinks", name: "Arabic Coffee", desc: "Traditional qahwa with cardamom", price: 10 },
+    { id: "m4-30", category: "Drinks", name: "Saffron Milk", desc: "Warm milk infused with saffron and rose", price: 14 },
   ],
   5: [
     { id: "m19", category: "Hot Drinks", name: "Arabic Coffee (pot)", desc: "Traditional qahwa with cardamom", price: 20 },
     { id: "m20", category: "Hot Drinks", name: "Cardamom Latte", desc: "Espresso, steamed milk, cardamom", price: 16 },
     { id: "m21", category: "Cold Drinks", name: "Iced Karak", desc: "Chilled spiced milk tea", price: 15 },
+    { id: "m5-31", category: "Hot Drinks", name: "Turkish Coffee", desc: "Rich and strong, served with dates", price: 14 },
+    { id: "m5-32", category: "Hot Drinks", name: "Spanish Latte", desc: "Sweetened condensed milk espresso", price: 17 },
+    { id: "m5-33", category: "Cold Drinks", name: "Iced Spanish Latte", desc: "Chilled sweet espresso with milk", price: 18 },
+    { id: "m5-34", category: "Cold Drinks", name: "Mango Smoothie", desc: "Fresh mango blended with yogurt", price: 20 },
+    { id: "m5-35", category: "Pastries", name: "Croissant", desc: "Buttery, flaky, freshly baked", price: 10 },
+    { id: "m5-36", category: "Pastries", name: "Cheese Manakish", desc: "Warm flatbread with melted cheese", price: 14 },
+    { id: "m5-37", category: "Pastries", name: "Chocolate Muffin", desc: "Rich double chocolate chip muffin", price: 12 },
   ],
   6: [
     { id: "m22", category: "Fried Chicken", name: "Broasted Chicken Meal", desc: "3pc broasted chicken with rice", price: 24 },
     { id: "m23", category: "Fried Chicken", name: "Chicken Strips (5pc)", desc: "Crispy strips with dipping sauce", price: 22 },
     { id: "m24", category: "Extras", name: "Garlic Sauce Extra", desc: "Signature garlic dip", price: 5 },
+    { id: "m6-38", category: "Fried Chicken", name: "9pc Family Bucket", desc: "9 pieces of broasted chicken", price: 65 },
+    { id: "m6-39", category: "Fried Chicken", name: "Spicy Chicken Sandwich", desc: "Crispy spicy fillet, pickles, mayo", price: 20 },
+    { id: "m6-40", category: "Sides", name: "Mashed Potatoes", desc: "Creamy potatoes with gravy", price: 12 },
+    { id: "m6-41", category: "Sides", name: "Coleslaw Cup", desc: "Fresh and creamy side salad", price: 8 },
+    { id: "m6-42", category: "Sides", name: "Dinner Roll (2pc)", desc: "Soft warm bread rolls", price: 6 },
+    { id: "m6-43", category: "Extras", name: "Ketchup Packets", desc: "Pack of 5", price: 2 },
+    { id: "m6-44", category: "Drinks", name: "Soft Drink (Large)", desc: "Chilled fountain drink", price: 8 },
   ],
   7: [
     { id: "m25", category: "Mandi", name: "Mandi Chicken", desc: "Slow-smoked chicken over rice", price: 45 },
     { id: "m26", category: "Mandi", name: "Mandi Lamb (large)", desc: "Full lamb shoulder, serves 3", price: 78 },
     { id: "m27", category: "Sides", name: "Saudi Salad", desc: "Fresh tomato, cucumber, onion", price: 10 },
+    { id: "m7-45", category: "Mandi", name: "Mandi Camel Meat", desc: "Traditional slow-cooked camel meat over rice", price: 85 },
+    { id: "m7-46", category: "Mandi", name: "Mandi Mixed (Chicken & Lamb)", desc: "Combo platter for sharing", price: 68 },
+    { id: "m7-47", category: "Sides", name: "Grilled Vegetables", desc: "Seasonal vegetables charred over open flame", price: 16 },
+    { id: "m7-48", category: "Sides", name: "White Rice", desc: "Plain steamed basmati rice", price: 8 },
+    { id: "m7-49", category: "Soups", name: "Lentil Soup", desc: "Traditional Saudi red lentil soup", price: 12 },
+    { id: "m7-50", category: "Drinks", name: "Laban", desc: "Chilled savory yogurt drink", price: 8 },
+    { id: "m7-51", category: "Desserts", name: "Luqaimat (8pc)", desc: "Sweet fried dumplings with date syrup", price: 16 },
   ],
   8: [
     { id: "m28", category: "Pasta", name: "Spaghetti Bolognese", desc: "Slow-cooked beef ragu", price: 38 },
     { id: "m29", category: "Pasta", name: "Fettuccine Alfredo", desc: "Creamy parmesan sauce", price: 42 },
     { id: "m30", category: "Pasta", name: "Penne Arrabbiata", desc: "Spicy tomato and garlic", price: 34 },
+    { id: "m8-52", category: "Pasta", name: "Lasagna", desc: "Layered pasta with beef and bechamel", price: 45 },
+    { id: "m8-53", category: "Pasta", name: "Carbonara", desc: "Creamy egg sauce with beef bacon", price: 40 },
+    { id: "m8-54", category: "Pizza", name: "Margherita Pizza", desc: "Tomato, mozzarella, fresh basil", price: 36 },
+    { id: "m8-55", category: "Pizza", name: "Pepperoni Pizza", desc: "Classic pepperoni with mozzarella", price: 40 },
+    { id: "m8-56", category: "Starters", name: "Garlic Bread", desc: "Toasted bread with garlic butter", price: 14 },
+    { id: "m8-57", category: "Starters", name: "Bruschetta", desc: "Toasted bread with tomato and basil", price: 18 },
+    { id: "m8-58", category: "Desserts", name: "Tiramisu", desc: "Classic Italian coffee-flavored dessert", price: 22 },
   ],
   9: [
     { id: "m31", category: "Sushi", name: "Salmon Sushi Set", desc: "8pc fresh salmon nigiri & rolls", price: 55 },
     { id: "m32", category: "Sushi", name: "California Roll (8pc)", desc: "Crab, avocado, cucumber", price: 32 },
     { id: "m33", category: "Sushi", name: "Spicy Tuna Roll (8pc)", desc: "Tuna, spicy mayo, sesame", price: 36 },
+    { id: "m9-59", category: "Sushi", name: "Dragon Roll (8pc)", desc: "Eel, avocado, cucumber, eel sauce", price: 48 },
+    { id: "m9-60", category: "Sushi", name: "Rainbow Roll (8pc)", desc: "Assorted fish over California roll", price: 52 },
+    { id: "m9-61", category: "Starters", name: "Edamame", desc: "Steamed soybeans with sea salt", price: 14 },
+    { id: "m9-62", category: "Starters", name: "Gyoza (6pc)", desc: "Pan-fried chicken dumplings", price: 22 },
+    { id: "m9-63", category: "Soups", name: "Miso Soup", desc: "Traditional Japanese soybean soup", price: 10 },
+    { id: "m9-64", category: "Mains", name: "Chicken Teriyaki", desc: "Grilled chicken with teriyaki glaze and rice", price: 38 },
+    { id: "m9-65", category: "Drinks", name: "Japanese Green Tea", desc: "Hot or iced sencha tea", price: 10 },
   ],
 };
 
@@ -2361,8 +2495,13 @@ function getMenuForRestaurant(restaurant) {
     { id: `${restaurant.id}-1`, category: "Chef's Picks", name: "House Special", desc: "Our most popular dish, chef's recommendation", price: 35 },
     { id: `${restaurant.id}-2`, category: "Chef's Picks", name: "Signature Platter", desc: "A generous sharing platter for 2", price: 60 },
     { id: `${restaurant.id}-3`, category: "Mains", name: `${restaurant.cuisine || "House"} Classic`, desc: "A well-loved classic done right", price: 28 },
-    { id: `${restaurant.id}-4`, category: "Sides", name: "Side of the Day", desc: "Ask your driver what's fresh today", price: 12 },
-    { id: `${restaurant.id}-5`, category: "Drinks", name: "Soft Drink", desc: "Chilled can, various flavors", price: 6 },
+    { id: `${restaurant.id}-4`, category: "Mains", name: "Chef's Choice Platter", desc: "Rotating seasonal selection", price: 32 },
+    { id: `${restaurant.id}-5`, category: "Mains", name: "Grilled Special", desc: "Charcoal-grilled house favorite", price: 34 },
+    { id: `${restaurant.id}-6`, category: "Sides", name: "Side of the Day", desc: "Ask your driver what's fresh today", price: 12 },
+    { id: `${restaurant.id}-7`, category: "Sides", name: "Fresh Salad", desc: "Seasonal greens with house dressing", price: 15 },
+    { id: `${restaurant.id}-8`, category: "Starters", name: "Soup of the Day", desc: "Warm and comforting, changes daily", price: 14 },
+    { id: `${restaurant.id}-9`, category: "Desserts", name: "Dessert of the Day", desc: "A sweet finish to your meal", price: 16 },
+    { id: `${restaurant.id}-10`, category: "Drinks", name: "Soft Drink", desc: "Chilled can, various flavors", price: 6 },
   ];
   return base;
 }
@@ -2738,27 +2877,6 @@ function Logistics({ goBack, navigate }) {
     </div>
   );
 
-  if (openCourier) return (
-    <div style={{ color: TEXT }}>
-      <Header title={openCourier.name} onBack={() => setOpenCourier(null)} />
-      <div className="px-5 mb-4">
-        <p className="text-xs" style={{ color: FAINT }}>{openCourier.coverage}</p>
-      </div>
-      <div className="px-5 flex flex-col gap-2 mb-4">
-        {openCourier.tiers.map((t) => (
-          <div key={t.label} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div><p className="text-sm font-semibold">{t.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{t.eta}</p></div>
-            <div className="flex items-center gap-3">
-              <p className="text-sm font-semibold" style={{ color: GOLD }}>~{t.price} SAR</p>
-              <button onClick={() => { setChosenTier(t); setStage("input"); setView("request"); }} className="px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: GOLD, color: BG }}>Select</button>
-            </div>
-          </div>
-        ))}
-      </div>
-      <p className="px-5 text-[10px]" style={{ color: FAINT }}>Rates shown are estimates — final pricing is confirmed by {openCourier.name} at pickup.</p>
-    </div>
-  );
-
   return (
     <div style={{ color: TEXT }}>
       <Header title="Send a parcel" onBack={goBack} />
@@ -2778,7 +2896,7 @@ function Logistics({ goBack, navigate }) {
       {view === "couriers" && (
         <div className="px-5 flex flex-col gap-2">
           {COURIER_PARTNERS.map((c) => (
-            <button key={c.name} onClick={() => setOpenCourier(c)} className="flex items-center justify-between rounded-xl px-4 py-3 text-left" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <button key={c.name} onClick={() => { setOpenCourier(c); setChosenTier(c.tiers[0]); setView("request"); }} className="flex items-center justify-between rounded-xl px-4 py-3 text-left" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <div>
                 <p className="text-sm font-semibold">{c.name}</p>
                 <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{c.coverage}</p>
