@@ -8,7 +8,7 @@ import {
   Plus, Tag, X, Star, ShoppingBag as Bag, Minus,
   Package, Phone, DollarSign,
   Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check,
-  Link, Globe, Trophy, MessageCircle, Mic
+  Link, Globe, Trophy, MessageCircle, Mic, RefreshCw, Flag, Image as ImageIcon
 } from "lucide-react";
 
 /* ---------- support contact ---------- */
@@ -22,6 +22,28 @@ const HERE_API_KEY = "-ZUX_FxV-ok4896M-TXR2aqAShTd04KfYRqS_3_JGAM";
 
 /* ---------- shared HERE Maps SDK loader ---------- */
 let hereSdkPromise = null;
+/* ---------- shared push notification sender ---------- */
+async function sendPush(driverPhone, title, body) {
+  if (!driverPhone) return;
+  try {
+    await fetch("/api/send-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ driverPhone, title, body }),
+    });
+  } catch (e) { /* push is best-effort; in-app notification already saved */ }
+}
+
+/* ---------- lightweight in-memory cache (cuts redundant API calls when navigating back/forth) ---------- */
+const _dataCache = new Map();
+async function cachedFetch(key, fetchFn, ttlMs = 60000) {
+  const cached = _dataCache.get(key);
+  if (cached && Date.now() - cached.ts < ttlMs) return cached.data;
+  const data = await fetchFn();
+  _dataCache.set(key, { data, ts: Date.now() });
+  return data;
+}
+
 function loadHereMapsSDK() {
   if (hereSdkPromise) return hereSdkPromise;
   hereSdkPromise = new Promise((resolve, reject) => {
@@ -170,44 +192,56 @@ const SAUDI_PLACES = SAUDI_CITY_LIST.flatMap((city) =>
 );
 
 /* ---------- geolocation helper ---------- */
-function detectLocation({ onStart, onSuccess, onError }) {
+function detectLocation({ onStart, onSuccess, onError, _retriesLeft = 2 }) {
   if (!navigator.geolocation) {
-    onError && onError("Geolocation isn't supported on this browser.");
+    onError && onError("Geolocation isn't supported on this browser.", "unsupported");
     return;
   }
   onStart && onStart();
+
+  async function resolveWithCoords(latitude, longitude) {
+    try {
+      const res = await fetch(
+        `https://revgeocode.search.hereapi.com/v1/revgeocode?at=${latitude},${longitude}&lang=en-US&apiKey=${HERE_API_KEY}`
+      );
+      if (!res.ok) throw new Error("reverse geocode failed");
+      const data = await res.json();
+      const address = data?.items?.[0]?.address;
+      const label = address?.label || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+      const city = address?.city || null;
+      try { localStorage.setItem("sayyara_last_location", JSON.stringify({ lat: latitude, lng: longitude, label, city, ts: Date.now() })); } catch (e) {}
+      onSuccess && onSuccess({ lat: latitude, lng: longitude, label, city });
+    } catch (e) {
+      try { localStorage.setItem("sayyara_last_location", JSON.stringify({ lat: latitude, lng: longitude, label: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`, city: null, ts: Date.now() })); } catch (err) {}
+      onSuccess && onSuccess({ lat: latitude, lng: longitude, label: `${latitude.toFixed(4)}, ${longitude.toFixed(4)} (address lookup failed)` });
+    }
+  }
+
   navigator.geolocation.getCurrentPosition(
-    async (pos) => {
-      const { latitude, longitude } = pos.coords;
+    (pos) => resolveWithCoords(pos.coords.latitude, pos.coords.longitude),
+    (err) => {
+      // Permission denied — no point retrying, and don't fall back silently since the user explicitly said no
+      if (err.code === 1) {
+        onError && onError("Location permission denied — allow location access for this site in your browser settings.", "denied");
+        return;
+      }
+      // Timed out / unavailable — retry automatically a couple of times before giving up
+      if (_retriesLeft > 0) {
+        setTimeout(() => detectLocation({ onStart: undefined, onSuccess, onError, _retriesLeft: _retriesLeft - 1 }), 1200);
+        return;
+      }
+      // Out of retries — fall back to last known location if we have one (offline recovery)
       try {
-        const res = await fetch(
-          `https://revgeocode.search.hereapi.com/v1/revgeocode?at=${latitude},${longitude}&lang=en-US&apiKey=${HERE_API_KEY}`
-        );
-        if (!res.ok) {
-          const errBody = await res.text();
-          console.error("HERE reverse geocode failed:", res.status, errBody);
-          onSuccess && onSuccess({ lat: latitude, lng: longitude, label: `${latitude.toFixed(4)}, ${longitude.toFixed(4)} (address lookup failed)` });
+        const cached = JSON.parse(localStorage.getItem("sayyara_last_location") || "null");
+        if (cached && Date.now() - cached.ts < 30 * 60 * 1000) {
+          onSuccess && onSuccess({ lat: cached.lat, lng: cached.lng, label: `${cached.label} (last known location)`, city: cached.city });
           return;
         }
-        const data = await res.json();
-        const address = data?.items?.[0]?.address;
-        const label = address?.label || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-        const city = address?.city || null;
-        onSuccess && onSuccess({ lat: latitude, lng: longitude, label, city });
-      } catch (e) {
-        console.error("Reverse geocode error:", e);
-        onSuccess && onSuccess({ lat: latitude, lng: longitude, label: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` });
-      }
+      } catch (e) {}
+      const messages = { 2: "Your location is unavailable right now — try again.", 3: "Location request timed out — try again." };
+      onError && onError(messages[err.code] || "Couldn't get your location.", "unavailable");
     },
-    (err) => {
-      const messages = {
-        1: "Location permission denied — allow location access for this site in your browser settings.",
-        2: "Your location is unavailable right now — try again.",
-        3: "Location request timed out — try again.",
-      };
-      onError && onError(messages[err.code] || "Couldn't get your location.");
-    },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
   );
 }
 
@@ -222,7 +256,7 @@ const TRANSLATIONS = {
     home: "Home", activity: "Activity", wallet: "Wallet", profile: "Profile",
     ride: "Ride", cityRides: "City rides",
     airport: "Airport", transfers: "Transfers",
-    intercity: "Intercity", cityToCity: "City to city",
+    intercity: "Outside city", cityToCity: "City to city",
     rentals: "Rentals", rentACar: "Rent a car",
     marketplace: "Marketplace", buySell: "Buy & sell",
     food: "Food", delivery: "Delivery",
@@ -241,7 +275,7 @@ const TRANSLATIONS = {
     home: "الرئيسية", activity: "النشاط", wallet: "المحفظة", profile: "الملف",
     ride: "رحلة", cityRides: "رحلات داخل المدينة",
     airport: "المطار", transfers: "نقل",
-    intercity: "بين المدن", cityToCity: "من مدينة لمدينة",
+    intercity: "خارج المدينة", cityToCity: "من مدينة لمدينة",
     rentals: "تأجير", rentACar: "استأجر سيارة",
     marketplace: "السوق", buySell: "بيع وشراء",
     food: "طعام", delivery: "توصيل",
@@ -350,12 +384,69 @@ function Header({ title, onBack, right }) {
   return (
     <div className="flex items-center justify-between px-5 pt-6 pb-4">
       <div className="flex items-center gap-3">
-        <button onClick={onBack} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}>
+        <button onClick={onBack} aria-label="Go back" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}>
           <ArrowLeft size={17} color={TEXT} />
         </button>
         <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, color: TEXT }}>{title}</h1>
       </div>
       {right}
+    </div>
+  );
+}
+
+/* ---------- SKELETON LOADING ---------- */
+/* ---------- SEARCHING ANIMATION (looking for a driver) ---------- */
+function SearchingAnimation() {
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: 60, height: 60 }}>
+      <span className="absolute rounded-full animate-ping" style={{ width: 60, height: 60, background: "rgba(217,166,83,0.25)" }} />
+      <span className="absolute rounded-full animate-ping" style={{ width: 40, height: 40, background: "rgba(217,166,83,0.35)", animationDelay: "0.3s" }} />
+      <div className="relative w-11 h-11 rounded-full flex items-center justify-center" style={{ background: GOLD }}>
+        <Car size={18} color={BG} />
+      </div>
+    </div>
+  );
+}
+
+function Skeleton({ className = "", style = {} }) {
+  return (
+    <div
+      className={`animate-pulse ${className}`}
+      style={{ background: BORDER, borderRadius: 10, ...style }}
+    />
+  );
+}
+function SkeletonCard() {
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+      <Skeleton style={{ height: 110, borderRadius: 0 }} />
+      <div className="p-3 flex flex-col gap-2">
+        <Skeleton style={{ height: 12, width: "70%" }} />
+        <Skeleton style={{ height: 10, width: "45%" }} />
+      </div>
+    </div>
+  );
+}
+function SkeletonRow() {
+  return (
+    <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+      <Skeleton style={{ width: 48, height: 48, borderRadius: 12, flexShrink: 0 }} />
+      <div className="flex-1 flex flex-col gap-2">
+        <Skeleton style={{ height: 12, width: "60%" }} />
+        <Skeleton style={{ height: 10, width: "35%" }} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------- EMPTY STATE (reusable) ---------- */
+function EmptyState({ icon: Icon, title, subtitle, action }) {
+  return (
+    <div className="flex flex-col items-center text-center py-12 px-5">
+      {Icon && <Icon size={32} color={FAINT} />}
+      <p className="text-sm font-semibold mt-3">{title}</p>
+      {subtitle && <p className="text-xs mt-1" style={{ color: FAINT }}>{subtitle}</p>}
+      {action}
     </div>
   );
 }
@@ -382,7 +473,7 @@ function Home({ navigate, lang, setLang, t }) {
     <div className="pb-4 relative overflow-hidden" style={{ color: TEXT }} dir={lang === "ar" ? "rtl" : "ltr"}>
       <SkylineBackground opacity={0.9} />
       <div className="relative flex items-center justify-between px-5 pt-6 pb-2">
-        <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}><Menu size={18} color={TEXT} /></button>
+        <button aria-label="Menu" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}><Menu size={18} color={TEXT} /></button>
         <div className="text-[10px] uppercase" style={{ color: GREEN, letterSpacing: "0.25em" }}>Riyadh, Saudi Arabia</div>
         <div className="flex items-center gap-2">
           <button
@@ -392,7 +483,7 @@ function Home({ navigate, lang, setLang, t }) {
           >
             {lang === "en" ? "AR" : "EN"}
           </button>
-          <button onClick={() => navigate("notifications")} className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
+          <button onClick={() => navigate("notifications")} aria-label="Notifications" className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
             <Bell size={17} color={TEXT} />
             {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />}
           </button>
@@ -483,7 +574,75 @@ function BookRide({ goBack }) {
   const [stage, setStage] = useState("input");
   const [bookingRef, setBookingRef] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
-  useEffect(() => { if (stage === "confirmed" && !bookingRef) setBookingRef(`RIDE-${Date.now().toString(36).toUpperCase()}`); if (stage === "input") setBookingRef(null); }, [stage]);
+  useEffect(() => {
+    if (stage === "confirmed" && !bookingRef) {
+      const ref = `RIDE-${Date.now().toString(36).toUpperCase()}`;
+      setBookingRef(ref);
+      const rideData = mode === "city"
+        ? { booking_ref: ref, ride_type: "city", pickup_label: pickup, dropoff_label: dropoff, pickup_lat: pickupCoords.lat, pickup_lng: pickupCoords.lng, city: pickupCity, status: "requested", distance_km: routeInfo?.distanceKm || null, duration_min: routeInfo?.durationMin || null }
+        : mode === "airport"
+        ? { booking_ref: ref, ride_type: "airport", pickup_label: direction === "to" ? address : `${AIRPORTS.find(a => a === airport) || airport} (pickup)`, dropoff_label: direction === "to" ? airport : address, pickup_lat: aptCoords.lat, pickup_lng: aptCoords.lng, city: cityForAirport, scheduled_date: aptDate, scheduled_time: aptTime, status: "requested" }
+        : { booking_ref: ref, ride_type: "intercity", pickup_label: icPickupLabel || icFrom, dropoff_label: icTo, pickup_lat: icPickupCoords.lat, pickup_lng: icPickupCoords.lng, city: icFrom, scheduled_date: icDate, scheduled_time: icTime, status: "requested" };
+      supabase.from("rides").insert(rideData).then(() => {
+        try {
+          const saved = JSON.parse(localStorage.getItem("sayyara_my_rides") || "[]");
+          localStorage.setItem("sayyara_my_rides", JSON.stringify([ref, ...saved].slice(0, 50)));
+        } catch (e) {}
+      });
+    }
+    if (stage === "input") setBookingRef(null);
+  }, [stage]);
+
+  async function cancelRide() {
+    if (bookingRef) {
+      await supabase.from("rides").update({ status: "cancelled" }).eq("booking_ref", bookingRef);
+      if (rideDriverId) {
+        const { data: driver } = await supabase.from("drivers").select("mobile_number").eq("id", rideDriverId).maybeSingle();
+        if (driver?.mobile_number) {
+          await supabase.from("notifications").insert({ recipient_phone: driver.mobile_number, recipient_type: "driver", title: "Ride cancelled", body: "The passenger cancelled this ride." });
+          sendPush(driver.mobile_number, "Ride cancelled", "The passenger cancelled this ride.");
+        }
+      }
+    }
+    setStage("cancelled");
+  }
+
+  const [rideStatus, setRideStatus] = useState(null);
+  const [rideDriverId, setRideDriverId] = useState(null);
+  const [driverDistanceKm, setDriverDistanceKm] = useState(null);
+  useEffect(() => {
+    if (stage !== "confirmed" || !bookingRef) return;
+    async function poll() {
+      if (document.hidden) return;
+      const { data } = await supabase.from("rides").select("status, driver_id, drivers(last_lat, last_lng)").eq("booking_ref", bookingRef).maybeSingle();
+      if (data) {
+        setRideStatus(data.status); setRideDriverId(data.driver_id);
+        const dLoc = data.drivers;
+        if (dLoc?.last_lat && (data.status === "accepted" || data.status === "arrived")) {
+          const R = 6371;
+          const dLat = (dLoc.last_lat - pickupCoords.lat) * Math.PI / 180;
+          const dLng = (dLoc.last_lng - pickupCoords.lng) * Math.PI / 180;
+          const a = Math.sin(dLat / 2) ** 2 + Math.cos(pickupCoords.lat * Math.PI / 180) * Math.cos(dLoc.last_lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+          setDriverDistanceKm((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1));
+        } else {
+          setDriverDistanceKm(null);
+        }
+      }
+    }
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [stage, bookingRef]);
+
+  function rideStatusText(defaultTitle, defaultSubtitle) {
+    switch (rideStatus) {
+      case "accepted": return { title: "Driver on the way", subtitle: "Your driver accepted the ride and is heading to pickup." };
+      case "arrived": return { title: "Your driver has arrived", subtitle: "They're waiting at the pickup point." };
+      case "in_progress": return { title: "Trip in progress", subtitle: "Enjoy your ride!" };
+      case "completed": return { title: "Trip completed", subtitle: "Hope you had a great trip!" };
+      default: return { title: defaultTitle, subtitle: defaultSubtitle };
+    }
+  }
 
   // --- city ride state ---
   const mapRef = useRef(null);
@@ -494,6 +653,40 @@ function BookRide({ goBack }) {
   const [pickupCoords, setPickupCoords] = useState({ lat: 24.7136, lng: 46.6753 });
   const [pickupCity, setPickupCity] = useState("Riyadh");
   const [dropoff, setDropoff] = useState("");
+  const [dropoffCoords, setDropoffCoords] = useState(null);
+  const [routeInfo, setRouteInfo] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const routeLineRef = useRef(null);
+
+  async function geocodeAndRoute(label) {
+    setRouteLoading(true);
+    setRouteInfo(null);
+    try {
+      const geoRes = await fetch(`https://geocode.search.hereapi.com/v1/geocode?q=${encodeURIComponent(label + ", Saudi Arabia")}&apiKey=${HERE_API_KEY}`);
+      const geoData = await geoRes.json();
+      const pos = geoData?.items?.[0]?.position;
+      if (!pos) { setRouteLoading(false); return; }
+      setDropoffCoords({ lat: pos.lat, lng: pos.lng });
+
+      const routeRes = await fetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${pickupCoords.lat},${pickupCoords.lng}&destination=${pos.lat},${pos.lng}&return=summary,polyline&alternatives=1&apiKey=${HERE_API_KEY}`);
+      const routeData = await routeRes.json();
+      const route = routeData?.routes?.[0];
+      const summary = route?.sections?.[0]?.summary;
+      if (summary) {
+        setRouteInfo({ distanceKm: (summary.length / 1000).toFixed(1), durationMin: Math.round(summary.duration / 60), altCount: routeData.routes.length });
+      }
+      if (route?.sections?.[0]?.polyline && window.H && mapObjRef.current) {
+        if (routeLineRef.current) { mapObjRef.current.removeObject(routeLineRef.current); routeLineRef.current = null; }
+        const lineString = window.H.geo.LineString.fromFlexiblePolyline(route.sections[0].polyline);
+        const routeLine = new window.H.map.Polyline(lineString, { style: { lineWidth: 4, strokeColor: "#D9A653" } });
+        mapObjRef.current.addObject(routeLine);
+        routeLineRef.current = routeLine;
+        mapObjRef.current.getViewModel().setLookAtData({ bounds: routeLine.getBoundingBox() });
+      }
+    } catch (e) { /* route calculation is best-effort */ }
+    setRouteLoading(false);
+  }
+
   const [activeField, setActiveField] = useState(null); // "pickup" | "dropoff" | null
   const cityPlaces = SAUDI_PLACES.filter((p) => p.city === pickupCity);
   const pickupSuggestions = activeField === "pickup" && pickup.trim()
@@ -634,7 +827,7 @@ function BookRide({ goBack }) {
   const MODE_TABS = [
     { id: "city", label: "City" },
     { id: "airport", label: "Airport" },
-    { id: "intercity", label: "Intercity" },
+    { id: "intercity", label: "Outside city" },
   ];
 
   return (
@@ -699,7 +892,7 @@ function BookRide({ goBack }) {
             {dropoffSuggestions.length > 0 && (
               <div className="absolute left-5 right-5 mt-1 rounded-xl overflow-hidden z-20" style={{ background: CARD, border: `1px solid ${BORDER}`, top: 68 }}>
                 {dropoffSuggestions.map((p) => (
-                  <button key={p.label} onMouseDown={() => { setDropoff(p.label); setActiveField(null); }} className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  <button key={p.label} onMouseDown={() => { setDropoff(p.label); setActiveField(null); geocodeAndRoute(p.label); }} className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs" style={{ borderBottom: `1px solid ${BORDER}` }}>
                     <MapPin size={12} color={GOLD} /> {p.label}
                   </button>
                 ))}
@@ -709,6 +902,14 @@ function BookRide({ goBack }) {
               <Navigation size={13} className={locating ? "animate-pulse" : ""} /> {locating ? "Detecting location…" : "Use my current location"}
             </button>
             {locError && <p className="text-[11px] text-center mt-2" style={{ color: "#C0755B" }}>{locError}</p>}
+            {routeLoading && <p className="text-[11px] text-center mt-2" style={{ color: FAINT }}>Calculating route…</p>}
+            {routeInfo && !routeLoading && (
+              <div className="flex items-center justify-center gap-4 mt-3 text-xs" style={{ color: MUTE }}>
+                <span className="flex items-center gap-1"><Route size={12} color={GOLD} /> {routeInfo.distanceKm} km</span>
+                <span className="flex items-center gap-1"><Clock size={12} color={GOLD} /> ~{routeInfo.durationMin} min</span>
+                {routeInfo.altCount > 1 && <span style={{ color: FAINT }}>{routeInfo.altCount} routes available</span>}
+              </div>
+            )}
             <button onClick={goChoose} disabled={!canContinue} className="w-full mt-4 rounded-full py-3 text-sm font-semibold" style={{ background: canContinue ? GOLD : BORDER, color: canContinue ? BG : "#5C736D" }}>
               Find rides
             </button>
@@ -738,12 +939,30 @@ function BookRide({ goBack }) {
 
       {mode === "city" && stage === "confirmed" && (
         <div className="px-5 mt-8 flex flex-col items-center text-center">
-          <CheckCircle2 size={44} color={GREEN} />
-          <h2 className="mt-4 text-lg font-semibold">Ride confirmed</h2>
-          <p className="mt-1 text-sm" style={{ color: MUTE }}>Looking for a nearby driver. You'll be connected by WhatsApp.</p>
+          {(!rideStatus || rideStatus === "requested") ? <SearchingAnimation /> : <CheckCircle2 size={44} color={GREEN} />}
+          <h2 className="mt-4 text-lg font-semibold">{rideStatusText("Ride confirmed").title}</h2>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>{rideStatusText("Ride confirmed", "Looking for a nearby driver. You'll be connected by WhatsApp.").subtitle}</p>
+          {driverDistanceKm !== null && (
+            <p className="mt-1.5 text-xs flex items-center gap-1" style={{ color: GOLD }}><Car size={12} /> Driver is {driverDistanceKm} km away</p>
+          )}
+          {rideStatus === "completed" && (
+            <div className="w-full">
+              <div className="rounded-2xl px-4 py-3 mt-4 text-left" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-xs font-semibold mb-2" style={{ color: MUTE }}>Trip summary</p>
+                <p className="text-xs" style={{ color: FAINT }}>{pickup} → {dropoff}</p>
+                {routeInfo && (
+                  <div className="flex items-center gap-4 mt-2 text-xs" style={{ color: TEXT }}>
+                    <span className="flex items-center gap-1"><Route size={12} color={GOLD} /> {routeInfo.distanceKm} km</span>
+                    <span className="flex items-center gap-1"><Clock size={12} color={GOLD} /> {routeInfo.durationMin} min</span>
+                  </div>
+                )}
+              </div>
+              <RatingPrompt ratingType="driver" targetId={rideDriverId} targetLabel="your driver" bookingRef={bookingRef} prompt="How was your driver?" />
+            </div>
+          )}
           <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this ride</button>
           <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
-          <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>
+          {rideStatus !== "completed" && <button onClick={cancelRide} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>}
         </div>
       )}
       {mode === "city" && stage === "cancelled" && (
@@ -800,7 +1019,7 @@ function BookRide({ goBack }) {
               const isSel = vehicle === v.id;
               return (
                 <button key={v.id} onClick={() => setVehicle(v.id)} className="flex items-center gap-3 rounded-xl px-3 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
-                  <img src={v.img} alt={v.label} className="w-16 h-14 rounded-lg object-cover shrink-0" style={{ background: BORDER }} />
+                  <img src={v.img} alt={v.label} loading="lazy" className="w-16 h-14 rounded-lg object-cover shrink-0" style={{ background: BORDER }} />
                   <div className="flex-1 flex items-center justify-between"><div className="text-left"><p className="text-sm font-semibold">{v.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{v.seats} seats · {v.bags} bags</p></div><p className="text-sm font-semibold">{v.price} SAR</p></div>
                 </button>
               );
@@ -812,11 +1031,16 @@ function BookRide({ goBack }) {
 
       {mode === "airport" && stage === "confirmed" && (
         <div className="px-5 mt-8 flex flex-col items-center text-center">
-          <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Transfer booked</h2>
-          <p className="mt-1 text-sm" style={{ color: MUTE }}>Driver details shared via WhatsApp.</p>
+          <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">{rideStatusText("Transfer booked").title}</h2>
+          <p className="mt-1 text-sm" style={{ color: MUTE }}>{rideStatusText("Transfer booked", "Driver details shared via WhatsApp.").subtitle}</p>
+          {rideStatus === "completed" && (
+            <div className="w-full">
+              <RatingPrompt ratingType="driver" targetId={rideDriverId} targetLabel="your driver" bookingRef={bookingRef} prompt="How was your driver?" />
+            </div>
+          )}
           <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this transfer</button>
           <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
-          <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>
+          {rideStatus !== "completed" && <button onClick={cancelRide} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>}
         </div>
       )}
       {mode === "airport" && stage === "cancelled" && (
@@ -864,12 +1088,18 @@ function BookRide({ goBack }) {
 
       {mode === "intercity" && stage === "confirmed" && (
         <div className="px-5 mt-8 flex flex-col items-center text-center">
-          <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Trip booked</h2>
+          <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">{rideStatusText("Trip booked").title}</h2>
           <p className="mt-1 text-sm" style={{ color: MUTE }}>{icFrom} → {icTo} · {icDate} at {icTime}</p>
-          <p className="mt-2 text-xs flex items-center gap-1.5" style={{ color: GREEN }}><MessageCircle size={13} /> Your driver will message you on WhatsApp with pickup details before departure.</p>
+          {rideStatus && rideStatus !== "requested" && <p className="mt-1 text-xs" style={{ color: GREEN }}>{rideStatusText("", "").subtitle}</p>}
+          {rideStatus === "requested" && <p className="mt-2 text-xs flex items-center gap-1.5" style={{ color: GREEN }}><MessageCircle size={13} /> Your driver will message you on WhatsApp with pickup details before departure.</p>}
+          {rideStatus === "completed" && (
+            <div className="w-full">
+              <RatingPrompt ratingType="driver" targetId={rideDriverId} targetLabel="your driver" bookingRef={bookingRef} prompt="How was your driver?" />
+            </div>
+          )}
           <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this trip</button>
           <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
-          <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>
+          {rideStatus !== "completed" && <button onClick={cancelRide} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel booking</button>}
         </div>
       )}
       {mode === "intercity" && stage === "cancelled" && (
@@ -882,18 +1112,18 @@ function BookRide({ goBack }) {
 
       <div className="h-10" />
       {chatOpen && bookingRef && (
-        <RideChat bookingRef={bookingRef} contextLabel={mode === "city" ? "City ride" : mode === "airport" ? "Airport transfer" : "Intercity trip"} onClose={() => setChatOpen(false)} />
+        <RideChat bookingRef={bookingRef} contextLabel={mode === "city" ? "City ride" : mode === "airport" ? "Airport transfer" : "Outside city trip"} onClose={() => setChatOpen(false)} />
       )}
     </div>
   );
 }
 
 /* ---------- DRIVER APP ---------- */
-const INCOMING_REQUEST = { rider: "Faisal A.", rating: 4.8, pickup: "Al Olaya Street, Riyadh", dropoff: "King Khalid International Airport", distance: "1.2 km away", fare: 42, pickupCoords: { lat: 24.7, lng: 46.685 } };
 function DriverApp({ goBack, navigate, currentDriver }) {
   const mapRef = useRef(null);
   const mapObjRef = useRef(null);
   const pickupMarkerRef = useRef(null);
+  const driverMarkerObjRef = useRef(null);
   const [mapStatus, setMapStatus] = useState("loading");
   const [online, setOnline] = useState(false);
   const [request, setRequest] = useState(null);
@@ -901,11 +1131,15 @@ function DriverApp({ goBack, navigate, currentDriver }) {
   const [driverLoc, setDriverLoc] = useState({ lat: 24.7136, lng: 46.6753 });
   const [locLabel, setLocLabel] = useState("Riyadh (default)");
   const [locError, setLocError] = useState("");
+  const [locDenied, setLocDenied] = useState(false);
+  const [declinedIds, setDeclinedIds] = useState([]);
+  const [driverChatOpen, setDriverChatOpen] = useState(false);
+  const driverRow = currentDriver?.profile;
 
   useEffect(() => {
     detectLocation({
-      onSuccess: ({ lat, lng, label }) => { setDriverLoc({ lat, lng }); setLocLabel(label); },
-      onError: (msg) => setLocError(msg),
+      onSuccess: ({ lat, lng, label }) => { setDriverLoc({ lat, lng }); setLocLabel(label); setLocDenied(false); },
+      onError: (msg, type) => { setLocError(msg); setLocDenied(type === "denied"); },
     });
   }, []);
 
@@ -932,14 +1166,16 @@ function DriverApp({ goBack, navigate, currentDriver }) {
         if (!window.H || !mapRef.current) throw new Error("no sdk");
         const platform = new window.H.service.Platform({ apikey: HERE_API_KEY });
         const defaultLayers = platform.createDefaultLayers();
-        const map = new window.H.Map(mapRef.current, defaultLayers.vector.normal.map, { zoom: 13, center: driverLoc, pixelRatio: window.devicePixelRatio || 1 });
+        const map = new window.H.Map(mapRef.current, defaultLayers.vector.normal.traffic, { zoom: 13, center: driverLoc, pixelRatio: window.devicePixelRatio || 1 });
         new window.H.mapevents.Behavior(new window.H.mapevents.MapEvents(map));
         new window.H.ui.UI.createDefault(map, defaultLayers);
         const driverIcon = new window.H.map.Icon(
-          "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><circle cx="13" cy="13" r="9" fill="#D9A653" stroke="#070E1F" stroke-width="3"/></svg>`)
+          "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="15" r="13" fill="#0F211E" stroke="#D9A653" stroke-width="2"/><path d="M9 17.5 L10.5 12.5 Q11 11 12.5 11 H17.5 Q19 11 19.5 12.5 L21 17.5 Z M9 17.5 H21 V19.5 Q21 20.5 20 20.5 H19 Q18 20.5 18 19.5 V19 H12 V19.5 Q12 20.5 11 20.5 H10 Q9 20.5 9 19.5 Z" fill="#D9A653"/><circle cx="11.5" cy="19" r="1.3" fill="#0F211E"/><circle cx="18.5" cy="19" r="1.3" fill="#0F211E"/></svg>`),
+          { size: { w: 30, h: 30 }, anchor: { x: 15, y: 15 } }
         );
         const driverMarker = new window.H.map.Marker(driverLoc, { icon: driverIcon });
         map.addObject(driverMarker);
+        driverMarkerObjRef.current = driverMarker;
         mapObjRef.current = map;
         setMapStatus("ready");
         window.addEventListener("resize", () => map.getViewPort().resize());
@@ -955,24 +1191,104 @@ function DriverApp({ goBack, navigate, currentDriver }) {
       mapObjRef.current.removeObject(pickupMarkerRef.current);
       pickupMarkerRef.current = null;
     }
-    if (request && request.pickupCoords) {
+    if (request && request.pickup_lat) {
+      const pickupCoords = { lat: request.pickup_lat, lng: request.pickup_lng };
       const icon = new window.H.map.Icon(
         "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect x="4" y="4" width="16" height="16" rx="3" fill="#5B8FD4" stroke="#070E1F" stroke-width="3"/></svg>`)
       );
-      const marker = new window.H.map.Marker(request.pickupCoords, { icon });
+      const marker = new window.H.map.Marker(pickupCoords, { icon });
       mapObjRef.current.addObject(marker);
       pickupMarkerRef.current = marker;
       mapObjRef.current.getViewModel().setLookAtData({ bounds: new window.H.geo.Rect(
-        Math.max(driverLoc.lat, request.pickupCoords.lat) + 0.01,
-        Math.min(driverLoc.lng, request.pickupCoords.lng) - 0.01,
-        Math.min(driverLoc.lat, request.pickupCoords.lat) - 0.01,
-        Math.max(driverLoc.lng, request.pickupCoords.lng) + 0.01,
+        Math.max(driverLoc.lat, pickupCoords.lat) + 0.01,
+        Math.min(driverLoc.lng, pickupCoords.lng) - 0.01,
+        Math.min(driverLoc.lat, pickupCoords.lat) - 0.01,
+        Math.max(driverLoc.lng, pickupCoords.lng) + 0.01,
       ) });
     }
   }, [request]);
 
-  function goOnline() { setOnline(true); setTimeout(() => setRequest(INCOMING_REQUEST), 1500); }
-  function goOffline() { setOnline(false); setRequest(null); setTripState("idle"); }
+  // Poll for real open ride requests while online — sorted by real distance so nearby drivers see the closest ride first
+  useEffect(() => {
+    if (!online || !driverRow) return;
+    async function poll() {
+      const wantsOutsideCity = driverRow.city_type === "intercity";
+      let query = supabase.from("rides").select("*").eq("status", "requested").is("driver_id", null);
+      query = wantsOutsideCity ? query.eq("ride_type", "intercity") : query.in("ride_type", ["city", "airport"]);
+      const { data } = await query.order("created_at", { ascending: true }).limit(20);
+      const candidates = (data || []).filter((r) => !declinedIds.includes(r.id));
+      if (candidates.length === 0) return;
+      const withDistance = candidates.map((r) => {
+        if (!r.pickup_lat) return { ...r, _distance: Infinity };
+        const R = 6371;
+        const dLat = (r.pickup_lat - driverLoc.lat) * Math.PI / 180;
+        const dLng = (r.pickup_lng - driverLoc.lng) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(driverLoc.lat * Math.PI / 180) * Math.cos(r.pickup_lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+        return { ...r, _distance: R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) };
+      });
+      withDistance.sort((a, b) => a._distance - b._distance);
+      const nearest = withDistance[0];
+      if (nearest && !request) setRequest(nearest);
+    }
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [online, driverRow, declinedIds, request, driverLoc]);
+
+  async function goOnline() {
+    setOnline(true);
+    if (driverRow?.id) {
+      await supabase.from("drivers").update({ is_online: true, last_lat: driverLoc.lat, last_lng: driverLoc.lng }).eq("id", driverRow.id);
+    }
+  }
+  async function goOffline() {
+    setOnline(false); setRequest(null); setTripState("idle");
+    if (driverRow?.id) {
+      await supabase.from("drivers").update({ is_online: false }).eq("id", driverRow.id);
+    }
+  }
+
+  // Live location broadcast while online — updates every 20s so passengers watching an active ride see real movement
+  useEffect(() => {
+    if (!online || !driverRow?.id) return;
+    const interval = setInterval(() => {
+      detectLocation({
+        onSuccess: ({ lat, lng, label }) => {
+          setDriverLoc({ lat, lng }); setLocLabel(label);
+          supabase.from("drivers").update({ last_lat: lat, last_lng: lng }).eq("id", driverRow.id);
+          if (driverMarkerObjRef.current) driverMarkerObjRef.current.setGeometry({ lat, lng });
+        },
+        onError: () => {},
+      });
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [online, driverRow?.id]);
+
+  function declineRequest() {
+    if (request) setDeclinedIds((ids) => [...ids, request.id]);
+    setRequest(null);
+  }
+
+  async function acceptRequest() {
+    if (!request || !driverRow?.id) return;
+    await supabase.from("rides").update({ status: "accepted", driver_id: driverRow.id }).eq("id", request.id);
+    setTripState("accepted");
+  }
+
+  async function markArrived() {
+    if (request) await supabase.from("rides").update({ status: "arrived" }).eq("id", request.id);
+    setTripState("arrived");
+  }
+
+  async function startTrip() {
+    if (request) await supabase.from("rides").update({ status: "in_progress" }).eq("id", request.id);
+    setTripState("in_progress");
+  }
+
+  async function completeTrip() {
+    if (request) await supabase.from("rides").update({ status: "completed" }).eq("id", request.id);
+    setTripState("completed");
+  }
 
   return (
     <div style={{ color: TEXT }}>
@@ -986,7 +1302,7 @@ function DriverApp({ goBack, navigate, currentDriver }) {
           <button onClick={() => navigate("driver_profile")} className="w-full rounded-xl px-4 py-2.5 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <p className="text-xs" style={{ color: MUTE }}>Logged in as <span style={{ color: TEXT, fontWeight: 600 }}>{currentDriver.profile.full_name}</span></p>
             <div className="flex items-center gap-2">
-              <span className="text-[10px]" style={{ color: FAINT }}>{currentDriver.profile.city_type === "intercity" ? "Intercity" : "Inside-city"}</span>
+              <span className="text-[10px]" style={{ color: FAINT }}>{currentDriver.profile.city_type === "intercity" ? "Outside city" : "Inside-city"}</span>
               <ChevronRight size={13} color={FAINT} />
             </div>
           </button>
@@ -998,7 +1314,16 @@ function DriverApp({ goBack, navigate, currentDriver }) {
         {mapStatus === "error" && <div className="absolute inset-0 flex items-center justify-center px-6 text-center" style={{ background: CARD }}><p className="text-[11px]" style={{ color: FAINT }}>Map blocked in this preview — will work on sayyaradrive.com</p></div>}
       </div>
       <p className="px-5 mt-2 text-[11px] flex items-center gap-1" style={{ color: FAINT }}><Navigation size={11} color={GREEN} /> {locLabel}</p>
-      {locError && <p className="px-5 mt-1 text-[11px]" style={{ color: "#C0755B" }}>{locError}</p>}
+      {locError && (
+        <div className="px-5 mt-1">
+          <p className="text-[11px]" style={{ color: "#C0755B" }}>{locError}</p>
+          {locDenied ? (
+            <p className="text-[10px] mt-1" style={{ color: FAINT }}>Look for the location icon in your browser's address bar to re-enable it, then reload the page.</p>
+          ) : (
+            <button onClick={() => detectLocation({ onSuccess: ({ lat, lng, label }) => { setDriverLoc({ lat, lng }); setLocLabel(label); setLocError(""); }, onError: (msg, type) => { setLocError(msg); setLocDenied(type === "denied"); } })} className="text-[11px] mt-1 underline" style={{ color: GOLD }}>Retry</button>
+          )}
+        </div>
+      )}
       {online && !request && tripState === "idle" && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>You're online — waiting for requests…</p>}
       {!online && (
         <div className="px-5 mt-6">
@@ -1017,13 +1342,17 @@ function DriverApp({ goBack, navigate, currentDriver }) {
         <div className="px-5 mt-4">
           <div className="rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold">{request.rider}</p>
-              <p className="text-lg font-semibold" style={{ color: GOLD }}>{request.fare} SAR</p>
+              <p className="text-sm font-semibold">New ride request</p>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: "rgba(217,166,83,0.15)", color: GOLD }}>{request.ride_type}</span>
             </div>
-            <p className="text-xs" style={{ color: MUTE }}>{request.pickup} → {request.dropoff}</p>
+            <p className="text-xs" style={{ color: MUTE }}>{request.pickup_label} → {request.dropoff_label}</p>
+            {request._distance !== undefined && isFinite(request._distance) && (
+              <p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: GOLD }}><Route size={11} /> {request._distance.toFixed(1)} km to pickup</p>
+            )}
+            {request.scheduled_date && <p className="text-[11px] mt-1" style={{ color: FAINT }}>{request.scheduled_date} {request.scheduled_time}</p>}
             <div className="flex gap-2 mt-4">
-              <button onClick={() => setRequest(null)} className="flex-1 rounded-full py-2.5 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Decline</button>
-              <button onClick={() => setTripState("accepted")} className="flex-1 rounded-full py-2.5 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Accept</button>
+              <button onClick={declineRequest} className="flex-1 rounded-full py-2.5 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Decline</button>
+              <button onClick={acceptRequest} className="flex-1 rounded-full py-2.5 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Accept</button>
             </div>
           </div>
         </div>
@@ -1031,10 +1360,48 @@ function DriverApp({ goBack, navigate, currentDriver }) {
       {tripState === "accepted" && (
         <div className="px-5 mt-4">
           <div className="rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
-            <p className="text-sm font-semibold mb-3">Trip accepted — contact rider on WhatsApp</p>
-            <button onClick={() => { setTripState("idle"); setRequest(null); }} className="w-full rounded-full py-2.5 text-sm font-semibold" style={{ background: GREEN, color: BG }}>Complete trip</button>
+            <p className="text-sm font-semibold mb-3">Trip accepted — heading to pickup</p>
+            <button onClick={() => setDriverChatOpen(true)} className="w-full mb-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat with passenger</button>
+            <button onClick={markArrived} className="w-full rounded-full py-2.5 text-sm font-semibold" style={{ background: GREEN, color: BG }}>I've arrived at pickup</button>
           </div>
         </div>
+      )}
+      {tripState === "arrived" && (
+        <div className="px-5 mt-4">
+          <div className="rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+            <p className="text-sm font-semibold mb-3">Waiting for passenger</p>
+            <button onClick={() => setDriverChatOpen(true)} className="w-full mb-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat with passenger</button>
+            <button onClick={startTrip} className="w-full rounded-full py-2.5 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Start trip</button>
+          </div>
+        </div>
+      )}
+      {tripState === "in_progress" && (
+        <div className="px-5 mt-4">
+          <div className="rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
+            <p className="text-sm font-semibold mb-3">Trip in progress</p>
+            <button onClick={() => setDriverChatOpen(true)} className="w-full mb-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat with passenger</button>
+            <button onClick={completeTrip} className="w-full rounded-full py-2.5 text-sm font-semibold" style={{ background: GREEN, color: BG }}>Complete trip</button>
+          </div>
+        </div>
+      )}
+      {tripState === "completed" && request && (
+        <div className="px-5 mt-4">
+          <div className="rounded-2xl p-4 mb-3 text-center" style={{ background: "rgba(91,143,212,0.1)", border: `1px solid rgba(91,143,212,0.3)` }}>
+            <CheckCircle2 size={28} color={GREEN} />
+            <p className="text-sm font-semibold mt-2">Trip completed</p>
+          </div>
+          <RatingPrompt ratingType="passenger" targetId={null} targetLabel="the passenger" bookingRef={request.booking_ref} prompt="How was your passenger?" reviewerName={currentDriver?.profile?.full_name} />
+          <button onClick={() => { setTripState("idle"); setRequest(null); }} className="w-full mt-3 rounded-full py-2.5 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Done</button>
+        </div>
+      )}
+      {driverChatOpen && request && (
+        <RideChat
+          bookingRef={request.booking_ref}
+          contextLabel={`${request.ride_type} ride — ${request.pickup_label}`}
+          onClose={() => setDriverChatOpen(false)}
+          senderRole="driver"
+          senderName={currentDriver?.profile?.full_name || "Driver"}
+        />
       )}
     </div>
   );
@@ -1141,6 +1508,11 @@ function PartnerRegister({ goBack, type }) {
         district,
         details: detailsText,
         status: "pending",
+      });
+      await supabase.from("notifications").insert({
+        recipient_type: "admin",
+        title: "New application received",
+        body: `${name} applied as a ${type.replace(/_/g, " ")}`,
       });
       setStep(4);
     } catch (e) {
@@ -1420,9 +1792,13 @@ function CarRental({ goBack, navigate }) {
             <span className="flex items-center gap-2 text-sm font-semibold"><Key size={15} color={GOLD} /> Own a car? List it for rent</span>
             <ChevronRight size={14} color={GOLD} />
           </button>
-          <button onClick={() => navigate("register_fleet")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
+          <button onClick={() => navigate("register_fleet")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
             <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GREEN} /> Own a fleet? Register your transport company</span>
             <ChevronRight size={14} color={GREEN} />
+          </button>
+          <button onClick={() => navigate("company_login")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Briefcase size={15} color={GOLD} /> Already registered? Company login</span>
+            <ChevronRight size={14} color={GOLD} />
           </button>
           <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
@@ -1462,7 +1838,7 @@ function CarRental({ goBack, navigate }) {
               const isSel = carId === c.id;
               return (
                 <button key={c.id} onClick={() => setCarId(c.id)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-left" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
-                  <img src={c.img} alt={c.model} className="w-16 h-14 rounded-lg object-cover shrink-0" style={{ background: BORDER }} />
+                  <img src={c.img} alt={c.model} loading="lazy" className="w-16 h-14 rounded-lg object-cover shrink-0" style={{ background: BORDER }} />
                   <div className="flex-1"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{c.label}</p><p className="text-sm font-semibold">{c.price} SAR/day</p></div><p className="text-[11px]" style={{ color: FAINT }}>{c.model}</p><p className="text-[10px] mt-0.5 flex items-center gap-2" style={{ color: FAINT }}><span>⚙ {c.transmission}</span><span>👤 {c.seats}</span><span>⛽ {c.fuel}</span></p><p className="text-[10px] mt-0.5" style={{ color: GOLD }}>{c.provider}</p></div>
                 </button>
               );
@@ -1477,6 +1853,9 @@ function CarRental({ goBack, navigate }) {
         <div className="px-5 mt-8 flex flex-col items-center text-center">
           <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Reservation confirmed</h2>
           <p className="mt-1 text-sm" style={{ color: MUTE }}>{chosen?.provider} will contact you on WhatsApp to confirm pickup details.</p>
+          <div className="w-full">
+            <RatingPrompt ratingType="company" targetId={chosen?.provider} targetLabel={chosen?.provider} bookingRef={bookingRef} prompt={`Rate ${chosen?.provider}`} />
+          </div>
           <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this reservation</button>
           <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
           <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel reservation</button>
@@ -1530,10 +1909,14 @@ function Marketplace({ goBack, navigate }) {
   const [category, setCategory] = useState("All"); const [query, setQuery] = useState("");
   const [dbListings, setDbListings] = useState([]);
   const [contactListing, setContactListing] = useState(null);
+  const [reportListing, setReportListing] = useState(null);
 
   useEffect(() => {
     async function loadListings() {
-      const { data } = await supabase.from("marketplace_listings").select("*").eq("status", "active").order("created_at", { ascending: false });
+      const data = await cachedFetch("marketplace_listings", async () => {
+        const { data } = await supabase.from("marketplace_listings").select("*").eq("status", "active").order("created_at", { ascending: false });
+        return data;
+      });
       if (data) {
         setDbListings(data.map((r) => ({
           id: `db-${r.id}`,
@@ -1602,7 +1985,7 @@ function Marketplace({ goBack, navigate }) {
             {filtered.map((l) => (
               <div key={l.id} className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                 <div className="h-36 relative" style={{ background: BORDER }}>
-                  <img src={l.img} alt={l.title} className="w-full h-full object-cover" />
+                  <img src={l.img} alt={l.title} loading="lazy" className="w-full h-full object-cover" />
                   {l.tag && <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full text-[9px] font-semibold flex items-center gap-1" style={{ background: GOLD, color: BG }}><Star size={9} /> {l.tag}</span>}
                   {l.condition && <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: "rgba(91,143,212,0.85)", color: "#fff" }}>{l.condition}</span>}
                 </div>
@@ -1625,13 +2008,23 @@ function Marketplace({ goBack, navigate }) {
                     </div>
                   )}
 
-                  <button
-                    onClick={() => setContactListing(l)}
-                    className="w-full flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold mt-3"
-                    style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
-                  >
-                    <MessageCircle size={13} /> Contact Seller
-                  </button>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => setContactListing(l)}
+                      className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold"
+                      style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
+                    >
+                      <MessageCircle size={13} /> Contact Seller
+                    </button>
+                    <button
+                      onClick={() => setReportListing(l)}
+                      aria-label="Report listing"
+                      className="w-10 flex items-center justify-center rounded-full"
+                      style={{ background: CARD, border: `1px solid ${BORDER}` }}
+                    >
+                      <Flag size={13} color={FAINT} />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1647,6 +2040,14 @@ function Marketplace({ goBack, navigate }) {
           whatsappNumber={SUPPORT_WHATSAPP_NUMBER}
           whatsappMessage={`Hi, I'm interested in "${contactListing.title}" listed on SayyaraDrive Marketplace.`}
           onClose={() => setContactListing(null)}
+        />
+      )}
+      {reportListing && (
+        <ReportModal
+          context="marketplace"
+          referenceId={reportListing.id}
+          referenceTitle={reportListing.title}
+          onClose={() => setReportListing(null)}
         />
       )}
 
@@ -1803,7 +2204,10 @@ function FoodDelivery({ goBack, navigate }) {
 
   useEffect(() => {
     async function loadRestaurants() {
-      const { data } = await supabase.from("restaurants").select("*").eq("status", "active").order("created_at", { ascending: false });
+      const data = await cachedFetch("restaurants", async () => {
+        const { data } = await supabase.from("restaurants").select("*").eq("status", "active").order("created_at", { ascending: false });
+        return data;
+      });
       if (data) {
         setDbRestaurants(data.map((r) => ({
           id: `db-${r.id}`,
@@ -1840,6 +2244,9 @@ function FoodDelivery({ goBack, navigate }) {
     <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
       <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Order placed</h2>
       <p className="mt-1 text-sm" style={{ color: MUTE }}>{openRestaurant.name} is preparing your order.</p>
+      <div className="w-full">
+        <RatingPrompt ratingType="restaurant" targetId={openRestaurant.id} targetLabel={openRestaurant.name} bookingRef={bookingRef} prompt={`Rate ${openRestaurant.name}`} />
+      </div>
       <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this order</button>
       <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
       <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel order</button>
@@ -2178,7 +2585,7 @@ const JOBS = [
   { id: 3, title: "Customer Support Agent", company: "STC", location: "Riyadh", pay: "5,500 SAR/mo", type: "Full-time", category: "Support", phone: "0550 000 003", description: "Handle customer calls and chat support for a major telecom." },
   { id: 4, title: "Airport Transfer Driver", company: "Careem", location: "Dammam", pay: "Up to 9,500 SAR/mo", type: "Full-time", category: "Driving", phone: "0550 000 004", description: "Pick up and drop off travellers at King Fahd Airport." },
   { id: 5, title: "Fleet Operations Coordinator", company: "Aramex", location: "Riyadh", pay: "7,000 SAR/mo", type: "Full-time", category: "Operations", phone: "0550 000 005", description: "Coordinate daily dispatch and vehicle maintenance schedules." },
-  { id: 6, title: "Intercity Driver", company: "SAPTCO", location: "Makkah", pay: "Per-trip + fuel bonus", type: "Flexible", category: "Driving", phone: "0550 000 006", description: "Drive scheduled intercity routes between major Saudi cities." },
+  { id: 6, title: "Outside-City Driver", company: "SAPTCO", location: "Makkah", pay: "Per-trip + fuel bonus", type: "Flexible", category: "Driving", phone: "0550 000 006", description: "Drive scheduled outside-city routes between major Saudi cities." },
   { id: 7, title: "Warehouse Logistics Staff", company: "SMSA Express", location: "Jubail", pay: "6,000 SAR/mo", type: "Full-time", category: "Operations", phone: "0550 000 007", description: "Sort and prepare parcels for daily delivery routes." },
   { id: 8, title: "Delivery Rider", company: "HungerStation", location: "Khobar", pay: "Per-order + bonuses", type: "Flexible", category: "Delivery", phone: "0550 000 008", description: "Flexible food delivery shifts, motorbike provided on request." },
 ];
@@ -2665,7 +3072,7 @@ function Profile({ goBack, navigate }) {
 }
 
 /* ---------- ACTIVITY ---------- */
-const TYPE_META = { ride: { icon: Car, label: "Ride" }, airport: { icon: Plane, label: "Airport transfer" } };
+const TYPE_META = { ride: { icon: Car, label: "Ride" }, city: { icon: Car, label: "City ride" }, airport: { icon: Plane, label: "Airport transfer" }, intercity: { icon: Route, label: "Outside city trip" } };
 const TRIPS = [
   { id: 1, type: "ride", date: "Jul 8, 2026", from: "Al Olaya Street", to: "King Fahd Rd", fare: 24 },
   { id: 2, type: "airport", date: "Jul 5, 2026", from: "Home", to: "RUH Airport", fare: 85 },
@@ -2673,18 +3080,51 @@ const TRIPS = [
   { id: 4, type: "airport", date: "Jun 29, 2026", from: "JED Airport", to: "Al Hamra", fare: 62 },
 ];
 function TripHistory({ goBack }) {
-  const totalSpent = TRIPS.reduce((s, t) => s + t.fare, 0);
+  const [trips, setTrips] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      let refs = [];
+      try { refs = JSON.parse(localStorage.getItem("sayyara_my_rides") || "[]"); } catch (e) {}
+      if (refs.length === 0) { setLoading(false); return; }
+      const { data } = await supabase.from("rides").select("*").in("booking_ref", refs).order("created_at", { ascending: false });
+      setTrips(data || []);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
   return (
     <div style={{ color: TEXT }}>
       <Header title="Activity" onBack={goBack} />
-      <div className="px-5 mb-4"><div className="rounded-2xl px-4 py-3 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}><div><p className="text-xs" style={{ color: FAINT }}>Total spent</p><p className="text-lg font-semibold" style={{ color: GOLD }}>{totalSpent} SAR</p></div><div className="text-right"><p className="text-xs" style={{ color: FAINT }}>Total trips</p><p className="text-lg font-semibold">{TRIPS.length}</p></div></div></div>
+      <div className="px-5 mb-4">
+        <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <p className="text-xs" style={{ color: FAINT }}>Total trips</p>
+          <p className="text-lg font-semibold">{trips.length}</p>
+        </div>
+      </div>
+      {loading && <div className="px-5 flex flex-col gap-2">{[1, 2, 3].map((i) => <SkeletonRow key={i} />)}</div>}
+      {!loading && trips.length === 0 && (
+        <EmptyState icon={Route} title="No trips yet" subtitle="Rides you book on this device will show up here." />
+      )}
       <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2">
-        {TRIPS.map((t) => {
-          const meta = TYPE_META[t.type]; const Icon = meta.icon;
+        {!loading && trips.map((t) => {
+          const meta = TYPE_META[t.ride_type] || TYPE_META.ride;
+          const Icon = meta.icon;
+          const statusColor = t.status === "completed" ? GREEN : t.status === "cancelled" ? "#C0755B" : GOLD;
           return (
             <div key={t.id} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.12)" }}><Icon size={17} color={GOLD} /></div>
-              <div className="flex-1"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{meta.label}</p><p className="text-sm font-semibold">{t.fare} SAR</p></div><p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{t.from} → {t.to}</p><p className="text-[10px] mt-1" style={{ color: FAINT }}>{t.date}</p></div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold">{meta.label}</p>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${statusColor}22`, color: statusColor }}>{t.status}</span>
+                </div>
+                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{t.pickup_label} → {t.dropoff_label}</p>
+                {t.distance_km && <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{t.distance_km} km · ~{t.duration_min} min</p>}
+                <p className="text-[10px] mt-1" style={{ color: FAINT }}>{new Date(t.created_at).toLocaleDateString()}</p>
+              </div>
             </div>
           );
         })}
@@ -2703,34 +3143,57 @@ const DRIVER_TRIPS = [
 ];
 
 function DriverTripHistory({ goBack, currentDriver }) {
-  const totalEarned = DRIVER_TRIPS.reduce((s, t) => s + t.fare, 0);
+  const [trips, setTrips] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const driverId = currentDriver?.profile?.id;
+
+  useEffect(() => {
+    async function load() {
+      if (!driverId) { setLoading(false); return; }
+      const { data } = await supabase.from("rides").select("*").eq("driver_id", driverId).eq("status", "completed").order("created_at", { ascending: false });
+      setTrips(data || []);
+      setLoading(false);
+    }
+    load();
+  }, [driverId]);
+
+  const totalDistance = trips.reduce((s, t) => s + (t.distance_km || 0), 0);
+
   return (
     <div style={{ color: TEXT }}>
       <Header title="Trip history" onBack={goBack} />
       <div className="px-5 mb-4">
         <div className="rounded-2xl px-4 py-3 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <div><p className="text-xs" style={{ color: FAINT }}>Total earned</p><p className="text-lg font-semibold" style={{ color: GOLD }}>{totalEarned} SAR</p></div>
-          <div className="text-right"><p className="text-xs" style={{ color: FAINT }}>Trips completed</p><p className="text-lg font-semibold">{DRIVER_TRIPS.length}</p></div>
+          <div><p className="text-xs" style={{ color: FAINT }}>Total distance</p><p className="text-lg font-semibold" style={{ color: GOLD }}>{totalDistance.toFixed(1)} km</p></div>
+          <div className="text-right"><p className="text-xs" style={{ color: FAINT }}>Trips completed</p><p className="text-lg font-semibold">{trips.length}</p></div>
         </div>
       </div>
+      {loading && <div className="px-5 flex flex-col gap-2">{[1, 2, 3].map((i) => <SkeletonRow key={i} />)}</div>}
+      {!loading && !driverId && (
+        <EmptyState icon={Route} title="Log in to see your trips" subtitle="Your real trip history will appear here once you're logged in." />
+      )}
+      {!loading && driverId && trips.length === 0 && (
+        <EmptyState icon={Route} title="No completed trips yet" subtitle="Trips you complete will show up here." />
+      )}
       <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2">
-        {DRIVER_TRIPS.map((t) => {
-          const meta = TYPE_META[t.type]; const Icon = meta.icon;
+        {!loading && trips.map((t) => {
+          const meta = TYPE_META[t.ride_type] || TYPE_META.ride;
+          const Icon = meta.icon;
           return (
             <div key={t.id} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.12)" }}><Icon size={17} color={GOLD} /></div>
               <div className="flex-1">
-                <div className="flex items-center justify-between"><p className="text-sm font-semibold">{t.rider}</p><p className="text-sm font-semibold" style={{ color: GREEN }}>+{t.fare} SAR</p></div>
-                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{meta.label} · {t.from} → {t.to}</p>
-                <p className="text-[10px] mt-1" style={{ color: FAINT }}>{t.date}</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold">{meta.label}</p>
+                  {t.distance_km && <p className="text-[11px] font-semibold" style={{ color: GREEN }}>{t.distance_km} km</p>}
+                </div>
+                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{t.pickup_label} → {t.dropoff_label}</p>
+                <p className="text-[10px] mt-1" style={{ color: FAINT }}>{new Date(t.created_at).toLocaleDateString()}</p>
               </div>
             </div>
           );
         })}
       </div>
-      {!currentDriver?.profile && (
-        <p className="px-5 mt-4 text-[11px] text-center" style={{ color: FAINT }}>Log in to see your real earnings once trips start syncing.</p>
-      )}
     </div>
   );
 }
@@ -2749,113 +3212,6 @@ function WalletTab({ goBack }) {
     </div>
   );
 }
-
-/* ---------- AI ASSISTANT ---------- */
-const SYSTEM_PROMPT = `You are the in-app assistant for SayyaraDrive, a Saudi Arabia ride-hailing and mobility super app (like Uber/Careem) offering: city rides, airport transfers, intercity rides, car rentals, a marketplace, food delivery, parcel logistics, a driver jobs portal, and fleet management. Payment is cash-only for now. Driver-rider contact happens over WhatsApp. Be concise, friendly, and helpful — answer support questions, suggest which service fits the user's need, or make simple recommendations (e.g. what to order, which ride type to pick). Keep replies short, 2-4 sentences, suited for a small mobile chat window.`;
-
-function AIAssistant({ onClose }) {
-  const [messages, setMessages] = useState([
-    { role: "assistant", content: "Hi! I'm your SayyaraDrive assistant. Ask me anything about booking a ride, ordering food, sending a parcel, or anything else in the app." },
-  ]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const scrollRef = useRef(null);
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, loading]);
-
-  async function send() {
-    const text = input.trim();
-    if (!text || loading) return;
-    const nextMessages = [...messages, { role: "user", content: text }];
-    setMessages(nextMessages);
-    setInput("");
-    setLoading(true);
-    try {
-      const apiMessages = [
-        { role: "user", content: SYSTEM_PROMPT },
-        { role: "assistant", content: "Understood — I'll act as the SayyaraDrive in-app assistant." },
-        ...nextMessages,
-      ];
-      const response = await fetch("/.netlify/functions/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages }),
-      });
-      const data = await response.json();
-      const reply = (data.content || [])
-        .map((b) => (b.type === "text" ? b.text : ""))
-        .filter(Boolean)
-        .join("\n") || "Sorry, I couldn't process that — try again.";
-      setMessages((m) => [...m, { role: "assistant", content: reply }]);
-    } catch (e) {
-      setMessages((m) => [...m, { role: "assistant", content: "Something went wrong reaching the assistant. Please try again." }]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
-      <div className="w-full max-w-md rounded-t-3xl flex flex-col" style={{ background: CARD, border: `1px solid ${BORDER}`, height: "75vh" }}>
-        <div className="flex items-center justify-between px-5 pt-5 pb-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(217,166,83,0.15)" }}>
-              <Sparkles size={15} color={GOLD} />
-            </div>
-            <h2 className="text-sm font-semibold" style={{ color: TEXT }}>SayyaraDrive Assistant</h2>
-          </div>
-          <button onClick={onClose}><X size={18} color={MUTE} /></button>
-        </div>
-
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
-          {messages.map((m, i) => (
-            <div key={i} className="flex" style={{ justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-              <div
-                className="max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm"
-                style={{
-                  background: m.role === "user" ? GOLD : BG,
-                  color: m.role === "user" ? BG : TEXT,
-                  border: m.role === "user" ? "none" : `1px solid ${BORDER}`,
-                }}
-              >
-                {m.content}
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl px-3.5 py-2.5 text-sm flex items-center gap-1" style={{ background: BG, border: `1px solid ${BORDER}`, color: FAINT }}>
-                <Bot size={13} /> Typing…
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="px-4 pb-5 pt-2 flex items-center gap-2" style={{ borderTop: `1px solid ${BORDER}` }}>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder="Ask about rides, food, jobs…"
-            className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none"
-            style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }}
-          />
-          <button
-            onClick={send}
-            disabled={!input.trim() || loading}
-            className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-            style={{ background: input.trim() ? GOLD : BORDER }}
-          >
-            <Send size={16} color={input.trim() ? BG : "#5C736D"} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ---------- BOTTOM NAV ---------- */
 const TABS = [
   { id: "home", key: "home" },
@@ -2937,16 +3293,63 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   const isDriver = type === "driver";
 
-  async function handleSignup() {
+  function validateSignup() {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return "Please enter a valid email address.";
+    }
+    if (password.length < 6) {
+      return "Password must be at least 6 characters.";
+    }
+    if (!fullName.trim() || fullName.trim().length < 2) {
+      return "Please enter your full name.";
+    }
+    const mobileDigits = mobile.replace(/[\s-]/g, "");
+    if (!/^(05\d{8}|9665\d{8}|\+9665\d{8})$/.test(mobileDigits)) {
+      return "Please enter a valid Saudi mobile number (e.g. 05XXXXXXXX).";
+    }
+    if (isDriver) {
+      if (!/^\d{10}$/.test(iqama.trim())) {
+        return "Iqama number must be exactly 10 digits.";
+      }
+      if (!vehicleNumber.trim()) {
+        return "Please enter your vehicle number.";
+      }
+    }
+    return null;
+  }
+
+  async function handleForgotPassword() {
     setError(""); setLoading(true);
     try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin,
+      });
+      if (resetError) throw resetError;
+      setResetSent(true);
+    } catch (e) {
+      setError(e.message || "Couldn't send reset email. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSignup() {
+    setError(""); setLoading(true);
+    const validationError = validateSignup();
+    if (validationError) {
+      setError(validationError);
+      setLoading(false);
+      return;
+    }
+    try {
       if (isDriver) {
-        const { data: existingDriver } = await supabase.from("drivers").select("status").eq("iqama_number", iqama).maybeSingle();
-        if (existingDriver) {
-          if (existingDriver.status === "blocked") {
+        const { data: existingStatus } = await supabase.rpc("check_iqama_status", { p_iqama: iqama });
+        if (existingStatus) {
+          if (existingStatus === "blocked") {
             setError("This Iqama number belongs to a blocked driver account. Contact support for help.");
           } else {
             setError("An account already exists with this Iqama number. Please log in instead.");
@@ -2959,22 +3362,24 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
       if (signUpError) throw signUpError;
       const authUserId = data.user?.id;
       if (isDriver) {
-        const { error: insertError } = await supabase.from("drivers").insert({
+        const { data: insertedDriver, error: insertError } = await supabase.from("drivers").insert({
           auth_user_id: authUserId,
           full_name: fullName,
           mobile_number: mobile,
           iqama_number: iqama,
           vehicle_number: vehicleNumber,
           city_type: cityType,
-        });
+        }).select().single();
         if (insertError) throw insertError;
+        if (onLoggedIn) onLoggedIn({ email, type: "driver", profile: insertedDriver });
       } else {
-        const { error: insertError } = await supabase.from("passengers").insert({
+        const { data: insertedPassenger, error: insertError } = await supabase.from("passengers").insert({
           auth_user_id: authUserId,
           full_name: fullName,
           mobile_number: mobile,
-        });
+        }).select().single();
         if (insertError) throw insertError;
+        if (onLoggedIn) onLoggedIn({ email, type: "passenger", profile: insertedPassenger });
       }
       setSuccess(true);
     } catch (e) {
@@ -2986,6 +3391,11 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
 
   async function handleLogin() {
     setError(""); setLoading(true);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError("Please enter a valid email address.");
+      setLoading(false);
+      return;
+    }
     try {
       const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
       if (loginError) throw loginError;
@@ -3027,6 +3437,36 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
     );
   }
 
+  if (mode === "forgot") {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="Reset password" onBack={() => { setMode("login"); setResetSent(false); setError(""); }} />
+        <div className="px-5">
+          {!resetSent ? (
+            <>
+              <p className="text-sm mb-4" style={{ color: MUTE }}>Enter your account email and we'll send you a link to reset your password.</p>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <Mail size={14} color={GOLD} />
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+              {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+              <button onClick={handleForgotPassword} disabled={loading || !email} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: (loading || !email) ? BORDER : GOLD, color: (loading || !email) ? "#5C736D" : BG }}>
+                {loading ? "Sending…" : "Send reset link"}
+              </button>
+            </>
+          ) : (
+            <div className="flex flex-col items-center text-center py-8">
+              <CheckCircle2 size={44} color={GREEN} />
+              <h2 className="mt-4 text-lg font-semibold">Check your email</h2>
+              <p className="mt-1 text-sm" style={{ color: MUTE }}>We sent a password reset link to {email}. Follow it to set a new password.</p>
+              <button onClick={() => { setMode("login"); setResetSent(false); }} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back to login</button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ color: TEXT }}>
       <Header title={isDriver ? "Driver account" : "Passenger account"} onBack={goBack} />
@@ -3045,6 +3485,9 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
             <Key size={14} color={GOLD} />
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
           </div>
+          {mode === "login" && (
+            <button onClick={() => { setMode("forgot"); setError(""); }} className="text-right text-[12px] -mt-1.5" style={{ color: GOLD }}>Forgot password?</button>
+          )}
           {mode === "login" && isDriver && (
             <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <Phone size={14} color={GOLD} />
@@ -3076,7 +3519,7 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
                 <div className="rounded-xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                   <select value={cityType} onChange={(e) => setCityType(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
                     <option value="inside_city" style={{ background: CARD }}>Inside-city driver</option>
-                    <option value="intercity" style={{ background: CARD }}>Intercity driver</option>
+                    <option value="intercity" style={{ background: CARD }}>Outside-city driver</option>
                   </select>
                 </div>
               </>
@@ -3103,6 +3546,21 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
 function DriverProfile({ goBack, navigate, currentDriver, onLogout }) {
   const profile = currentDriver?.profile;
   const statusColor = profile?.status === "blocked" ? "#C0755B" : profile?.status === "warned" ? GOLD : GREEN;
+  const [avgRating, setAvgRating] = useState(null);
+  const [ratingCount, setRatingCount] = useState(0);
+
+  useEffect(() => {
+    async function loadRating() {
+      if (!profile?.id) return;
+      const { data } = await supabase.from("ratings").select("rating").eq("rating_type", "driver").eq("target_id", String(profile.id)).eq("status", "visible");
+      if (data && data.length > 0) {
+        const avg = data.reduce((s, r) => s + r.rating, 0) / data.length;
+        setAvgRating(avg);
+        setRatingCount(data.length);
+      }
+    }
+    loadRating();
+  }, [profile?.id]);
 
   if (!profile) {
     return (
@@ -3136,6 +3594,11 @@ function DriverProfile({ goBack, navigate, currentDriver, onLogout }) {
         <span className="mt-2 px-2.5 py-1 rounded-full text-[10px] font-semibold" style={{ background: `${statusColor}22`, color: statusColor }}>
           {profile.status || "active"} · {profile.warning_count || 0}/5 warnings
         </span>
+        {avgRating !== null && (
+          <span className="mt-2 flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+            <Star size={11} fill={GOLD} color={GOLD} /> {avgRating.toFixed(1)} ({ratingCount} rating{ratingCount !== 1 ? "s" : ""})
+          </span>
+        )}
       </div>
 
       <div className="px-5 mb-5">
@@ -3150,7 +3613,7 @@ function DriverProfile({ goBack, navigate, currentDriver, onLogout }) {
             <Car size={14} color={FAINT} /><span className="text-sm">{profile.vehicle_number}</span>
           </div>
           <div className="flex items-center gap-3 py-3">
-            <MapPin size={14} color={FAINT} /><span className="text-sm">{profile.city_type === "intercity" ? "Intercity driver" : "Inside-city driver"}</span>
+            <MapPin size={14} color={FAINT} /><span className="text-sm">{profile.city_type === "intercity" ? "Outside-city driver" : "Inside-city driver"}</span>
           </div>
         </div>
       </div>
@@ -3167,6 +3630,10 @@ function DriverProfile({ goBack, navigate, currentDriver, onLogout }) {
       <div className="px-5 mb-5 flex flex-col gap-2">
         <button onClick={() => navigate("driver_trips")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <span className="flex items-center gap-3 text-sm"><Route size={15} color={GOLD} /> Trip history & earnings</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
+        <button onClick={() => navigate("driver_documents")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><Package size={15} color={GOLD} /> Documents</span>
           <ChevronRight size={14} color="#5C736D" />
         </button>
         <button onClick={() => navigate("notifications")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -3251,24 +3718,128 @@ function NotificationsScreen({ goBack, currentDriver, currentAdmin }) {
 
 /* ---------- CONTACT / MESSAGE MODAL (reusable) ---------- */
 /* ---------- RIDE CHAT (real in-app passenger <-> driver/support messaging) ---------- */
-function RideChat({ bookingRef, contextLabel, onClose }) {
+/* ---------- RATING PROMPT (reusable) ---------- */
+function RatingPrompt({ ratingType, targetId, targetLabel, bookingRef, prompt, reviewerName }) {
+  const [stars, setStars] = useState(0);
+  const [review, setReview] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  async function submit() {
+    if (!stars) return;
+    setSubmitting(true);
+    await supabase.from("ratings").insert({
+      rating_type: ratingType,
+      target_id: targetId ? String(targetId) : null,
+      target_label: targetLabel,
+      booking_ref: bookingRef || null,
+      rating: stars,
+      review: review.trim() || null,
+      reviewer_name: reviewerName || null,
+    });
+    setSubmitting(false);
+    setSubmitted(true);
+  }
+
+  if (submitted) {
+    return (
+      <div className="rounded-2xl px-4 py-4 mt-4 flex items-center gap-3" style={{ background: "rgba(91,143,212,0.1)", border: `1px solid rgba(91,143,212,0.3)` }}>
+        <CheckCircle2 size={18} color={GREEN} />
+        <p className="text-xs" style={{ color: MUTE }}>Thanks for your feedback!</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl px-4 py-4 mt-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+      <p className="text-sm font-semibold mb-3">{prompt || `Rate ${targetLabel || "this"}`}</p>
+      <div className="flex items-center gap-1.5 mb-3">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button key={n} onClick={() => setStars(n)}>
+            <Star size={26} color={n <= stars ? GOLD : BORDER} fill={n <= stars ? GOLD : "none"} />
+          </button>
+        ))}
+      </div>
+      {stars > 0 && (
+        <>
+          <textarea value={review} onChange={(e) => setReview(e.target.value)} placeholder="Add a comment (optional)" rows={2} className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none mb-3" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+          <button onClick={submit} disabled={submitting} className="w-full rounded-full py-2.5 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+            {submitting ? "Submitting…" : "Submit rating"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName }) {
+  const role = senderRole || "passenger";
+  const name = senderName || (role === "driver" ? "Driver" : "Passenger");
+  const otherRole = role === "passenger" ? "driver" : "passenger";
   const [items, setItems] = useState([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordError, setRecordError] = useState("");
+  const [otherTyping, setOtherTyping] = useState(false);
+  const [translations, setTranslations] = useState({});
+  const [translating, setTranslating] = useState(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const typingTimeoutRef = useRef(null);
+  const scrollRef = useRef(null);
 
   async function load() {
     const { data } = await supabase.from("messages").select("*").eq("booking_ref", bookingRef).order("created_at", { ascending: true });
     setItems(data || []);
+    // mark incoming messages as read
+    const unread = (data || []).filter((m) => m.sender_role !== role && !m.read);
+    if (unread.length > 0) {
+      await supabase.from("messages").update({ read: true }).in("id", unread.map((m) => m.id));
+    }
   }
+
+  async function pollTyping() {
+    const { data } = await supabase.from("chat_typing").select("*").eq("booking_ref", bookingRef).eq("role", otherRole).maybeSingle();
+    if (data) {
+      const secondsAgo = (Date.now() - new Date(data.updated_at).getTime()) / 1000;
+      setOtherTyping(secondsAgo < 4);
+    } else {
+      setOtherTyping(false);
+    }
+  }
+
   useEffect(() => {
     load();
-    const interval = setInterval(load, 4000);
+    const interval = setInterval(() => { if (!document.hidden) { load(); pollTyping(); } }, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [items, otherTyping]);
+
+  function notifyTyping() {
+    supabase.from("chat_typing").upsert({ booking_ref: bookingRef, role, updated_at: new Date().toISOString() }).then(() => {});
+  }
+
+  function onTextChange(v) {
+    setText(v);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    notifyTyping();
+    typingTimeoutRef.current = setTimeout(() => {}, 2000);
+  }
+
+  async function notifyOtherParty(preview) {
+    if (role !== "passenger") return; // only notify the driver for now (drivers are the only ones with push subscriptions)
+    const { data: ride } = await supabase.from("rides").select("driver_id").eq("booking_ref", bookingRef).maybeSingle();
+    if (!ride?.driver_id) return;
+    const { data: driver } = await supabase.from("drivers").select("mobile_number").eq("id", ride.driver_id).maybeSingle();
+    if (driver?.mobile_number) {
+      await supabase.from("notifications").insert({ recipient_phone: driver.mobile_number, recipient_type: "driver", title: "New message from passenger", body: preview });
+      sendPush(driver.mobile_number, "New message from passenger", preview);
+    }
+  }
 
   async function send() {
     if (!text.trim()) return;
@@ -3277,11 +3848,12 @@ function RideChat({ bookingRef, contextLabel, onClose }) {
       context: "ride",
       reference_title: contextLabel,
       booking_ref: bookingRef,
-      sender_role: "passenger",
-      sender_name: "Passenger",
+      sender_role: role,
+      sender_name: name,
       sender_phone: "N/A",
       body: text.trim(),
     });
+    notifyOtherParty(text.trim().slice(0, 80));
     setText("");
     setSending(false);
     load();
@@ -3320,15 +3892,11 @@ function RideChat({ bookingRef, contextLabel, onClose }) {
       if (uploadError) throw uploadError;
       const { data: publicData } = supabase.storage.from("voice-messages").getPublicUrl(fileName);
       await supabase.from("messages").insert({
-        context: "ride",
-        reference_title: contextLabel,
-        booking_ref: bookingRef,
-        sender_role: "passenger",
-        sender_name: "Passenger",
-        sender_phone: "N/A",
-        body: "🎤 Voice message",
-        audio_url: publicData.publicUrl,
+        context: "ride", reference_title: contextLabel, booking_ref: bookingRef,
+        sender_role: role, sender_name: name, sender_phone: "N/A",
+        body: "🎤 Voice message", audio_url: publicData.publicUrl,
       });
+      notifyOtherParty("🎤 Sent a voice message");
       load();
     } catch (e) {
       setRecordError("Couldn't send voice message. Please try again.");
@@ -3336,44 +3904,177 @@ function RideChat({ bookingRef, contextLabel, onClose }) {
     setSending(false);
   }
 
+  async function uploadImage(file) {
+    if (!file) return;
+    setSending(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const fileName = `${bookingRef}-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("chat-images").upload(fileName, file);
+      if (uploadError) throw uploadError;
+      const { data: publicData } = supabase.storage.from("chat-images").getPublicUrl(fileName);
+      await supabase.from("messages").insert({
+        context: "ride", reference_title: contextLabel, booking_ref: bookingRef,
+        sender_role: role, sender_name: name, sender_phone: "N/A",
+        body: "📷 Photo", image_url: publicData.publicUrl,
+      });
+      notifyOtherParty("📷 Sent a photo");
+      load();
+    } catch (e) {
+      setRecordError("Couldn't send image. Please try again.");
+    }
+    setSending(false);
+  }
+
+  function shareLocation() {
+    setSending(true);
+    detectLocation({
+      onSuccess: async ({ lat, lng, label }) => {
+        await supabase.from("messages").insert({
+          context: "ride", reference_title: contextLabel, booking_ref: bookingRef,
+          sender_role: role, sender_name: name, sender_phone: "N/A",
+          body: `📍 ${label}`, location_lat: lat, location_lng: lng,
+        });
+        notifyOtherParty("📍 Shared their location");
+        setSending(false);
+        load();
+      },
+      onError: () => { setRecordError("Couldn't get your location."); setSending(false); },
+    });
+  }
+
+  async function translate(m) {
+    if (translations[m.id]) { setTranslations((t) => { const n = { ...t }; delete n[m.id]; return n; }); return; }
+    setTranslating(m.id);
+    try {
+      const targetLang = /[\u0600-\u06FF]/.test(m.body) ? "en" : "ar";
+      const res = await fetch("https://libretranslate.com/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q: m.body, source: "auto", target: targetLang, format: "text" }),
+      });
+      const data = await res.json();
+      setTranslations((t) => ({ ...t, [m.id]: data.translatedText || "Translation unavailable right now." }));
+    } catch (e) {
+      setTranslations((t) => ({ ...t, [m.id]: "Translation unavailable right now." }));
+    }
+    setTranslating(null);
+  }
+
   return (
     <div className="fixed inset-0 flex items-end justify-center z-50" style={{ background: "rgba(0,0,0,0.6)" }}>
-      <div className="w-full max-w-md rounded-t-3xl flex flex-col" style={{ background: CARD, border: `1px solid ${BORDER}`, height: "70vh" }}>
+      <div className="w-full max-w-md rounded-t-3xl flex flex-col" style={{ background: CARD, border: `1px solid ${BORDER}`, height: "75vh" }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
           <div>
             <p className="text-sm font-semibold">Chat about your trip</p>
-            <p className="text-[11px]" style={{ color: FAINT }}>{contextLabel}</p>
+            <p className="text-[11px]" style={{ color: FAINT }}>{otherTyping ? `${otherRole === "driver" ? "Driver" : "Passenger"} is typing…` : contextLabel}</p>
           </div>
-          <button onClick={onClose}><X size={18} color={MUTE} /></button>
+          <button onClick={onClose} aria-label="Close chat"><X size={18} color={MUTE} /></button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-2">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-2">
           {items.length === 0 && (
-            <p className="text-xs text-center mt-6" style={{ color: FAINT }}>Send a message and our team or your driver will reply here.</p>
+            <p className="text-xs text-center mt-6" style={{ color: FAINT }}>Send a message and the {otherRole} will reply here.</p>
           )}
-          {items.map((m) => (
-            <div key={m.id} className={`max-w-[80%] rounded-xl px-3.5 py-2.5 ${m.sender_role === "passenger" ? "self-end" : "self-start"}`} style={{ background: m.sender_role === "passenger" ? GOLD : BG, border: m.sender_role === "passenger" ? "none" : `1px solid ${BORDER}` }}>
-              {m.audio_url ? (
-                <audio controls src={m.audio_url} style={{ height: 32, width: 180 }} />
-              ) : (
-                <p className="text-xs" style={{ color: m.sender_role === "passenger" ? BG : TEXT }}>{m.body}</p>
-              )}
-              <p className="text-[9px] mt-1" style={{ color: m.sender_role === "passenger" ? "rgba(15,33,30,0.6)" : FAINT }}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
-            </div>
-          ))}
+          {items.map((m) => {
+            const mine = m.sender_role === role;
+            return (
+              <div key={m.id} className={`max-w-[80%] rounded-xl px-3.5 py-2.5 ${mine ? "self-end" : "self-start"}`} style={{ background: mine ? GOLD : BG, border: mine ? "none" : `1px solid ${BORDER}` }}>
+                {m.audio_url ? (
+                  <audio controls src={m.audio_url} style={{ height: 32, width: 180 }} />
+                ) : m.image_url ? (
+                  <img src={m.image_url} alt="Shared" loading="lazy" className="rounded-lg" style={{ maxWidth: 200, maxHeight: 200 }} />
+                ) : m.location_lat ? (
+                  <a href={`https://www.google.com/maps?q=${m.location_lat},${m.location_lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs underline" style={{ color: mine ? BG : GREEN }}>
+                    <MapPin size={12} /> {m.body}
+                  </a>
+                ) : (
+                  <>
+                    <p className="text-xs" style={{ color: mine ? BG : TEXT }}>{m.body}</p>
+                    {translations[m.id] && <p className="text-xs mt-1.5 pt-1.5" style={{ color: mine ? "rgba(15,33,30,0.75)" : MUTE, borderTop: `1px solid ${mine ? "rgba(15,33,30,0.2)" : BORDER}` }}>{translations[m.id]}</p>}
+                  </>
+                )}
+                <div className="flex items-center gap-1.5 mt-1">
+                  <p className="text-[9px]" style={{ color: mine ? "rgba(15,33,30,0.6)" : FAINT }}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                  {mine && m.read && <span className="text-[9px]" style={{ color: "rgba(15,33,30,0.6)" }}>· Seen</span>}
+                  {!m.audio_url && !m.image_url && !m.location_lat && (
+                    <button onClick={() => translate(m)} className="text-[9px] underline" style={{ color: mine ? "rgba(15,33,30,0.7)" : FAINT }}>
+                      {translating === m.id ? "…" : translations[m.id] ? "Hide" : "Translate"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
         {recordError && <p className="px-5 text-[11px] mb-1" style={{ color: "#C0755B" }}>{recordError}</p>}
-        <div className="flex items-center gap-2 px-5 py-4" style={{ borderTop: `1px solid ${BORDER}` }}>
-          <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder={recording ? "Recording…" : "Type a message…"} disabled={recording} className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+        <div className="flex items-center gap-1.5 px-5 py-4" style={{ borderTop: `1px solid ${BORDER}` }}>
+          <input value={text} onChange={(e) => onTextChange(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder={recording ? "Recording…" : "Type a message…"} disabled={recording} className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none min-w-0" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+          <label className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer" style={{ background: "rgba(217,166,83,0.14)" }}>
+            <ImageIcon size={14} color={GOLD} />
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadImage(e.target.files[0])} disabled={sending} />
+          </label>
+          <button onClick={shareLocation} disabled={sending} aria-label="Share location" className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.14)" }}>
+            <MapPin size={14} color={GOLD} />
+          </button>
           <button
             onClick={recording ? stopRecording : startRecording}
             disabled={sending}
-            className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+            aria-label={recording ? "Stop recording" : "Record voice message"}
+            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
             style={{ background: recording ? "#C0755B" : "rgba(91,143,212,0.16)" }}
           >
-            <Mic size={15} color={recording ? "#fff" : GREEN} className={recording ? "animate-pulse" : ""} />
+            <Mic size={14} color={recording ? "#fff" : GREEN} className={recording ? "animate-pulse" : ""} />
           </button>
-          <button onClick={send} disabled={sending || !text.trim() || recording} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}><Send size={15} color={BG} /></button>
+          <button onClick={send} disabled={sending || !text.trim() || recording} aria-label="Send message" className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}><Send size={14} color={BG} /></button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- REPORT MODAL (reusable) ---------- */
+const REPORT_REASONS = ["Scam or fraud", "Fake or misleading", "Inappropriate content", "Already sold / unavailable", "Other"];
+function ReportModal({ context, referenceId, referenceTitle, onClose }) {
+  const [reason, setReason] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  async function submit() {
+    if (!reason) return;
+    setSending(true);
+    await supabase.from("reports").insert({
+      context, reference_id: referenceId ? String(referenceId) : null, reference_title: referenceTitle, reason,
+    });
+    setSending(false);
+    setSent(true);
+  }
+
+  return (
+    <div className="fixed inset-0 flex items-end justify-center z-50" style={{ background: "rgba(0,0,0,0.6)" }}>
+      <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+        {!sent ? (
+          <>
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-base font-semibold">Report this listing</h2>
+              <button onClick={onClose}><X size={18} color={MUTE} /></button>
+            </div>
+            <p className="text-xs mb-4" style={{ color: FAINT }}>{referenceTitle}</p>
+            <div className="flex flex-col gap-2 mb-4">
+              {REPORT_REASONS.map((r) => (
+                <button key={r} onClick={() => setReason(r)} className="text-left rounded-xl px-4 py-3 text-sm" style={{ background: reason === r ? BORDER : BG, border: reason === r ? `1px solid ${"#C0755B"}` : `1px solid ${BORDER}`, color: TEXT }}>{r}</button>
+              ))}
+            </div>
+            <button onClick={submit} disabled={!reason || sending} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: reason ? "#C0755B" : BORDER, color: reason ? "#fff" : "#5C736D" }}>
+              {sending ? "Submitting…" : "Submit report"}
+            </button>
+          </>
+        ) : (
+          <div className="flex flex-col items-center text-center py-4">
+            <CheckCircle2 size={40} color={GREEN} /><h2 className="mt-3 text-base font-semibold">Report submitted</h2>
+            <p className="text-xs mt-1" style={{ color: MUTE }}>Our team will review this shortly.</p>
+            <button onClick={onClose} className="w-full mt-4 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Done</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3385,9 +4086,16 @@ function ContactModal({ context, referenceTitle, recipientPhone, whatsappNumber,
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [validationError, setValidationError] = useState("");
   const can = name.trim() && phone.trim() && body.trim();
 
   async function send() {
+    const phoneDigits = phone.replace(/[\s-]/g, "");
+    if (!/^(05\d{8}|9665\d{8}|\+9665\d{8})$/.test(phoneDigits)) {
+      setValidationError("Please enter a valid Saudi mobile number (e.g. 05XXXXXXXX).");
+      return;
+    }
+    setValidationError("");
     setSending(true);
     try {
       await supabase.from("messages").insert({
@@ -3397,6 +4105,11 @@ function ContactModal({ context, referenceTitle, recipientPhone, whatsappNumber,
         sender_phone: phone,
         recipient_phone: recipientPhone || null,
         body,
+      });
+      await supabase.from("notifications").insert({
+        recipient_type: "admin",
+        title: "New message received",
+        body: `${name} sent a message about "${referenceTitle}"`,
       });
       setSent(true);
     } catch (e) { /* still show sent state so user isn't blocked */ setSent(true); }
@@ -3417,6 +4130,7 @@ function ContactModal({ context, referenceTitle, recipientPhone, whatsappNumber,
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
               <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Your phone" className="rounded-xl px-4 py-3 text-sm outline-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
               <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Write your message…" rows={3} className="rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: BG, border: `1px solid ${BORDER}`, color: TEXT }} />
+              {validationError && <p className="text-[12px]" style={{ color: "#C0755B" }}>{validationError}</p>}
               <button onClick={send} disabled={!can || sending} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>
                 {sending ? "Sending…" : "Send message"}
               </button>
@@ -3503,6 +4217,387 @@ function DriverMessages({ goBack, currentDriver }) {
 }
 
 /* ---------- PUSH NOTIFICATION SETTINGS ---------- */
+/* ---------- RESET PASSWORD (reached via email link) ---------- */
+/* ---------- COMPANY AUTH (login / signup) ---------- */
+function CompanyAuthScreen({ goBack, navigate, onLoggedIn }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [crNumber, setCrNumber] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  function validate() {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return "Please enter a valid email address.";
+    if (password.length < 6) return "Password must be at least 6 characters.";
+    if (mode === "signup") {
+      if (!companyName.trim()) return "Please enter your company name.";
+      if (!crNumber.trim()) return "Please enter your Commercial Registration number.";
+      if (!contactName.trim()) return "Please enter a contact person's name.";
+      const mobileDigits = mobile.replace(/[\s-]/g, "");
+      if (!/^(05\d{8}|9665\d{8}|\+9665\d{8})$/.test(mobileDigits)) return "Please enter a valid Saudi mobile number.";
+    }
+    return null;
+  }
+
+  async function handleSignup() {
+    setError(""); setLoading(true);
+    const v = validate();
+    if (v) { setError(v); setLoading(false); return; }
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+      if (signUpError) throw signUpError;
+      const { data: inserted, error: insertError } = await supabase.from("companies").insert({
+        auth_user_id: data.user?.id,
+        name: companyName,
+        cr_number: crNumber,
+        contact_name: contactName,
+        mobile_number: mobile,
+        email,
+        status: "active",
+        verified: false,
+      }).select().single();
+      if (insertError) throw insertError;
+      if (onLoggedIn) onLoggedIn({ email, profile: inserted });
+      setSuccess(true);
+    } catch (e) {
+      setError(e.message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLogin() {
+    setError(""); setLoading(true);
+    const v = validate();
+    if (v) { setError(v); setLoading(false); return; }
+    try {
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+      if (loginError) throw loginError;
+      const { data: profile } = await supabase.from("companies").select("*").eq("email", email).maybeSingle();
+      if (onLoggedIn) onLoggedIn({ email, profile });
+      setSuccess(true);
+    } catch (e) {
+      setError(e.message || "Invalid email or password.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (success) {
+    return (
+      <div className="px-5 mt-8 flex flex-col items-center text-center" style={{ color: TEXT }}>
+        <CheckCircle2 size={44} color={GREEN} />
+        <h2 className="mt-4 text-lg font-semibold">{mode === "signup" ? "Company account created" : "Logged in"}</h2>
+        <p className="mt-1 text-sm" style={{ color: MUTE }}>{mode === "signup" ? "Our team will review your Commercial Registration before you're fully verified." : "Welcome back!"}</p>
+        <button onClick={() => navigate("company_dashboard")} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Continue</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Company account" onBack={goBack} />
+      <div className="px-5">
+        <div className="flex rounded-full p-1 mb-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <button onClick={() => setMode("login")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: mode === "login" ? GOLD : "transparent", color: mode === "login" ? BG : MUTE }}>Log in</button>
+          <button onClick={() => setMode("signup")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: mode === "signup" ? GOLD : "transparent", color: mode === "signup" ? BG : MUTE }}>Register company</button>
+        </div>
+
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Mail size={14} color={GOLD} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Company email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Key size={14} color={GOLD} />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+        </div>
+
+        {mode === "signup" && (
+          <div className="flex flex-col gap-3 mb-4">
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Briefcase size={14} color={GOLD} />
+              <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Company name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <User size={14} color={GOLD} />
+              <input value={crNumber} onChange={(e) => setCrNumber(e.target.value)} placeholder="Commercial Registration number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <User size={14} color={GOLD} />
+              <input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Contact person name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Phone size={14} color={GOLD} />
+              <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+          </div>
+        )}
+
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+
+        <button
+          onClick={mode === "signup" ? handleSignup : handleLogin}
+          disabled={loading || !email || !password}
+          className="w-full rounded-full py-3 text-sm font-semibold"
+          style={{ background: (loading || !email || !password) ? BORDER : GOLD, color: (loading || !email || !password) ? "#5C736D" : BG }}
+        >
+          {loading ? "Please wait…" : mode === "signup" ? "Register company" : "Log in"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResetPassword({ navigate }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  const can = password.length >= 6 && password === confirm;
+
+  async function submit() {
+    if (!can) return;
+    setLoading(true); setError("");
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) throw updateError;
+      setDone(true);
+    } catch (e) {
+      setError(e.message || "Couldn't update your password. Try requesting a new reset link.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (done) {
+    return (
+      <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
+        <CheckCircle2 size={44} color={GREEN} />
+        <h2 className="mt-4 text-lg font-semibold">Password updated</h2>
+        <p className="mt-1 text-sm" style={{ color: MUTE }}>You can now log in with your new password.</p>
+        <button onClick={() => navigate("welcome")} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Continue</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Set a new password" />
+      <div className="px-5">
+        <p className="text-sm mb-4" style={{ color: MUTE }}>Choose a new password for your account.</p>
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Key size={14} color={GOLD} />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="New password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Key size={14} color={GOLD} />
+            <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Confirm new password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+        </div>
+        {password && password.length < 6 && <p className="text-[12px] mb-2" style={{ color: "#C0755B" }}>Password must be at least 6 characters.</p>}
+        {confirm && password !== confirm && <p className="text-[12px] mb-2" style={{ color: "#C0755B" }}>Passwords don't match.</p>}
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <button onClick={submit} disabled={!can || loading} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>
+          {loading ? "Updating…" : "Update password"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- DRIVER DOCUMENTS ---------- */
+const DOC_TYPES = [
+  { key: "vehicle_photo_path", label: "Vehicle photo", icon: Car },
+  { key: "license_path", label: "Driving license", icon: User },
+  { key: "insurance_path", label: "Vehicle insurance", icon: Shield },
+  { key: "id_photo_path", label: "Iqama / National ID", icon: User },
+];
+
+/* ---------- COMPANY DASHBOARD ---------- */
+function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
+  const profile = currentCompany?.profile;
+  const [fleet, setFleet] = useState([]);
+  const [uploading, setUploading] = useState(null);
+  const [uploadError, setUploadError] = useState("");
+  const [localProfile, setLocalProfile] = useState(profile);
+
+  useEffect(() => {
+    async function loadFleet() {
+      if (!profile?.id) return;
+      const { data } = await supabase.from("fleet_vehicles").select("*").eq("company_id", profile.id);
+      setFleet(data || []);
+    }
+    loadFleet();
+  }, [profile?.id]);
+
+  async function uploadLogo(file) {
+    if (!file || !profile?.auth_user_id) return;
+    setUploading("logo"); setUploadError("");
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `${profile.auth_user_id}/logo.${ext}`;
+      const { error: upErr } = await supabase.storage.from("company-logos").upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("company-logos").getPublicUrl(path);
+      await supabase.from("companies").update({ logo_url: pub.publicUrl }).eq("id", profile.id);
+      setLocalProfile((p) => ({ ...p, logo_url: pub.publicUrl }));
+    } catch (e) { setUploadError("Couldn't upload logo. Please try again."); }
+    setUploading(null);
+  }
+
+  async function uploadCR(file) {
+    if (!file || !profile?.auth_user_id) return;
+    setUploading("cr"); setUploadError("");
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `${profile.auth_user_id}/cr-document.${ext}`;
+      const { error: upErr } = await supabase.storage.from("company-documents").upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      await supabase.from("companies").update({ cr_document_path: path }).eq("id", profile.id);
+      setLocalProfile((p) => ({ ...p, cr_document_path: path }));
+    } catch (e) { setUploadError("Couldn't upload document. Please try again."); }
+    setUploading(null);
+  }
+
+  if (!profile) {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="Company dashboard" onBack={goBack} />
+        <EmptyState icon={Briefcase} title="No company account loaded" subtitle="Log in to see your company dashboard." action={
+          <button onClick={() => navigate("company_login")} className="mt-4 px-5 py-2 rounded-full text-xs font-semibold" style={{ background: GOLD, color: BG }}>Company login</button>
+        } />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Company dashboard" onBack={goBack} right={
+        <button onClick={onLogout} aria-label="Log out" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}><LogOut size={15} color="#C0755B" /></button>
+      } />
+      <div className="px-5 flex flex-col items-center text-center mb-5">
+        <label className="relative cursor-pointer">
+          <div className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden" style={{ background: BORDER }}>
+            {localProfile?.logo_url ? <img src={localProfile.logo_url} alt="Logo" className="w-full h-full object-cover" /> : <Briefcase size={26} color={GOLD} />}
+          </div>
+          <div className="absolute bottom-0 right-0 w-7 h-7 rounded-full flex items-center justify-center" style={{ background: GOLD }}>
+            {uploading === "logo" ? <span className="text-[8px]" style={{ color: BG }}>…</span> : <ImageIcon size={12} color={BG} />}
+          </div>
+          <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadLogo(e.target.files[0])} disabled={!!uploading} />
+        </label>
+        <div className="flex items-center gap-1.5 mt-3">
+          <h2 className="text-base font-semibold">{localProfile?.name}</h2>
+          {localProfile?.verified && <CheckCircle2 size={15} color={GREEN} />}
+        </div>
+        <p className="text-[11px] mt-1" style={{ color: localProfile?.verified ? GREEN : GOLD }}>{localProfile?.verified ? "Verified company" : "Verification pending"}</p>
+        {uploadError && <p className="text-[11px] mt-2" style={{ color: "#C0755B" }}>{uploadError}</p>}
+      </div>
+
+      <div className="px-5 mb-5">
+        <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="flex items-center justify-between py-1.5"><span className="text-xs" style={{ color: FAINT }}>CR Number</span><span className="text-xs font-semibold">{localProfile?.cr_number || "—"}</span></div>
+          <div className="flex items-center justify-between py-1.5"><span className="text-xs" style={{ color: FAINT }}>Contact</span><span className="text-xs font-semibold">{localProfile?.contact_name || "—"}</span></div>
+          <div className="flex items-center justify-between py-1.5"><span className="text-xs" style={{ color: FAINT }}>Mobile</span><span className="text-xs font-semibold">{localProfile?.mobile_number || "—"}</span></div>
+        </div>
+      </div>
+
+      <div className="px-5 mb-5">
+        <label className="w-full flex items-center justify-between rounded-2xl px-4 py-3 cursor-pointer" style={{ background: CARD, border: `1px solid ${localProfile?.cr_document_path ? "rgba(91,143,212,0.4)" : GOLD}` }}>
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <Package size={15} color={localProfile?.cr_document_path ? GREEN : GOLD} />
+            {uploading === "cr" ? "Uploading…" : localProfile?.cr_document_path ? "CR document uploaded — tap to replace" : "Upload CR document"}
+          </span>
+          {localProfile?.cr_document_path ? <CheckCircle2 size={15} color={GREEN} /> : <ChevronRight size={14} color={GOLD} />}
+          <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => uploadCR(e.target.files[0])} disabled={!!uploading} />
+        </label>
+      </div>
+
+      <div className="px-5 mb-3 flex items-center justify-between">
+        <p className="text-sm font-semibold">Your fleet</p>
+        <p className="text-[11px]" style={{ color: FAINT }}>{fleet.length} vehicle{fleet.length !== 1 ? "s" : ""}</p>
+      </div>
+      {fleet.length === 0 ? (
+        <EmptyState icon={Car} title="No vehicles yet" subtitle="Vehicles registered under your company will appear here." />
+      ) : (
+        <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2">
+          {fleet.map((v) => (
+            <div key={v.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <p className="text-sm font-semibold">{v.model || "Vehicle"}</p>
+              <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{v.plate_number} · {v.driver_name || "Unassigned"}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="h-8" />
+    </div>
+  );
+}
+
+function DriverDocuments({ goBack, currentDriver }) {
+  const [docs, setDocs] = useState(currentDriver?.profile || {});
+  const [uploading, setUploading] = useState(null);
+  const [error, setError] = useState("");
+  const authUserId = currentDriver?.profile?.auth_user_id;
+
+  async function handleUpload(docKey, file) {
+    if (!file || !authUserId) return;
+    setUploading(docKey);
+    setError("");
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `${authUserId}/${docKey}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("driver-documents").upload(path, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      await supabase.from("drivers").update({ [docKey]: path }).eq("auth_user_id", authUserId);
+      setDocs((d) => ({ ...d, [docKey]: path }));
+    } catch (e) {
+      setError("Couldn't upload that file. Please try again.");
+    } finally {
+      setUploading(null);
+    }
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Documents" onBack={goBack} />
+      <div className="px-5">
+        <p className="text-xs mb-4" style={{ color: MUTE }}>Upload clear photos of these documents so our team can verify your account. Your files are private and only visible to you and SayyaraDrive admin.</p>
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <div className="flex flex-col gap-2">
+          {DOC_TYPES.map((d) => {
+            const Icon = d.icon;
+            const has = !!docs[d.key];
+            return (
+              <label key={d.key} className="flex items-center gap-3 rounded-xl px-4 py-3 cursor-pointer" style={{ background: CARD, border: `1px solid ${has ? "rgba(91,143,212,0.4)" : BORDER}` }}>
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: has ? "rgba(91,143,212,0.14)" : "rgba(217,166,83,0.12)" }}>
+                  <Icon size={17} color={has ? GREEN : GOLD} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold">{d.label}</p>
+                  <p className="text-[11px]" style={{ color: has ? GREEN : FAINT }}>
+                    {uploading === d.key ? "Uploading…" : has ? "Uploaded — tap to replace" : "Tap to upload a photo"}
+                  </p>
+                </div>
+                {has && <CheckCircle2 size={16} color={GREEN} />}
+                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleUpload(d.key, e.target.files[0])} disabled={uploading === d.key} />
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PushSettings({ goBack, currentDriver }) {
   const [status, setStatus] = useState("checking"); // checking | unsupported | denied | off | on | working
   const [error, setError] = useState("");
@@ -3636,7 +4731,7 @@ function AdminLogin({ goBack, navigate, onLoggedIn }) {
 }
 
 /* ---------- GENERIC ADMIN LIST (drivers, passengers, companies, marketplace, jobs, food, logistics, fleet, violations) ---------- */
-function AdminListPage({ goBack, title, table, columns, showDriverActions, deletable, addFields, statusToggle, approvalActions }) {
+function AdminListPage({ goBack, title, table, columns, showDriverActions, deletable, addFields, statusToggle, approvalActions, moderationToggle, resolveToggle, companyActions }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -3644,6 +4739,20 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
   const [showAddForm, setShowAddForm] = useState(false);
   const [newRow, setNewRow] = useState({});
   const [addSubmitting, setAddSubmitting] = useState(false);
+  const [viewingDocs, setViewingDocs] = useState(null);
+  const [docUrls, setDocUrls] = useState({});
+
+  async function openDocuments(row) {
+    setViewingDocs(row);
+    const urls = {};
+    for (const d of DOC_TYPES) {
+      if (row[d.key]) {
+        const { data } = await supabase.storage.from("driver-documents").createSignedUrl(row[d.key], 3600);
+        if (data?.signedUrl) urls[d.key] = data.signedUrl;
+      }
+    }
+    setDocUrls(urls);
+  }
 
   async function loadRows() {
     setLoading(true);
@@ -3654,16 +4763,6 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
   }
 
   useEffect(() => { loadRows(); }, []);
-
-  async function sendPush(driverPhone, title, body) {
-    try {
-      await fetch("/api/send-push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ driverPhone, title, body }),
-      });
-    } catch (e) { /* push is best-effort; in-app notification already saved */ }
-  }
 
   async function addWarning(driver) {
     const newCount = (driver.warning_count || 0) + 1;
@@ -3698,6 +4797,17 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
     loadRows();
   }
 
+  async function toggleCompanyVerified(company) {
+    await supabase.from("companies").update({ verified: !company.verified }).eq("id", company.id);
+    loadRows();
+  }
+
+  async function viewCRDocument(company) {
+    if (!company.cr_document_path) return;
+    const { data } = await supabase.storage.from("company-documents").createSignedUrl(company.cr_document_path, 3600);
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+  }
+
   async function deleteRow(row) {
     await supabase.from(table).delete().eq("id", row.id);
     loadRows();
@@ -3705,6 +4815,16 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
 
   async function toggleSold(row) {
     await supabase.from(table).update({ status: row.status === "sold" ? "active" : "sold" }).eq("id", row.id);
+    loadRows();
+  }
+
+  async function toggleModeration(row) {
+    await supabase.from(table).update({ status: row.status === "hidden" ? "visible" : "hidden" }).eq("id", row.id);
+    loadRows();
+  }
+
+  async function toggleResolved(row) {
+    await supabase.from(table).update({ status: row.status === "resolved" ? "open" : "resolved" }).eq("id", row.id);
     loadRows();
   }
 
@@ -3737,9 +4857,14 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
 
   return (
     <div style={{ color: TEXT }}>
-      <Header title={title} onBack={goBack} right={addFields ? (
-        <button onClick={() => setShowAddForm(true)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: GOLD }}><Plus size={18} color={BG} /></button>
-      ) : null} />
+      <Header title={title} onBack={goBack} right={
+        <div className="flex items-center gap-2">
+          <button onClick={loadRows} aria-label="Refresh" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}><RefreshCw size={15} color={TEXT} className={loading ? "animate-spin" : ""} /></button>
+          {addFields && (
+            <button onClick={() => setShowAddForm(true)} aria-label="Add new" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: GOLD }}><Plus size={18} color={BG} /></button>
+          )}
+        </div>
+      } />
       {showDriverActions && (
         <div className="px-5 mb-4 flex gap-2">
           {[
@@ -3752,12 +4877,25 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
         </div>
       )}
       <div className="px-5">
-        {loading && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>Loading…</p>}
-        {error && <p className="text-sm text-center mt-6" style={{ color: "#C0755B" }}>{error}</p>}
-        {!loading && displayRows.length === 0 && <p className="text-sm text-center mt-6" style={{ color: FAINT }}>No records here.</p>}
+        {loading && (
+          <div className="flex flex-col gap-2">
+            {[1, 2, 3, 4].map((i) => <SkeletonRow key={i} />)}
+          </div>
+        )}
+        {!loading && error && (
+          <EmptyState
+            icon={Zap}
+            title="Couldn't load this data"
+            subtitle="Check your connection and try again."
+            action={<button onClick={loadRows} className="mt-4 px-5 py-2 rounded-full text-xs font-semibold" style={{ background: GOLD, color: BG }}>Retry</button>}
+          />
+        )}
+        {!loading && !error && displayRows.length === 0 && (
+          <EmptyState icon={Package} title="No records here" subtitle="Nothing to show yet." />
+        )}
         <div className="flex flex-col gap-2">
-          {displayRows.map((r) => {
-            const statusColor = r.status === "blocked" || r.status === "rejected" ? "#C0755B" : r.status === "warned" || r.status === "pending" ? GOLD : GREEN;
+          {!loading && displayRows.map((r) => {
+            const statusColor = r.status === "blocked" || r.status === "rejected" || r.status === "hidden" ? "#C0755B" : r.status === "warned" || r.status === "pending" || r.status === "open" ? GOLD : GREEN;
             return (
               <div key={r.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                 <div className="flex items-center justify-between mb-1">
@@ -3797,10 +4935,37 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
                     )}
                   </div>
                 )}
+                {showDriverActions && (
+                  <button onClick={() => openDocuments(r)} className="w-full mt-2 flex items-center justify-center gap-1.5 rounded-full py-2 text-xs font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+                    <Package size={12} /> View documents
+                  </button>
+                )}
                 {statusToggle && (
                   <button onClick={() => toggleSold(r)} className="w-full mt-3 rounded-full py-2 text-xs font-semibold" style={{ background: r.status === "sold" ? "rgba(91,143,212,0.15)" : "rgba(192,117,91,0.12)", color: r.status === "sold" ? GREEN : "#C0755B" }}>
                     {r.status === "sold" ? "Mark as available again" : "Mark as sold"}
                   </button>
+                )}
+                {moderationToggle && (
+                  <button onClick={() => toggleModeration(r)} className="w-full mt-3 rounded-full py-2 text-xs font-semibold" style={{ background: r.status === "hidden" ? "rgba(91,143,212,0.15)" : "rgba(192,117,91,0.12)", color: r.status === "hidden" ? GREEN : "#C0755B" }}>
+                    {r.status === "hidden" ? "Show review" : "Hide review"}
+                  </button>
+                )}
+                {resolveToggle && (
+                  <button onClick={() => toggleResolved(r)} className="w-full mt-3 rounded-full py-2 text-xs font-semibold" style={{ background: r.status === "resolved" ? "rgba(217,166,83,0.15)" : "rgba(91,143,212,0.15)", color: r.status === "resolved" ? GOLD : GREEN }}>
+                    {r.status === "resolved" ? "Reopen" : "Mark resolved"}
+                  </button>
+                )}
+                {companyActions && (
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => toggleCompanyVerified(r)} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2 text-xs font-semibold" style={{ background: r.verified ? "rgba(192,117,91,0.12)" : "rgba(91,143,212,0.15)", color: r.verified ? "#C0755B" : GREEN }}>
+                      <CheckCircle2 size={12} /> {r.verified ? "Unverify" : "Verify company"}
+                    </button>
+                    {r.cr_document_path && (
+                      <button onClick={() => viewCRDocument(r)} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+                        View CR document
+                      </button>
+                    )}
+                  </div>
                 )}
                 {approvalActions && r.status === "pending" && (
                   <div className="flex gap-2 mt-3">
@@ -3850,11 +5015,34 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
           </div>
         </div>
       )}
+      {viewingDocs && (
+        <div className="fixed inset-0 flex items-end justify-center z-50" style={{ background: "rgba(0,0,0,0.6)" }}>
+          <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}`, maxHeight: "85vh", overflowY: "auto" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold">Documents — {viewingDocs.full_name}</h2>
+              <button onClick={() => { setViewingDocs(null); setDocUrls({}); }}><X size={18} color={MUTE} /></button>
+            </div>
+            <div className="flex flex-col gap-3">
+              {DOC_TYPES.map((d) => (
+                <div key={d.key}>
+                  <p className="text-xs font-semibold mb-1.5" style={{ color: MUTE }}>{d.label}</p>
+                  {docUrls[d.key] ? (
+                    <img src={docUrls[d.key]} alt={d.label} loading="lazy" className="w-full rounded-xl object-cover" style={{ maxHeight: 220, background: BG }} />
+                  ) : (
+                    <div className="w-full rounded-xl flex items-center justify-center py-6" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                      <p className="text-[11px]" style={{ color: FAINT }}>Not uploaded yet</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ---------- ADMIN BROADCAST ---------- */
 /* ---------- ADMIN RIDE CHATS ---------- */
 function AdminRideChats({ goBack }) {
   const [threads, setThreads] = useState([]);
@@ -3906,6 +5094,12 @@ function AdminRideChats({ goBack }) {
           <div key={m.id} className={`max-w-[80%] rounded-xl px-3.5 py-2.5 ${m.sender_role === "passenger" ? "self-start" : "self-end ml-auto"}`} style={{ background: m.sender_role === "passenger" ? CARD : GOLD, border: m.sender_role === "passenger" ? `1px solid ${BORDER}` : "none" }}>
             {m.audio_url ? (
               <audio controls src={m.audio_url} style={{ height: 32, width: 180 }} />
+            ) : m.image_url ? (
+              <img src={m.image_url} alt="Shared" loading="lazy" className="rounded-lg" style={{ maxWidth: 200, maxHeight: 200 }} />
+            ) : m.location_lat ? (
+              <a href={`https://www.google.com/maps?q=${m.location_lat},${m.location_lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs underline" style={{ color: m.sender_role === "passenger" ? GREEN : BG }}>
+                <MapPin size={12} /> {m.body}
+              </a>
             ) : (
               <p className="text-xs" style={{ color: m.sender_role === "passenger" ? TEXT : BG }}>{m.body}</p>
             )}
@@ -3942,6 +5136,187 @@ function AdminRideChats({ goBack }) {
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- ADMIN ANALYTICS ---------- */
+function AdminAnalytics({ goBack }) {
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState(null);
+  const [rideTrend, setRideTrend] = useState([]);
+  const [driverTrend, setDriverTrend] = useState([]);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const since7 = new Date(Date.now() - 7 * 86400000).toISOString();
+      const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+
+      const [
+        { count: totalDrivers },
+        { count: verifiedDrivers },
+        { count: onlineDrivers },
+        { count: totalRides },
+        { count: completedRides },
+        { count: activeRides },
+        { count: ridesToday },
+        { count: openReports },
+        { data: ratingsData },
+        { count: marketplaceCount },
+        { count: companiesCount },
+        { count: jobsCount },
+        { count: applicationsCount },
+        { count: restaurantsCount },
+        { count: crashCount7d },
+        { data: perfData },
+        { data: recentRides },
+        { data: recentDrivers },
+      ] = await Promise.all([
+        supabase.from("drivers").select("*", { count: "exact", head: true }),
+        supabase.from("drivers").select("*", { count: "exact", head: true }).eq("verified", true),
+        supabase.from("drivers").select("*", { count: "exact", head: true }).eq("is_online", true),
+        supabase.from("rides").select("*", { count: "exact", head: true }),
+        supabase.from("rides").select("*", { count: "exact", head: true }).eq("status", "completed"),
+        supabase.from("rides").select("*", { count: "exact", head: true }).in("status", ["accepted", "arrived", "in_progress"]),
+        supabase.from("rides").select("*", { count: "exact", head: true }).gte("created_at", todayStart),
+        supabase.from("reports").select("*", { count: "exact", head: true }).eq("status", "open"),
+        supabase.from("ratings").select("rating").eq("status", "visible"),
+        supabase.from("marketplace_listings").select("*", { count: "exact", head: true }).eq("status", "active"),
+        supabase.from("companies").select("*", { count: "exact", head: true }),
+        supabase.from("jobs").select("*", { count: "exact", head: true }),
+        supabase.from("partner_applications").select("*", { count: "exact", head: true }),
+        supabase.from("restaurants").select("*", { count: "exact", head: true }),
+        supabase.from("crash_reports").select("*", { count: "exact", head: true }).gte("created_at", since7),
+        supabase.from("performance_logs").select("load_time_ms").gte("created_at", since7),
+        supabase.from("rides").select("created_at").gte("created_at", since7),
+        supabase.from("drivers").select("created_at").gte("created_at", since7),
+      ]);
+
+      const avgRating = ratingsData && ratingsData.length > 0 ? (ratingsData.reduce((s, r) => s + r.rating, 0) / ratingsData.length).toFixed(1) : "—";
+      const avgLoadMs = perfData && perfData.length > 0 ? Math.round(perfData.reduce((s, p) => s + (p.load_time_ms || 0), 0) / perfData.length) : null;
+
+      const days = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(Date.now() - (6 - i) * 86400000);
+        return d.toISOString().slice(0, 10);
+      });
+      const countByDay = (rows) => days.map((day) => (rows || []).filter((r) => r.created_at.slice(0, 10) === day).length);
+
+      setStats({
+        totalDrivers, verifiedDrivers, onlineDrivers, totalRides, completedRides, activeRides, ridesToday,
+        openReports, avgRating, marketplaceCount, companiesCount, jobsCount, applicationsCount, restaurantsCount,
+        crashCount7d, avgLoadMs,
+      });
+      setRideTrend(countByDay(recentRides));
+      setDriverTrend(countByDay(recentDrivers));
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  function BarChart({ data, color, labels }) {
+    const max = Math.max(...data, 1);
+    return (
+      <div className="flex items-end gap-2" style={{ height: 90 }}>
+        {data.map((v, i) => (
+          <div key={i} className="flex-1 flex flex-col items-center gap-1">
+            <div className="w-full rounded-t-md" style={{ height: `${Math.max((v / max) * 70, 3)}px`, background: color }} />
+            <p className="text-[9px]" style={{ color: FAINT }}>{labels[i]}</p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const dayLabels = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(Date.now() - (6 - i) * 86400000);
+    return d.toLocaleDateString("en-US", { weekday: "short" }).slice(0, 2);
+  });
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Analytics" onBack={goBack} />
+      <div className="px-5">
+        {loading ? (
+          <div className="grid grid-cols-2 gap-3">{[1, 2, 3, 4].map((i) => <SkeletonCard key={i} />)}</div>
+        ) : (
+          <>
+            <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: FAINT }}>Drivers & Rides</p>
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Total drivers</p>
+                <p className="text-xl font-semibold mt-1">{stats.totalDrivers ?? 0}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: GREEN }}>{stats.verifiedDrivers ?? 0} verified · {stats.onlineDrivers ?? 0} online now</p>
+              </div>
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Active rides right now</p>
+                <p className="text-xl font-semibold mt-1" style={{ color: stats.activeRides > 0 ? GOLD : TEXT }}>{stats.activeRides ?? 0}</p>
+              </div>
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Rides booked today</p>
+                <p className="text-xl font-semibold mt-1">{stats.ridesToday ?? 0}</p>
+                <p className="text-[9px] mt-0.5" style={{ color: FAINT }}>closest available proxy for daily users</p>
+              </div>
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Total rides</p>
+                <p className="text-xl font-semibold mt-1">{stats.totalRides ?? 0}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: GREEN }}>{stats.completedRides ?? 0} completed</p>
+              </div>
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Avg. rating</p>
+                <p className="text-xl font-semibold mt-1 flex items-center gap-1"><Star size={16} fill={GOLD} color={GOLD} /> {stats.avgRating}</p>
+              </div>
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${stats.openReports > 0 ? "rgba(192,117,91,0.4)" : BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Open reports</p>
+                <p className="text-xl font-semibold mt-1" style={{ color: stats.openReports > 0 ? "#C0755B" : TEXT }}>{stats.openReports ?? 0}</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl px-4 py-4 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <p className="text-xs font-semibold mb-3">Rides — last 7 days</p>
+              <BarChart data={rideTrend} color={GOLD} labels={dayLabels} />
+            </div>
+            <div className="rounded-2xl px-4 py-4 mb-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <p className="text-xs font-semibold mb-3">New driver signups — last 7 days</p>
+              <BarChart data={driverTrend} color={GREEN} labels={dayLabels} />
+            </div>
+
+            <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: FAINT }}>Marketplace, Jobs & Companies</p>
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Active marketplace listings</p>
+                <p className="text-xl font-semibold mt-1">{stats.marketplaceCount ?? 0}</p>
+              </div>
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Registered companies</p>
+                <p className="text-xl font-semibold mt-1">{stats.companiesCount ?? 0}</p>
+              </div>
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Jobs posted</p>
+                <p className="text-xl font-semibold mt-1">{stats.jobsCount ?? 0}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: GREEN }}>{stats.applicationsCount ?? 0} applications received</p>
+              </div>
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Restaurants listed</p>
+                <p className="text-xl font-semibold mt-1">{stats.restaurantsCount ?? 0}</p>
+                <p className="text-[9px] mt-0.5" style={{ color: FAINT }}>order tracking not yet wired to DB</p>
+              </div>
+            </div>
+
+            <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: FAINT }}>System Health</p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${stats.crashCount7d > 0 ? "rgba(192,117,91,0.4)" : BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Errors — last 7 days</p>
+                <p className="text-xl font-semibold mt-1" style={{ color: stats.crashCount7d > 0 ? "#C0755B" : GREEN }}>{stats.crashCount7d ?? 0}</p>
+              </div>
+              <div className="rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <p className="text-[11px]" style={{ color: FAINT }}>Avg. app load time</p>
+                <p className="text-xl font-semibold mt-1">{stats.avgLoadMs ? `${(stats.avgLoadMs / 1000).toFixed(1)}s` : "—"}</p>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -4001,6 +5376,10 @@ function AdminBroadcast({ goBack }) {
 /* ---------- ADMIN OVERVIEW (sidebar-style dashboard) ---------- */
 const ADMIN_SECTIONS = [
   { id: "drivers", label: "Drivers", table: "drivers", icon: Car },
+  { id: "rides", label: "Rides", table: "rides", icon: Route },
+  { id: "ratings", label: "Ratings", table: "ratings", icon: Star },
+  { id: "reports", label: "Reports", table: "reports", icon: Flag },
+  { id: "crash_reports", label: "Errors", table: "crash_reports", icon: Zap },
   { id: "passengers", label: "Passengers", table: "passengers", icon: Users },
   { id: "partner_applications", label: "Applications", table: "partner_applications", icon: Briefcase },
   { id: "messages", label: "Messages", table: "messages", icon: MessageCircle },
@@ -4051,6 +5430,12 @@ function AdminOverview({ navigate, goBack, onLogout }) {
           <p className="text-[11px]" style={{ color: FAINT }}>Live stats across all modules</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => navigate("notifications")} aria-label="Notifications" className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Bell size={15} color={TEXT} />
+          </button>
+          <button onClick={() => navigate("admin_analytics")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+            <Zap size={13} /> Analytics
+          </button>
           <button onClick={() => navigate("admin_ride_chats")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
             <MessageCircle size={13} /> Chats
           </button>
@@ -4087,11 +5472,58 @@ export default function SayyaraDriveApp() {
   const isAdminLink = typeof window !== "undefined" && window.location.search.includes("owner2026");
   const [history, setHistory] = useState([isAdminLink ? "admin_login" : "welcome"]);
   const [currentDriver, setCurrentDriver] = useState(null);
+  const [currentCompany, setCurrentCompany] = useState(null);
+  const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
+  useEffect(() => {
+    function handleOnline() { setIsOffline(false); }
+    function handleOffline() { setIsOffline(true); }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
   const [currentAdmin, setCurrentAdmin] = useState(null);
   const [sessionChecked, setSessionChecked] = useState(false);
-  const [showAI, setShowAI] = useState(false);
   const [lang, setLang] = useState("en");
   const screen = history[history.length - 1];
+
+  // App-wide crash reporting — catches real errors, no third-party service needed
+  useEffect(() => {
+    function reportCrash(message, stack) {
+      supabase.from("crash_reports").insert({
+        message: String(message).slice(0, 500),
+        stack: stack ? String(stack).slice(0, 2000) : null,
+        url: window.location.href,
+        user_agent: navigator.userAgent,
+      }).then(() => {});
+    }
+    function onError(event) {
+      reportCrash(event.message, event.error?.stack);
+    }
+    function onRejection(event) {
+      reportCrash(`Unhandled promise rejection: ${event.reason?.message || event.reason}`, event.reason?.stack);
+    }
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, []);
+
+  // Lightweight performance monitoring — logs how long the app took to become interactive
+  useEffect(() => {
+    try {
+      const nav = performance.getEntriesByType("navigation")[0];
+      const loadTimeMs = nav ? Math.round(nav.loadEventEnd - nav.startTime) : Math.round(performance.now());
+      if (loadTimeMs > 0 && loadTimeMs < 60000) {
+        supabase.from("performance_logs").insert({ load_time_ms: loadTimeMs, screen: "app_start" }).then(() => {});
+      }
+    } catch (e) { /* performance API not available */ }
+  }, []);
+
   const t = (key) => TRANSLATIONS[lang][key] || key;
 
   useEffect(() => {
@@ -4109,6 +5541,12 @@ export default function SayyaraDriveApp() {
             if (driverRow) {
               setCurrentDriver({ email, type: "driver", profile: driverRow });
               setHistory(["driver"]);
+            } else {
+              const { data: companyRow } = await supabase.from("companies").select("*").eq("auth_user_id", session.user.id).maybeSingle();
+              if (companyRow) {
+                setCurrentCompany({ email, profile: companyRow });
+                setHistory(["company_dashboard"]);
+              }
             }
           }
         }
@@ -4118,9 +5556,24 @@ export default function SayyaraDriveApp() {
     restoreSession();
   }, []);
 
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setHistory(["reset_password"]);
+      }
+    });
+    return () => authListener?.subscription?.unsubscribe();
+  }, []);
+
   function driverLogout() {
     supabase.auth.signOut();
     setCurrentDriver(null);
+    setHistory(["welcome"]);
+  }
+
+  function companyLogout() {
+    supabase.auth.signOut();
+    setCurrentCompany(null);
     setHistory(["welcome"]);
   }
 
@@ -4129,7 +5582,10 @@ export default function SayyaraDriveApp() {
     else setHistory((h) => [...h, next]);
   }
   function goBack() {
-    setHistory((h) => (h.length > 1 ? h.slice(0, -1) : ["home"]));
+    setHistory((h) => {
+      if (h.length > 1) return h.slice(0, -1);
+      return currentDriver ? ["driver"] : ["home"];
+    });
   }
 
   const isTab = TAB_SCREENS.includes(screen);
@@ -4141,6 +5597,7 @@ export default function SayyaraDriveApp() {
     driver: <DriverApp goBack={goBack} navigate={navigate} currentDriver={currentDriver} />,
     driver_profile: <DriverProfile goBack={goBack} navigate={navigate} currentDriver={currentDriver} onLogout={driverLogout} />,
     driver_trips: <DriverTripHistory goBack={goBack} currentDriver={currentDriver} />,
+    driver_documents: <DriverDocuments goBack={goBack} currentDriver={currentDriver} />,
     notifications: <NotificationsScreen goBack={goBack} currentDriver={currentDriver} currentAdmin={currentAdmin} />,
     driver_messages: <DriverMessages goBack={goBack} currentDriver={currentDriver} />,
     push_settings: <PushSettings goBack={goBack} currentDriver={currentDriver} />,
@@ -4163,17 +5620,25 @@ export default function SayyaraDriveApp() {
     register_logistics: <PartnerRegister goBack={goBack} type="logistics_partner" />,
     register_fleet: <PartnerRegister goBack={goBack} type="fleet_owner" />,
     driver_login: <AuthScreen goBack={goBack} type="driver" navigate={navigate} onLoggedIn={setCurrentDriver} />,
+    company_login: <CompanyAuthScreen goBack={goBack} navigate={navigate} onLoggedIn={setCurrentCompany} />,
+    company_dashboard: <CompanyDashboard goBack={goBack} navigate={navigate} currentCompany={currentCompany} onLogout={companyLogout} />,
+    reset_password: <ResetPassword navigate={navigate} />,
     passenger_login: <AuthScreen goBack={goBack} type="passenger" navigate={navigate} onLoggedIn={setCurrentDriver} />,
     admin_login: <AdminLogin goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAdmin} />,
-    admin_drivers: <AdminListPage goBack={goBack} title="Drivers" table="drivers" showDriverActions columns={[{key:"full_name",label:"Name"},{key:"iqama_number",label:"Iqama"},{key:"vehicle_number",label:"Vehicle"},{key:"mobile_number",label:"Mobile"},{key:"city_type",label:"City type"}]} />,
+    admin_drivers: <AdminListPage goBack={goBack} title="Drivers" table="drivers" showDriverActions deletable columns={[{key:"full_name",label:"Name"},{key:"iqama_number",label:"Iqama"},{key:"vehicle_number",label:"Vehicle"},{key:"mobile_number",label:"Mobile"},{key:"city_type",label:"City type"}]} />,
     admin_passengers: <AdminListPage goBack={goBack} title="Passengers" table="passengers" columns={[{key:"full_name",label:"Name"},{key:"mobile_number",label:"Mobile"}]} />,
-    admin_companies: <AdminListPage goBack={goBack} title="Companies" table="companies" columns={[{key:"name",label:"Name"},{key:"contact_name",label:"Contact"},{key:"mobile_number",label:"Mobile"},{key:"fleet_size",label:"Fleet size"}]} />,
+    admin_rides: <AdminListPage goBack={goBack} title="Rides" table="rides" deletable columns={[{key:"ride_type",label:"Type"},{key:"pickup_label",label:"Pickup"},{key:"dropoff_label",label:"Dropoff"},{key:"city",label:"City"},{key:"status",label:"Status"}]} />,
+    admin_ratings: <AdminListPage goBack={goBack} title="Ratings & Reviews" table="ratings" deletable moderationToggle columns={[{key:"target_label",label:"About"},{key:"rating_type",label:"Type"},{key:"rating",label:"Stars"},{key:"review",label:"Review"},{key:"reviewer_name",label:"By"}]} />,
+    admin_crash_reports: <AdminListPage goBack={goBack} title="Errors" table="crash_reports" deletable columns={[{key:"message",label:"Error"},{key:"url",label:"Page"},{key:"user_agent",label:"Device"}]} />,
+    admin_reports: <AdminListPage goBack={goBack} title="Reports" table="reports" deletable resolveToggle columns={[{key:"reference_title",label:"Listing"},{key:"context",label:"Section"},{key:"reason",label:"Reason"}]} />,
+    admin_companies: <AdminListPage goBack={goBack} title="Companies" table="companies" deletable companyActions columns={[{key:"name",label:"Name"},{key:"cr_number",label:"CR Number"},{key:"contact_name",label:"Contact"},{key:"mobile_number",label:"Mobile"},{key:"email",label:"Email"}]} />,
     admin_marketplace_listings: <AdminListPage goBack={goBack} title="Marketplace" table="marketplace_listings" deletable statusToggle columns={[{key:"title",label:"Title"},{key:"seller_name",label:"Seller"},{key:"price",label:"Price"},{key:"category",label:"Category"},{key:"location",label:"Location"}]} addFields={[{key:"title",label:"Title",required:true},{key:"price",label:"Price (SAR)",required:true},{key:"category",label:"Category",type:"select",options:["Cars","Electronics","Furniture","Fashion","Spare parts"],required:true},{key:"location",label:"City",required:true},{key:"seller_name",label:"Seller name"},{key:"seller_phone",label:"Seller phone"},{key:"condition",label:"Condition (e.g. Excellent, Like New)"},{key:"year",label:"Year (cars only)"},{key:"km",label:"Mileage (cars only)"},{key:"image_url",label:"Image URL (optional)"}]} />,
     admin_restaurants: <AdminListPage goBack={goBack} title="Restaurants" table="restaurants" deletable columns={[{key:"name",label:"Name"},{key:"cuisine",label:"Cuisine"},{key:"city",label:"City"},{key:"hours",label:"Hours"}]} addFields={[{key:"name",label:"Restaurant name",required:true},{key:"cuisine",label:"Cuisine (e.g. Arabic, Fast food)",required:true},{key:"city",label:"City",required:true},{key:"hours",label:"Hours (e.g. 10:00–23:00)"},{key:"food_category",label:"Photo type",type:"select",options:["rice","burger","dessert","pasta","butter-chicken"],required:true}]} />,
     admin_jobs: <AdminListPage goBack={goBack} title="Jobs" table="jobs" deletable columns={[{key:"title",label:"Title"},{key:"company",label:"Company"},{key:"location",label:"Location"},{key:"pay",label:"Pay"}]} addFields={[{key:"title",label:"Job title",required:true},{key:"company",label:"Company name",required:true},{key:"location",label:"City",required:true},{key:"pay",label:"Pay",required:true},{key:"job_type",label:"Type",type:"select",options:["Full-time","Part-time","Flexible","Freelance"]},{key:"phone",label:"Contact phone"},{key:"description",label:"Description"}]} />,
     admin_partner_applications: <AdminListPage goBack={goBack} title="Applications" table="partner_applications" deletable approvalActions columns={[{key:"full_name",label:"Name"},{key:"type",label:"Type"},{key:"phone",label:"Phone"},{key:"email",label:"Email"},{key:"city",label:"City"},{key:"district",label:"District"},{key:"details",label:"Details"}]} />,
     admin_messages: <AdminListPage goBack={goBack} title="Messages" table="messages" deletable columns={[{key:"sender_name",label:"From"},{key:"sender_phone",label:"Phone"},{key:"context",label:"About"},{key:"reference_title",label:"Reference"},{key:"body",label:"Message"}]} />,
     admin_broadcast: <AdminBroadcast goBack={goBack} />,
+    admin_analytics: <AdminAnalytics goBack={goBack} />,
     admin_ride_chats: <AdminRideChats goBack={goBack} />,
     admin_food_orders: <AdminListPage goBack={goBack} title="Food Delivery" table="food_orders" columns={[{key:"restaurant_name",label:"Restaurant"},{key:"customer_name",label:"Customer"},{key:"total",label:"Total"}]} />,
     admin_logistics_parcels: <AdminListPage goBack={goBack} title="Logistics" table="logistics_parcels" columns={[{key:"sender_name",label:"Sender"},{key:"pickup_address",label:"Pickup"},{key:"dropoff_address",label:"Dropoff"}]} />,
@@ -4183,12 +5648,17 @@ export default function SayyaraDriveApp() {
 
   return (
     <div className="min-h-screen w-full flex justify-center relative" style={{ background: BG, fontFamily: "'Inter', sans-serif" }}>
+      {isOffline && (
+        <div className="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center gap-2 py-2 text-[12px] font-semibold" style={{ background: "#C0755B", color: "#fff" }}>
+          <Zap size={13} /> You're offline — some features may not work until you're back online.
+        </div>
+      )}
       <div className="fixed inset-0 pointer-events-none z-0 flex justify-center">
         <div className={`w-full relative h-full ${screen === "admin" ? "max-w-6xl" : "max-w-md lg:max-w-5xl"}`}>
           <SkylineBackground opacity={0.25} />
         </div>
       </div>
-      <div className={`w-full relative z-10 ${screen === "admin" ? "max-w-6xl" : "max-w-md lg:max-w-5xl"}`} style={{ paddingBottom: isTab ? 70 : 20 }}>
+      <div className={`w-full relative z-10 ${screen === "admin" ? "max-w-6xl" : "max-w-md lg:max-w-5xl"}`} style={{ paddingBottom: isTab ? 70 : 20, paddingTop: isOffline ? 32 : 0 }}>
         {SCREEN_MAP[screen] || <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />}
 
         {screen !== "welcome" && screen !== "admin" && screen !== "admin_login" && (
