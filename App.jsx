@@ -73,6 +73,80 @@ function loadHereMapsSDK() {
   return hereSdkPromise;
 }
 
+/* ---------- LIVE DRIVER TRACKING MAP (passenger side — shows driver marker moving toward pickup) ---------- */
+function LiveDriverMap({ pickupCoords, driverLat, driverLng }) {
+  const mapDivRef = useRef(null);
+  const mapObjRef = useRef(null);
+  const driverMarkerRef = useRef(null);
+  const [status, setStatus] = useState("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    loadHereMapsSDK().then(() => {
+      if (cancelled || !window.H || !mapDivRef.current || mapObjRef.current) return;
+      const platform = new window.H.service.Platform({ apikey: HERE_API_KEY });
+      const defaultLayers = platform.createDefaultLayers();
+      const map = new window.H.Map(mapDivRef.current, defaultLayers.vector.normal.map, { zoom: 13, center: pickupCoords, pixelRatio: window.devicePixelRatio || 1 });
+      new window.H.mapevents.Behavior(new window.H.mapevents.MapEvents(map));
+      const pickupIcon = new window.H.map.Icon("data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect x="3" y="3" width="14" height="14" rx="3" fill="#5B8FD4" stroke="#070E1F" stroke-width="2"/></svg>`));
+      map.addObject(new window.H.map.Marker(pickupCoords, { icon: pickupIcon }));
+      if (driverLat && driverLng) {
+        const carIcon = new window.H.map.Icon("data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><circle cx="13" cy="13" r="11" fill="#0F211E" stroke="#D9A653" stroke-width="2"/><path d="M8 15 L9 11 Q9.5 10 10.5 10 H15.5 Q16.5 10 17 11 L18 15 Z" fill="#D9A653"/></svg>`), { anchor: { x: 13, y: 13 } });
+        const marker = new window.H.map.Marker({ lat: driverLat, lng: driverLng }, { icon: carIcon });
+        map.addObject(marker);
+        driverMarkerRef.current = marker;
+        map.getViewModel().setLookAtData({ bounds: new window.H.geo.Rect(
+          Math.max(pickupCoords.lat, driverLat) + 0.01, Math.min(pickupCoords.lng, driverLng) - 0.01,
+          Math.min(pickupCoords.lat, driverLat) - 0.01, Math.max(pickupCoords.lng, driverLng) + 0.01,
+        ) });
+      }
+      mapObjRef.current = map;
+      setStatus("ready");
+      window.addEventListener("resize", () => map.getViewPort().resize());
+    }).catch(() => setStatus("error"));
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!mapObjRef.current || !window.H || !driverLat || !driverLng) return;
+    if (driverMarkerRef.current) {
+      driverMarkerRef.current.setGeometry({ lat: driverLat, lng: driverLng });
+    } else {
+      const carIcon = new window.H.map.Icon("data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><circle cx="13" cy="13" r="11" fill="#0F211E" stroke="#D9A653" stroke-width="2"/><path d="M8 15 L9 11 Q9.5 10 10.5 10 H15.5 Q16.5 10 17 11 L18 15 Z" fill="#D9A653"/></svg>`), { anchor: { x: 13, y: 13 } });
+      const marker = new window.H.map.Marker({ lat: driverLat, lng: driverLng }, { icon: carIcon });
+      mapObjRef.current.addObject(marker);
+      driverMarkerRef.current = marker;
+    }
+  }, [driverLat, driverLng]);
+
+  return (
+    <div className="w-full rounded-2xl overflow-hidden relative mt-4" style={{ height: 160, background: CARD, border: `1px solid ${BORDER}` }}>
+      <div ref={mapDivRef} className="w-full h-full" />
+      {status === "loading" && <div className="absolute inset-0 flex items-center justify-center" style={{ background: CARD }}><Navigation size={18} color={GOLD} /></div>}
+      {status === "error" && <div className="absolute inset-0 flex items-center justify-center" style={{ background: CARD }}><p className="text-[10px]" style={{ color: FAINT }}>Map unavailable</p></div>}
+    </div>
+  );
+}
+
+/* ---------- SOUND ALERT (used for driver-side new ride offer notification, no external file needed) ---------- */
+function playOfferAlertSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    function beep(freq, delay) {
+      setTimeout(() => {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type = "sine"; o.frequency.value = freq;
+        o.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3);
+        o.start(); o.stop(ctx.currentTime + 0.32);
+      }, delay);
+    }
+    beep(880, 0); beep(1100, 380);
+  } catch (e) { /* audio is best-effort */ }
+}
+
 const SAUDI_CITY_COORDS = {
   Riyadh: { lat: 24.7136, lng: 46.6753 },
   Jeddah: { lat: 21.4858, lng: 39.1925 },
@@ -555,9 +629,9 @@ function Home({ navigate, lang, setLang, t }) {
 
 /* ---------- RIDE BOOKING ---------- */
 const RIDE_TYPES = [
-  { id: "economy", label: "Economy", eta: "4 min", price: 18, icon: Car },
-  { id: "comfort", label: "Comfort", eta: "6 min", price: 27, icon: Zap },
-  { id: "family", label: "Family", eta: "8 min", price: 38, icon: Users2 },
+  { id: "economy", label: "Economy", eta: "4 min", price: 18, icon: Car, fareMult: 1 },
+  { id: "comfort", label: "Comfort", eta: "6 min", price: 27, icon: Zap, fareMult: 1.4 },
+  { id: "family", label: "Family", eta: "8 min", price: 38, icon: Users2, fareMult: 1.9 },
 ];
 const AIRPORTS = ["King Khalid International (RUH)", "King Abdulaziz International (JED)", "King Fahd International (DMM)"];
 const AIRPORT_VEHICLES = [
@@ -574,12 +648,36 @@ function BookRide({ goBack }) {
   const [stage, setStage] = useState("input");
   const [bookingRef, setBookingRef] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [surge, setSurge] = useState(1);
+
+  function fareFor(tier) {
+    const distanceKm = routeInfo ? parseFloat(routeInfo.distanceKm) : 3;
+    const durationMin = routeInfo ? routeInfo.durationMin : 10;
+    const base = 6, perKm = 1.7, perMin = 0.35;
+    const raw = (base + distanceKm * perKm + durationMin * perMin) * (tier.fareMult || 1);
+    return Math.round(raw * surge);
+  }
+
+  async function computeSurge() {
+    try {
+      const [{ count: pending }, { count: onlineDrivers }] = await Promise.all([
+        supabase.from("rides").select("id", { count: "exact", head: true }).eq("status", "requested").eq("ride_type", "city").eq("city", pickupCity),
+        supabase.from("drivers").select("id", { count: "exact", head: true }).eq("is_online", true),
+      ]);
+      const p = pending || 0, d = onlineDrivers || 0;
+      const ratio = d > 0 ? p / d : p > 0 ? 2 : 0;
+      const mult = Math.min(2.5, Math.max(1, 1 + ratio * 0.6));
+      setSurge(Math.round(mult * 10) / 10);
+    } catch (e) { setSurge(1); }
+  }
+  useEffect(() => { if (mode === "city" && stage === "choose") computeSurge(); }, [mode, stage]);
+
   useEffect(() => {
     if (stage === "confirmed" && !bookingRef) {
       const ref = `RIDE-${Date.now().toString(36).toUpperCase()}`;
       setBookingRef(ref);
       const rideData = mode === "city"
-        ? { booking_ref: ref, ride_type: "city", pickup_label: pickup, dropoff_label: dropoff, pickup_lat: pickupCoords.lat, pickup_lng: pickupCoords.lng, city: pickupCity, status: "requested", distance_km: routeInfo?.distanceKm || null, duration_min: routeInfo?.durationMin || null }
+        ? { booking_ref: ref, ride_type: "city", pickup_label: pickup, dropoff_label: dropoff, pickup_lat: pickupCoords.lat, pickup_lng: pickupCoords.lng, city: pickupCity, status: "requested", distance_km: routeInfo?.distanceKm || null, duration_min: routeInfo?.durationMin || null, fare_estimate: fareFor(chosenRide), surge_multiplier: surge }
         : mode === "airport"
         ? { booking_ref: ref, ride_type: "airport", pickup_label: direction === "to" ? address : `${AIRPORTS.find(a => a === airport) || airport} (pickup)`, dropoff_label: direction === "to" ? airport : address, pickup_lat: aptCoords.lat, pickup_lng: aptCoords.lng, city: cityForAirport, scheduled_date: aptDate, scheduled_time: aptTime, status: "requested" }
         : { booking_ref: ref, ride_type: "intercity", pickup_label: icPickupLabel || icFrom, dropoff_label: icTo, pickup_lat: icPickupCoords.lat, pickup_lng: icPickupCoords.lng, city: icFrom, scheduled_date: icDate, scheduled_time: icTime, status: "requested" };
@@ -610,6 +708,7 @@ function BookRide({ goBack }) {
   const [rideStatus, setRideStatus] = useState(null);
   const [rideDriverId, setRideDriverId] = useState(null);
   const [driverDistanceKm, setDriverDistanceKm] = useState(null);
+  const [driverLiveLoc, setDriverLiveLoc] = useState(null);
   useEffect(() => {
     if (stage !== "confirmed" || !bookingRef) return;
     async function poll() {
@@ -624,8 +723,10 @@ function BookRide({ goBack }) {
           const dLng = (dLoc.last_lng - pickupCoords.lng) * Math.PI / 180;
           const a = Math.sin(dLat / 2) ** 2 + Math.cos(pickupCoords.lat * Math.PI / 180) * Math.cos(dLoc.last_lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
           setDriverDistanceKm((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1));
+          setDriverLiveLoc({ lat: dLoc.last_lat, lng: dLoc.last_lng });
         } else {
           setDriverDistanceKm(null);
+          setDriverLiveLoc(null);
         }
       }
     }
@@ -919,6 +1020,12 @@ function BookRide({ goBack }) {
 
       {mode === "city" && stage === "choose" && (
         <div className="px-5 mt-1">
+          {surge > 1.1 && (
+            <div className="mb-3 flex items-center gap-2 rounded-xl px-4 py-2.5" style={{ background: "rgba(192,117,91,0.14)", border: `1px solid rgba(192,117,91,0.35)` }}>
+              <Zap size={13} color="#C0755B" />
+              <p className="text-[11px] font-semibold" style={{ color: "#C0755B" }}>{surge}x surge pricing — high demand nearby</p>
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             {RIDE_TYPES.map((r) => {
               const Icon = r.icon, isSel = rideType === r.id;
@@ -928,12 +1035,12 @@ function BookRide({ goBack }) {
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "rgba(217,166,83,0.12)" }}><Icon size={17} color={GOLD} /></div>
                     <div className="text-left"><p className="text-sm font-semibold">{r.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{r.eta} away</p></div>
                   </div>
-                  <p className="text-sm font-semibold">{r.price} SAR</p>
+                  <p className="text-sm font-semibold">{fareFor(r)} SAR</p>
                 </button>
               );
             })}
           </div>
-          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Book {chosenRide.label} — {chosenRide.price} SAR</button>
+          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Book {chosenRide.label} — {fareFor(chosenRide)} SAR</button>
         </div>
       )}
 
@@ -944,6 +1051,9 @@ function BookRide({ goBack }) {
           <p className="mt-1 text-sm" style={{ color: MUTE }}>{rideStatusText("Ride confirmed", "Looking for a nearby driver. You'll be connected by WhatsApp.").subtitle}</p>
           {driverDistanceKm !== null && (
             <p className="mt-1.5 text-xs flex items-center gap-1" style={{ color: GOLD }}><Car size={12} /> Driver is {driverDistanceKm} km away</p>
+          )}
+          {(rideStatus === "accepted" || rideStatus === "arrived") && driverLiveLoc && (
+            <LiveDriverMap pickupCoords={pickupCoords} driverLat={driverLiveLoc.lat} driverLng={driverLiveLoc.lng} />
           )}
           {rideStatus === "completed" && (
             <div className="w-full">
@@ -1134,6 +1244,8 @@ function DriverApp({ goBack, navigate, currentDriver }) {
   const [locDenied, setLocDenied] = useState(false);
   const [declinedIds, setDeclinedIds] = useState([]);
   const [driverChatOpen, setDriverChatOpen] = useState(false);
+  const [offerDeadline, setOfferDeadline] = useState(null);
+  const [offerSecondsLeft, setOfferSecondsLeft] = useState(0);
   const driverRow = currentDriver?.profile;
 
   useEffect(() => {
@@ -1208,15 +1320,17 @@ function DriverApp({ goBack, navigate, currentDriver }) {
     }
   }, [request]);
 
-  // Poll for real open ride requests while online — sorted by real distance so nearby drivers see the closest ride first
+  // Sequential auto-dispatch: system offers each unassigned ride to the single nearest available driver at a time,
+  // with a 15s exclusive claim window. If declined or the window expires, the ride recirculates to the next-nearest driver.
   useEffect(() => {
-    if (!online || !driverRow) return;
+    if (!online || !driverRow || request) return;
     async function poll() {
+      const nowIso = new Date().toISOString();
       const wantsOutsideCity = driverRow.city_type === "intercity";
       let query = supabase.from("rides").select("*").eq("status", "requested").is("driver_id", null);
       query = wantsOutsideCity ? query.eq("ride_type", "intercity") : query.in("ride_type", ["city", "airport"]);
       const { data } = await query.order("created_at", { ascending: true }).limit(20);
-      const candidates = (data || []).filter((r) => !declinedIds.includes(r.id));
+      const candidates = (data || []).filter((r) => !declinedIds.includes(r.id) && (!r.offered_driver_id || (r.offer_expires_at && r.offer_expires_at < nowIso)));
       if (candidates.length === 0) return;
       const withDistance = candidates.map((r) => {
         if (!r.pickup_lat) return { ...r, _distance: Infinity };
@@ -1227,13 +1341,53 @@ function DriverApp({ goBack, navigate, currentDriver }) {
         return { ...r, _distance: R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) };
       });
       withDistance.sort((a, b) => a._distance - b._distance);
-      const nearest = withDistance[0];
-      if (nearest && !request) setRequest(nearest);
+      // Try to atomically claim an exclusive 15s offer on the nearest candidate first, falling through if another driver beats us to it
+      for (const candidate of withDistance) {
+        const expiresAt = new Date(Date.now() + 15000).toISOString();
+        const { data: claimed } = await supabase.from("rides")
+          .update({ offered_driver_id: driverRow.id, offer_expires_at: expiresAt })
+          .eq("id", candidate.id)
+          .is("driver_id", null)
+          .or(`offered_driver_id.is.null,offer_expires_at.lt.${nowIso}`)
+          .select();
+        if (claimed && claimed.length > 0) {
+          setRequest(candidate);
+          break;
+        }
+      }
     }
     poll();
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(poll, 4000);
     return () => clearInterval(interval);
   }, [online, driverRow, declinedIds, request, driverLoc]);
+
+  // Play an alert sound and start the 15s decision countdown whenever a new offer arrives
+  useEffect(() => {
+    if (!request) { setOfferDeadline(null); return; }
+    playOfferAlertSound();
+    setOfferDeadline(Date.now() + 15000);
+  }, [request]);
+
+  useEffect(() => {
+    if (!offerDeadline) return;
+    const tick = () => {
+      const secs = Math.max(0, Math.round((offerDeadline - Date.now()) / 1000));
+      setOfferSecondsLeft(secs);
+      if (secs <= 0) autoDeclineOffer();
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, [offerDeadline]);
+
+  async function autoDeclineOffer() {
+    if (request) {
+      await supabase.from("rides").update({ offered_driver_id: null, offer_expires_at: null }).eq("id", request.id).eq("offered_driver_id", driverRow?.id);
+      setDeclinedIds((ids) => [...ids, request.id]);
+    }
+    setRequest(null);
+    setOfferDeadline(null);
+  }
 
   async function goOnline() {
     setOnline(true);
@@ -1264,14 +1418,19 @@ function DriverApp({ goBack, navigate, currentDriver }) {
     return () => clearInterval(interval);
   }, [online, driverRow?.id]);
 
-  function declineRequest() {
-    if (request) setDeclinedIds((ids) => [...ids, request.id]);
+  async function declineRequest() {
+    if (request) {
+      await supabase.from("rides").update({ offered_driver_id: null, offer_expires_at: null }).eq("id", request.id);
+      setDeclinedIds((ids) => [...ids, request.id]);
+    }
     setRequest(null);
+    setOfferDeadline(null);
   }
 
   async function acceptRequest() {
     if (!request || !driverRow?.id) return;
-    await supabase.from("rides").update({ status: "accepted", driver_id: driverRow.id }).eq("id", request.id);
+    await supabase.from("rides").update({ status: "accepted", driver_id: driverRow.id, offer_expires_at: null }).eq("id", request.id);
+    setOfferDeadline(null);
     setTripState("accepted");
   }
 
@@ -1343,13 +1502,24 @@ function DriverApp({ goBack, navigate, currentDriver }) {
           <div className="rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-semibold">New ride request</p>
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: "rgba(217,166,83,0.15)", color: GOLD }}>{request.ride_type}</span>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: "rgba(217,166,83,0.15)", color: GOLD }}>{request.ride_type}</span>
+                <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: offerSecondsLeft <= 5 ? "rgba(192,117,91,0.2)" : "rgba(91,143,212,0.15)", color: offerSecondsLeft <= 5 ? "#C0755B" : GREEN }}>{offerSecondsLeft}</span>
+              </div>
             </div>
             <p className="text-xs" style={{ color: MUTE }}>{request.pickup_label} → {request.dropoff_label}</p>
-            {request._distance !== undefined && isFinite(request._distance) && (
-              <p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: GOLD }}><Route size={11} /> {request._distance.toFixed(1)} km to pickup</p>
-            )}
+            <div className="flex items-center gap-3 mt-1">
+              {request._distance !== undefined && isFinite(request._distance) && (
+                <p className="text-[11px] flex items-center gap-1" style={{ color: GOLD }}><Route size={11} /> {request._distance.toFixed(1)} km to pickup</p>
+              )}
+              {request.fare_estimate && (
+                <p className="text-[11px] flex items-center gap-1" style={{ color: GREEN }}><DollarSign size={11} /> ~{request.fare_estimate} SAR</p>
+              )}
+            </div>
             {request.scheduled_date && <p className="text-[11px] mt-1" style={{ color: FAINT }}>{request.scheduled_date} {request.scheduled_time}</p>}
+            <div className="w-full h-1 rounded-full mt-3 overflow-hidden" style={{ background: BORDER }}>
+              <div className="h-full transition-all" style={{ width: `${(offerSecondsLeft / 15) * 100}%`, background: offerSecondsLeft <= 5 ? "#C0755B" : GOLD }} />
+            </div>
             <div className="flex gap-2 mt-4">
               <button onClick={declineRequest} className="flex-1 rounded-full py-2.5 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Decline</button>
               <button onClick={acceptRequest} className="flex-1 rounded-full py-2.5 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Accept</button>
@@ -1744,10 +1914,37 @@ function CarRental({ goBack, navigate }) {
   const [stage, setStage] = useState("input"); const [carId, setCarId] = useState("sedan");
   const [bookingRef, setBookingRef] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
-  useEffect(() => { if (stage === "confirmed" && !bookingRef) setBookingRef(`RENTAL-${Date.now().toString(36).toUpperCase()}`); if (stage === "input") setBookingRef(null); }, [stage]);
+  const [renterName, setRenterName] = useState(""); const [renterPhone, setRenterPhone] = useState("");
+  const [saving, setSaving] = useState(false);
   const chosen = CARS.find((c) => c.id === carId);
   const can = pickupDate && returnDate && returnDate >= pickupDate;
   const days = can ? Math.max(1, Math.round((new Date(returnDate) - new Date(pickupDate)) / 86400000) || 1) : 0;
+  const canReserve = renterName.trim() && renterPhone.trim();
+
+  async function confirmReservation() {
+    const ref = `RENTAL-${Date.now().toString(36).toUpperCase()}`;
+    setSaving(true);
+    try {
+      await supabase.from("rental_bookings").insert({
+        booking_ref: ref,
+        renter_name: renterName.trim(),
+        renter_phone: renterPhone.trim(),
+        provider: chosen?.provider || null,
+        car_model: chosen?.model || chosen?.label || null,
+        city, district,
+        pickup_date: pickupDate || null,
+        return_date: returnDate || null,
+        days: days || 1,
+        price_per_day: chosen?.price || null,
+        total_price: days > 0 ? chosen.price * days : chosen?.price || null,
+        status: "requested",
+      });
+    } catch (e) { /* best-effort; still show confirmation locally */ }
+    setSaving(false);
+    setBookingRef(ref);
+    setStage("confirmed");
+  }
+  useEffect(() => { if (stage === "input") setBookingRef(null); }, [stage]);
   return (
     <div style={{ color: TEXT }}>
       <Header title="Car rental" onBack={goBack} />
@@ -1844,8 +2041,12 @@ function CarRental({ goBack, navigate }) {
               );
             })}
           </div>
-          <button onClick={() => setStage("confirmed")} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
-            {days > 0 ? `Reserve — ${chosen.price * days} SAR total` : `Reserve — ${chosen.price} SAR/day`}
+          <div className="rounded-2xl px-4 py-2 mt-4 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><User size={14} color={GREEN} /><input value={renterName} onChange={(e) => setRenterName(e.target.value)} placeholder="Your full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+            <div className="flex items-center gap-3 py-3"><Phone size={14} color={GOLD} /><input value={renterPhone} onChange={(e) => setRenterPhone(e.target.value)} placeholder="Your mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+          </div>
+          <button onClick={() => canReserve && !saving && confirmReservation()} disabled={!canReserve || saving} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: canReserve && !saving ? GOLD : BORDER, color: canReserve && !saving ? BG : "#5C736D" }}>
+            {saving ? "Reserving..." : days > 0 ? `Reserve — ${chosen.price * days} SAR total` : `Reserve — ${chosen.price} SAR/day`}
           </button>
         </div>
       )}
@@ -2200,7 +2401,9 @@ function FoodDelivery({ goBack, navigate }) {
   const [dbRestaurants, setDbRestaurants] = useState([]);
   const [bookingRef, setBookingRef] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
-  useEffect(() => { if (stage === "confirmed" && !bookingRef) setBookingRef(`ORDER-${Date.now().toString(36).toUpperCase()}`); if (stage === "browse") setBookingRef(null); }, [stage]);
+  const [customerName, setCustomerName] = useState(""); const [customerPhone, setCustomerPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { if (stage === "browse") setBookingRef(null); }, [stage]);
 
   useEffect(() => {
     async function loadRestaurants() {
@@ -2239,6 +2442,26 @@ function FoodDelivery({ goBack, navigate }) {
   );
 
   function openMenu(r) { setOpenRestaurant(r); setCart({}); setStage("menu"); }
+
+  async function confirmOrder() {
+    const ref = `ORDER-${Date.now().toString(36).toUpperCase()}`;
+    setSaving(true);
+    try {
+      await supabase.from("food_orders").insert({
+        booking_ref: ref,
+        restaurant_name: openRestaurant?.name || null,
+        customer_name: customerName.trim(),
+        customer_phone: customerPhone.trim(),
+        city: openRestaurant?.city || null,
+        items: cartItems.map((m) => ({ name: m.name, qty: cart[m.id], price: m.price })),
+        total: cartTotal,
+        status: "placed",
+      });
+    } catch (e) { /* best-effort; still show confirmation locally */ }
+    setSaving(false);
+    setBookingRef(ref);
+    setStage("confirmed");
+  }
 
   if (stage === "confirmed") return (
     <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
@@ -2287,11 +2510,15 @@ function FoodDelivery({ goBack, navigate }) {
         </div>
         {cartItems.length > 0 && (
           <>
+            <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><User size={14} color={GREEN} /><input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Your full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+              <div className="flex items-center gap-3 py-3"><Phone size={14} color={GOLD} /><input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Your mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+            </div>
             <div className="rounded-xl px-4 py-3 mb-4 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <p className="text-sm font-semibold" style={{ color: MUTE }}>Total</p>
               <p className="text-lg font-semibold" style={{ color: GOLD }}>{cartTotal} SAR</p>
             </div>
-            <button onClick={() => setStage("confirmed")} className="w-full rounded-full py-3.5 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Checkout</button>
+            <button onClick={() => customerName.trim() && customerPhone.trim() && !saving && confirmOrder()} disabled={!customerName.trim() || !customerPhone.trim() || saving} className="w-full rounded-full py-3.5 text-sm font-semibold" style={{ background: customerName.trim() && customerPhone.trim() && !saving ? GOLD : BORDER, color: customerName.trim() && customerPhone.trim() && !saving ? BG : "#5C736D" }}>{saving ? "Placing order..." : "Checkout"}</button>
           </>
         )}
       </div>
@@ -2460,13 +2687,37 @@ function Logistics({ goBack, navigate }) {
   const [openCourier, setOpenCourier] = useState(null);
   const [pickupAddress, setPickupAddress] = useState(""); const [dropoffAddress, setDropoffAddress] = useState("");
   const [pickupContact, setPickupContact] = useState(""); const [dropoffContact, setDropoffContact] = useState("");
+  const [senderName, setSenderName] = useState("");
   const [size, setSize] = useState("small"); const [stage, setStage] = useState("input");
   const [chosenTier, setChosenTier] = useState(null);
   const chosen = PARCEL_SIZES.find((s) => s.id === size);
-  const can = pickupAddress.trim() && dropoffAddress.trim() && pickupContact.trim() && dropoffContact.trim();
+  const can = senderName.trim() && pickupAddress.trim() && dropoffAddress.trim() && pickupContact.trim() && dropoffContact.trim();
   const [bookingRef, setBookingRef] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
-  useEffect(() => { if (stage === "confirmed" && !bookingRef) setBookingRef(`PARCEL-${Date.now().toString(36).toUpperCase()}`); if (stage === "input") setBookingRef(null); }, [stage]);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { if (stage === "input") setBookingRef(null); }, [stage]);
+
+  async function confirmPickup() {
+    const ref = `PARCEL-${Date.now().toString(36).toUpperCase()}`;
+    setSaving(true);
+    try {
+      await supabase.from("logistics_parcels").insert({
+        booking_ref: ref,
+        sender_name: senderName.trim(),
+        sender_phone: pickupContact.trim(),
+        recipient_phone: dropoffContact.trim(),
+        pickup_address: pickupAddress.trim(),
+        dropoff_address: dropoffAddress.trim(),
+        parcel_size: size,
+        courier: openCourier?.name || null,
+        price: chosenTier ? chosenTier.price : chosen.price,
+        status: "requested",
+      });
+    } catch (e) { /* best-effort; still show confirmation locally */ }
+    setSaving(false);
+    setBookingRef(ref);
+    setStage("confirmed");
+  }
   if (stage === "confirmed") return (
     <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT }}>
       <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Pickup requested</h2>
@@ -2550,6 +2801,9 @@ function Logistics({ goBack, navigate }) {
             <button onClick={() => setChosenTier(null)} className="text-[11px]" style={{ color: "#C0755B" }}>Clear</button>
           </div>
         )}
+        <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="flex items-center gap-3 py-3"><User size={14} color={GOLD} /><input value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Your full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+        </div>
         <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>PICKUP</p>
         <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><MapPin size={14} color={GREEN} /><input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} placeholder="Pickup address" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
@@ -2571,7 +2825,7 @@ function Logistics({ goBack, navigate }) {
             );
           })}
         </div>
-        <button onClick={() => can && setStage("confirmed")} disabled={!can} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>Request pickup — {chosenTier ? chosenTier.price : chosen.price} SAR</button>
+        <button onClick={() => can && !saving && confirmPickup()} disabled={!can || saving} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can && !saving ? GOLD : BORDER, color: can && !saving ? BG : "#5C736D" }}>{saving ? "Requesting..." : `Request pickup — ${chosenTier ? chosenTier.price : chosen.price} SAR`}</button>
       </div>
       )}
     </div>
@@ -3258,9 +3512,26 @@ function WelcomeScreen({ navigate }) {
         <h2 className="text-lg font-semibold leading-snug max-w-xs" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
           Saudi Arabia's everyday mobility platform
         </h2>
-        <p className="text-sm mt-2 mb-6 max-w-xs" style={{ color: MUTE }}>
-          Rides, rentals, deliveries, and driver earnings — all in one trusted app, built for the Kingdom.
+        <p className="text-sm mt-2 mb-5 max-w-xs" style={{ color: MUTE }}>
+          Rides, rentals, deliveries, jobs, and driver earnings — all in one trusted app, built for the Kingdom.
         </p>
+
+        <div className="grid grid-cols-5 gap-2 mb-6 w-full max-w-sm">
+          {[
+            { icon: Car, label: "Rides" },
+            { icon: Key, label: "Rentals" },
+            { icon: Truck, label: "Delivery" },
+            { icon: Briefcase, label: "Jobs" },
+            { icon: DollarSign, label: "Earnings" },
+          ].map(({ icon: Icon, label }) => (
+            <div key={label} className="flex flex-col items-center gap-1.5 rounded-2xl py-3 px-1" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(217,166,83,0.14)" }}>
+                <Icon size={15} color={GOLD} />
+              </div>
+              <span className="text-[9px] font-medium" style={{ color: MUTE }}>{label}</span>
+            </div>
+          ))}
+        </div>
 
         <div className="flex items-center gap-4 mb-7 text-[11px]" style={{ color: FAINT }}>
           <span className="flex items-center gap-1.5"><Shield size={12} color={GREEN} /> Verified drivers</span>
@@ -3271,9 +3542,29 @@ function WelcomeScreen({ navigate }) {
         <button onClick={() => navigate("home")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: GOLD, color: BG, boxShadow: "0 8px 20px rgba(217,166,83,0.3)" }}>
           Continue as passenger
         </button>
-        <button onClick={() => navigate("driver_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-4" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+        <button onClick={() => navigate("driver_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
           Driver login / sign up
         </button>
+        <button onClick={() => navigate("home")} className="w-full max-w-sm rounded-full py-3.5 text-sm font-semibold mb-5" style={{ background: "transparent", border: `1px solid ${FAINT}`, color: MUTE }}>
+          Continue as visitor
+        </button>
+
+        <div className="w-full max-w-sm rounded-2xl px-4 py-4 mb-4" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
+          <p className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: FAINT }}>Register a business</p>
+          <button onClick={() => navigate("register_fleet")} className="w-full mb-2 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
+            <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: TEXT }}><Users size={15} color={GREEN} /> Register your company</span>
+            <ChevronRight size={14} color={GREEN} />
+          </button>
+          <button onClick={() => navigate("register_rental")} className="w-full mb-2 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+            <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: TEXT }}><Key size={15} color={GOLD} /> Own a car? List it for rent</span>
+            <ChevronRight size={14} color={GOLD} />
+          </button>
+          <button onClick={() => navigate("company_login")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "transparent", border: `1px solid ${BORDER}` }}>
+            <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: MUTE }}><Briefcase size={15} color={MUTE} /> Already registered? Company login</span>
+            <ChevronRight size={14} color={MUTE} />
+          </button>
+        </div>
+
         <p className="text-[10px]" style={{ color: FAINT }}>By continuing, you agree to use SayyaraDrive responsibly and respectfully.</p>
       </div>
     </div>
@@ -5387,6 +5678,7 @@ const ADMIN_SECTIONS = [
   { id: "marketplace_listings", label: "Marketplace", table: "marketplace_listings", icon: ShoppingBag },
   { id: "restaurants", label: "Restaurants", table: "restaurants", icon: UtensilsCrossed },
   { id: "jobs", label: "Jobs", table: "jobs", icon: Briefcase },
+  { id: "rental_bookings", label: "Rentals", table: "rental_bookings", icon: Key },
   { id: "food_orders", label: "Food Orders", table: "food_orders", icon: UtensilsCrossed },
   { id: "logistics_parcels", label: "Logistics", table: "logistics_parcels", icon: Truck },
   { id: "fleet_vehicles", label: "Fleet", table: "fleet_vehicles", icon: Car },
@@ -5640,6 +5932,7 @@ export default function SayyaraDriveApp() {
     admin_broadcast: <AdminBroadcast goBack={goBack} />,
     admin_analytics: <AdminAnalytics goBack={goBack} />,
     admin_ride_chats: <AdminRideChats goBack={goBack} />,
+    admin_rental_bookings: <AdminListPage goBack={goBack} title="Car Rentals" table="rental_bookings" columns={[{key:"renter_name",label:"Renter"},{key:"provider",label:"Company"},{key:"car_model",label:"Car"},{key:"pickup_date",label:"Pickup"},{key:"return_date",label:"Return"},{key:"total_price",label:"Total"}]} />,
     admin_food_orders: <AdminListPage goBack={goBack} title="Food Delivery" table="food_orders" columns={[{key:"restaurant_name",label:"Restaurant"},{key:"customer_name",label:"Customer"},{key:"total",label:"Total"}]} />,
     admin_logistics_parcels: <AdminListPage goBack={goBack} title="Logistics" table="logistics_parcels" columns={[{key:"sender_name",label:"Sender"},{key:"pickup_address",label:"Pickup"},{key:"dropoff_address",label:"Dropoff"}]} />,
     admin_fleet_vehicles: <AdminListPage goBack={goBack} title="Fleet" table="fleet_vehicles" columns={[{key:"plate_number",label:"Plate"},{key:"model",label:"Model"},{key:"driver_name",label:"Driver"}]} />,
