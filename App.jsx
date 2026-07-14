@@ -8,7 +8,7 @@ import {
   Plus, Tag, X, Star, ShoppingBag as Bag, Minus,
   Package, Phone, DollarSign,
   Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check,
-  Link, Globe, Trophy, MessageCircle, Mic, RefreshCw, Flag, Image as ImageIcon
+  Link, Globe, Trophy, MessageCircle, Mic, RefreshCw, Flag, Image as ImageIcon, PhoneOff, PhoneCall
 } from "lucide-react";
 
 /* ---------- support contact ---------- */
@@ -1246,6 +1246,14 @@ function DriverApp({ goBack, navigate, currentDriver }) {
   const [offerDeadline, setOfferDeadline] = useState(null);
   const [offerSecondsLeft, setOfferSecondsLeft] = useState(0);
   const driverRow = currentDriver?.profile;
+
+  useEffect(() => {
+    if (driverRow?.id && !online) {
+      setOnline(true);
+      supabase.from("drivers").update({ is_online: true, last_lat: driverLoc.lat, last_lng: driverLoc.lng }).eq("id", driverRow.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driverRow?.id]);
 
   useEffect(() => {
     detectLocation({
@@ -2880,8 +2888,13 @@ function Logistics({ goBack, navigate }) {
   return (
     <div style={{ color: TEXT }}>
       <Header title="Send a parcel" onBack={goBack} />
-      <div className="mx-5 mb-4 rounded-2xl overflow-hidden" style={{ height: 130, background: CARD, border: `1px solid ${BORDER}` }}>
+      <div className="mx-5 mb-4 rounded-2xl overflow-hidden relative" style={{ height: 150, background: CARD, border: `1px solid ${BORDER}` }}>
         <img src="https://loremflickr.com/500/260/delivery-van,courier/all?lock=51" alt="Logistics" className="w-full h-full object-cover" />
+        <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(7,14,31,0.1), rgba(7,14,31,0.88))" }} />
+        <div className="absolute bottom-0 left-0 right-0 px-5 py-4">
+          <p className="text-lg font-bold" style={{ color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>Fast, Reliable Delivery</p>
+          <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.8)" }}>Trusted couriers across Saudi Arabia, door to door</p>
+        </div>
       </div>
 
       <div className="px-5 mb-4 flex gap-2">
@@ -2938,12 +2951,11 @@ function Logistics({ goBack, navigate }) {
             return (
               <button key={s.id} onClick={() => setSize(s.id)} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
                 <div className="text-left"><p className="text-sm font-semibold">{s.label}</p><p className="text-[11px]" style={{ color: FAINT }}>{s.sub}</p></div>
-                <p className="text-sm font-semibold">{s.price} SAR</p>
               </button>
             );
           })}
         </div>
-        <button onClick={() => can && !saving && confirmPickup()} disabled={!can || saving} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can && !saving ? GOLD : BORDER, color: can && !saving ? BG : "#5C736D" }}>{saving ? "Requesting..." : `Request pickup — ${chosenTier ? chosenTier.price : chosen.price} SAR`}</button>
+        <button onClick={() => can && !saving && confirmPickup()} disabled={!can || saving} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can && !saving ? GOLD : BORDER, color: can && !saving ? BG : "#5C736D" }}>{saving ? "Requesting..." : "Request pickup"}</button>
       </div>
       )}
     </div>
@@ -3806,14 +3818,20 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
       return;
     }
     try {
-      const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+      const { data: signInData, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
       if (loginError) throw loginError;
       let profile = null;
       if (isDriver) {
-        const { data } = await supabase.from("drivers").select("*").eq("mobile_number", mobile).maybeSingle();
+        const authUserId = signInData?.user?.id;
+        const { data } = await supabase.from("drivers").select("*").eq("auth_user_id", authUserId).maybeSingle();
         profile = data;
         if (profile && profile.status === "blocked") {
           setError("This driver account has been blocked. Contact support.");
+          setLoading(false);
+          return;
+        }
+        if (!profile) {
+          setError("No driver profile found for this account. Please sign up first.");
           setLoading(false);
           return;
         }
@@ -3896,12 +3914,6 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
           </div>
           {mode === "login" && (
             <button onClick={() => { setMode("forgot"); setError(""); }} className="text-right text-[12px] -mt-1.5" style={{ color: GOLD }}>Forgot password?</button>
-          )}
-          {mode === "login" && isDriver && (
-            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <Phone size={14} color={GOLD} />
-              <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number (to load your profile)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
-            </div>
           )}
         </div>
 
@@ -4198,6 +4210,145 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
   const typingTimeoutRef = useRef(null);
   const scrollRef = useRef(null);
 
+  /* ---- Voice call (WebRTC, signaled over Supabase Realtime broadcast) ---- */
+  const [callState, setCallState] = useState("idle"); // idle | calling | ringing | connected
+  const [callError, setCallError] = useState("");
+  const [callSeconds, setCallSeconds] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const pcRef = useRef(null);
+  const callChannelRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const callTimerRef = useRef(null);
+  const ringTimeoutRef = useRef(null);
+  const pendingOfferRef = useRef(null);
+  const ICE_SERVERS = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ];
+
+  function getCallChannel() {
+    if (!callChannelRef.current) {
+      callChannelRef.current = supabase.channel(`call:${bookingRef}`, { config: { broadcast: { self: false } } });
+      callChannelRef.current
+        .on("broadcast", { event: "signal" }, ({ payload }) => handleSignal(payload))
+        .subscribe();
+    }
+    return callChannelRef.current;
+  }
+
+  useEffect(() => {
+    getCallChannel();
+    return () => {
+      endCall(false);
+      if (callChannelRef.current) { supabase.removeChannel(callChannelRef.current); callChannelRef.current = null; }
+    };
+  }, []);
+
+  function sendSignal(data) {
+    getCallChannel().send({ type: "broadcast", event: "signal", payload: { ...data, from: role } });
+  }
+
+  function newPeerConnection() {
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    pc.onicecandidate = (e) => { if (e.candidate) sendSignal({ kind: "ice", candidate: e.candidate }); };
+    pc.ontrack = (e) => { if (remoteAudioRef.current) remoteAudioRef.current.srcObject = e.streams[0]; };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "connected") {
+        setCallState("connected");
+        setCallError("");
+        callTimerRef.current = setInterval(() => setCallSeconds((s) => s + 1), 1000);
+      }
+      if (["failed", "disconnected", "closed"].includes(pc.connectionState) && callState !== "idle") {
+        if (pc.connectionState === "failed") setCallError("Call connection failed — this can happen on some mobile networks.");
+      }
+    };
+    pcRef.current = pc;
+    return pc;
+  }
+
+  async function startCall() {
+    setCallError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+      const pc = newPeerConnection();
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sendSignal({ kind: "offer", sdp: offer, callerName: name });
+      setCallState("calling");
+      ringTimeoutRef.current = setTimeout(() => { if (callState !== "connected") { setCallError("No answer."); endCall(true); } }, 30000);
+    } catch (e) {
+      setCallError("Couldn't access your microphone. Check browser permissions.");
+    }
+  }
+
+  async function acceptCall() {
+    const offerPayload = pendingOfferRef.current;
+    if (!offerPayload) return;
+    setCallError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+      const pc = newPeerConnection();
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      await pc.setRemoteDescription(new RTCSessionDescription(offerPayload.sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sendSignal({ kind: "answer", sdp: answer });
+      setCallState("connected");
+    } catch (e) {
+      setCallError("Couldn't access your microphone. Check browser permissions.");
+      declineCall();
+    }
+  }
+
+  function declineCall() {
+    sendSignal({ kind: "hangup" });
+    pendingOfferRef.current = null;
+    setCallState("idle");
+  }
+
+  function endCall(notify = true) {
+    if (notify && callState !== "idle") sendSignal({ kind: "hangup" });
+    if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
+    if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+    if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
+    if (localStreamRef.current) { localStreamRef.current.getTracks().forEach((t) => t.stop()); localStreamRef.current = null; }
+    pendingOfferRef.current = null;
+    setCallSeconds(0);
+    setMuted(false);
+    setCallState("idle");
+  }
+
+  function toggleMute() {
+    if (!localStreamRef.current) return;
+    localStreamRef.current.getAudioTracks().forEach((t) => { t.enabled = muted; });
+    setMuted((m) => !m);
+  }
+
+  function handleSignal(payload) {
+    if (payload.from === role) return;
+    if (payload.kind === "offer") {
+      if (callState !== "idle") { getCallChannel().send({ type: "broadcast", event: "signal", payload: { kind: "hangup", from: role } }); return; }
+      pendingOfferRef.current = payload;
+      setCallState("ringing");
+    } else if (payload.kind === "answer") {
+      if (pcRef.current) pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+    } else if (payload.kind === "ice") {
+      if (pcRef.current) pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(() => {});
+    } else if (payload.kind === "hangup") {
+      endCall(false);
+    }
+  }
+
+  function formatCallTime(s) {
+    const m = Math.floor(s / 60), sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  }
+
   async function load() {
     const { data } = await supabase.from("messages").select("*").eq("booking_ref", bookingRef).order("created_at", { ascending: true });
     setItems(data || []);
@@ -4372,13 +4523,48 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
 
   return (
     <div className="fixed inset-0 flex items-end justify-center z-50" style={{ background: "rgba(0,0,0,0.6)" }}>
+      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: "none" }} />
+      {callState !== "idle" && (
+        <div className="fixed inset-0 flex flex-col items-center justify-center z-[60]" style={{ background: BG }}>
+          <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6" style={{ background: "rgba(217,166,83,0.14)" }}>
+            <PhoneCall size={36} color={GOLD} className={callState !== "connected" ? "animate-pulse" : ""} />
+          </div>
+          <p className="text-lg font-semibold" style={{ color: TEXT }}>{otherRole === "driver" ? "Driver" : "Passenger"}</p>
+          <p className="text-sm mt-2" style={{ color: MUTE }}>
+            {callState === "calling" && "Calling…"}
+            {callState === "ringing" && "Incoming call…"}
+            {callState === "connected" && formatCallTime(callSeconds)}
+          </p>
+          {callError && <p className="text-xs mt-3 text-center px-8" style={{ color: "#C0755B" }}>{callError}</p>}
+          <div className="flex items-center gap-6 mt-10">
+            {callState === "ringing" ? (
+              <>
+                <button onClick={declineCall} className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "#C0755B" }}><PhoneOff size={22} color="#fff" /></button>
+                <button onClick={acceptCall} className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: GREEN }}><PhoneCall size={22} color="#fff" /></button>
+              </>
+            ) : (
+              <>
+                {callState === "connected" && (
+                  <button onClick={toggleMute} className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: muted ? GOLD : BORDER }}>
+                    <Mic size={20} color={muted ? BG : TEXT} />
+                  </button>
+                )}
+                <button onClick={() => endCall(true)} className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "#C0755B" }}><PhoneOff size={22} color="#fff" /></button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <div className="w-full max-w-md rounded-t-3xl flex flex-col" style={{ background: CARD, border: `1px solid ${BORDER}`, height: "75vh" }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
           <div>
             <p className="text-sm font-semibold">Chat about your trip</p>
             <p className="text-[11px]" style={{ color: FAINT }}>{otherTyping ? `${otherRole === "driver" ? "Driver" : "Passenger"} is typing…` : contextLabel}</p>
           </div>
-          <button onClick={onClose} aria-label="Close chat"><X size={18} color={MUTE} /></button>
+          <div className="flex items-center gap-3">
+            <button onClick={startCall} aria-label="Start voice call"><PhoneCall size={18} color={GREEN} /></button>
+            <button onClick={onClose} aria-label="Close chat"><X size={18} color={MUTE} /></button>
+          </div>
         </div>
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-2">
           {items.length === 0 && (
@@ -4877,6 +5063,28 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
     setUploading(null);
   }
 
+  async function uploadGalleryPhoto(file) {
+    if (!file || !profile?.auth_user_id) return;
+    setUploading("gallery"); setUploadError("");
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `${profile.auth_user_id}/gallery-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("company-photos").upload(path, file);
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("company-photos").getPublicUrl(path);
+      const nextPhotos = [...(localProfile?.photo_urls || []), pub.publicUrl];
+      await supabase.from("companies").update({ photo_urls: nextPhotos }).eq("id", profile.id);
+      setLocalProfile((p) => ({ ...p, photo_urls: nextPhotos }));
+    } catch (e) { setUploadError("Couldn't upload photo. Please try again."); }
+    setUploading(null);
+  }
+
+  async function removeGalleryPhoto(url) {
+    const nextPhotos = (localProfile?.photo_urls || []).filter((p) => p !== url);
+    await supabase.from("companies").update({ photo_urls: nextPhotos }).eq("id", profile.id);
+    setLocalProfile((p) => ({ ...p, photo_urls: nextPhotos }));
+  }
+
   if (!profile) {
     return (
       <div style={{ color: TEXT }}>
@@ -4909,6 +5117,24 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
         </div>
         <p className="text-[11px] mt-1" style={{ color: localProfile?.verified ? GREEN : GOLD }}>{localProfile?.verified ? "Verified company" : "Verification pending"}</p>
         {uploadError && <p className="text-[11px] mt-2" style={{ color: "#C0755B" }}>{uploadError}</p>}
+      </div>
+
+      <div className="px-5 mb-5">
+        <p className="text-xs font-semibold mb-2" style={{ color: MUTE }}>Company photos</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(localProfile?.photo_urls || []).map((url) => (
+            <div key={url} className="relative rounded-xl overflow-hidden" style={{ height: 80, background: CARD, border: `1px solid ${BORDER}` }}>
+              <img src={url} alt="Company" className="w-full h-full object-cover" />
+              <button onClick={() => removeGalleryPhoto(url)} className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
+                <X size={10} color="#fff" />
+              </button>
+            </div>
+          ))}
+          <label className="flex flex-col items-center justify-center rounded-xl cursor-pointer" style={{ height: 80, background: CARD, border: `1px dashed ${BORDER}` }}>
+            {uploading === "gallery" ? <span className="text-[10px]" style={{ color: MUTE }}>…</span> : <><Plus size={16} color={GOLD} /><span className="text-[9px] mt-1" style={{ color: FAINT }}>Add photo</span></>}
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadGalleryPhoto(e.target.files[0])} disabled={!!uploading} />
+          </label>
+        </div>
       </div>
 
       <div className="px-5 mb-5">
@@ -5876,7 +6102,7 @@ function AdminOverview({ navigate, goBack, onLogout }) {
 }
 
 /* ---------- APP ROOT ---------- */
-const TAB_SCREENS = ["home", "activity", "wallet", "profile"];
+const TAB_SCREENS = ["home", "activity", "wallet", "profile", "driver"];
 
 export default function SayyaraDriveApp() {
   const isAdminLink = typeof window !== "undefined" && window.location.search.includes("owner2026");
@@ -5994,7 +6220,7 @@ export default function SayyaraDriveApp() {
   function goBack() {
     setHistory((h) => {
       if (h.length > 1) return h.slice(0, -1);
-      return currentDriver ? ["driver"] : ["home"];
+      return ["home"];
     });
   }
 
