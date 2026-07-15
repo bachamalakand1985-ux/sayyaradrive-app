@@ -5145,8 +5145,11 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
     return pc;
   }
 
+  const isCallerRef = useRef(false);
+
   async function startCall() {
     setCallError("");
+    isCallerRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
@@ -5166,6 +5169,7 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
     const offerPayload = pendingOfferRef.current;
     if (!offerPayload) return;
     setCallError("");
+    isCallerRef.current = false;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
@@ -5190,6 +5194,13 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
 
   function endCall(notify = true) {
     if (notify && callState !== "idle") sendSignal({ kind: "hangup" });
+    if (isCallerRef.current && callState !== "idle") {
+      supabase.from("call_logs").insert({
+        thread_id: bookingRef, caller_name: name, callee_name: contextLabel,
+        connected: callState === "connected", duration_seconds: callSeconds,
+      }).then(() => {});
+    }
+    isCallerRef.current = false;
     if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
     if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
@@ -5933,8 +5944,11 @@ function FriendChatScreen({ goBack, activeFriendChat }) {
     return pc;
   }
 
+  const isCallerRef = useRef(false);
+
   async function startCall() {
     setCallError("");
+    isCallerRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
@@ -5954,6 +5968,7 @@ function FriendChatScreen({ goBack, activeFriendChat }) {
     const offerPayload = pendingOfferRef.current;
     if (!offerPayload) return;
     setCallError("");
+    isCallerRef.current = false;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
@@ -5978,6 +5993,13 @@ function FriendChatScreen({ goBack, activeFriendChat }) {
 
   function endCall(notify = true) {
     if (notify && callState !== "idle") sendSignal({ kind: "hangup" });
+    if (isCallerRef.current && callState !== "idle") {
+      supabase.from("call_logs").insert({
+        thread_id: threadId, caller_name: me.name, callee_name: friend?.name,
+        connected: callState === "connected", duration_seconds: callSeconds,
+      }).then(() => {});
+    }
+    isCallerRef.current = false;
     if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
     if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
@@ -6679,6 +6701,34 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
     supabase.from("fleet_vehicles").update({ status: next }).eq("id", v.id).then(() => loadFleet());
   }
 
+  const [routes, setRoutes] = useState([]);
+  const [showAddRoute, setShowAddRoute] = useState(false);
+  const [routeFrom, setRouteFrom] = useState(""); const [routeTo, setRouteTo] = useState("");
+  const [addingRoute, setAddingRoute] = useState(false);
+
+  async function loadRoutes() {
+    if (!profile?.id) return;
+    const { data } = await supabase.from("fleet_routes").select("*").eq("company_id", profile.id).order("created_at", { ascending: false });
+    setRoutes(data || []);
+  }
+  useEffect(() => { loadRoutes(); }, [profile?.id]);
+
+  async function addRoute() {
+    if (!routeFrom.trim() || !routeTo.trim()) return;
+    setAddingRoute(true);
+    await supabase.from("fleet_routes").insert({
+      company_id: profile.id, route_name: `${routeFrom.trim()} → ${routeTo.trim()}`,
+      from_city: routeFrom.trim(), to_city: routeTo.trim(), status: "active",
+    });
+    setRouteFrom(""); setRouteTo(""); setShowAddRoute(false); setAddingRoute(false);
+    loadRoutes();
+  }
+
+  async function removeRoute(id) {
+    await supabase.from("fleet_routes").delete().eq("id", id);
+    loadRoutes();
+  }
+
   async function uploadLogo(file) {
     if (!file || !profile?.auth_user_id) return;
     setUploading("logo"); setUploadError("");
@@ -6847,7 +6897,46 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
           ))}
         </div>
       )}
+      <div className="px-5 mt-5 mb-3 flex items-center justify-between">
+        <p className="text-sm font-semibold">Fleet routes</p>
+        <button onClick={() => setShowAddRoute(true)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full" style={{ background: GOLD, color: BG }}>
+          <Plus size={13} /> Add route
+        </button>
+      </div>
+      {routes.length === 0 ? (
+        <EmptyState icon={MapPin} title="No routes yet" subtitle="Add scheduled intercity routes your fleet operates." />
+      ) : (
+        <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2">
+          {routes.map((r) => (
+            <div key={r.id} className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <p className="text-sm font-semibold">{r.route_name}</p>
+              <button onClick={() => removeRoute(r.id)} aria-label="Remove route"><X size={14} color={FAINT} /></button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="h-8" />
+      {showAddRoute && (
+        <div className="fixed inset-0 flex items-end justify-center z-50" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setShowAddRoute(false)}>
+          <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold">Add route</h2>
+              <button onClick={() => setShowAddRoute(false)}><X size={18} color={MUTE} /></button>
+            </div>
+            <div className="flex flex-col gap-3 mb-4">
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <MapPin size={14} color={GOLD} />
+                <input value={routeFrom} onChange={(e) => setRouteFrom(e.target.value)} placeholder="From city" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <MapPin size={14} color={GOLD} />
+                <input value={routeTo} onChange={(e) => setRouteTo(e.target.value)} placeholder="To city" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+            </div>
+            <button onClick={addRoute} disabled={addingRoute} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>{addingRoute ? "Adding…" : "Add route"}</button>
+          </div>
+        </div>
+      )}
       {showAddVehicle && (
         <div className="fixed inset-0 flex items-end justify-center z-50" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setShowAddVehicle(false)}>
           <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
@@ -7090,13 +7179,19 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
   const [viewingDocs, setViewingDocs] = useState(null);
   const [docUrls, setDocUrls] = useState({});
 
+  function logAction(action, targetTable, targetLabel) {
+    supabase.from("audit_logs").insert({ action, target_table: targetTable, target_label: targetLabel, performed_by: "admin" }).then(() => {});
+  }
+
   async function blockPassenger(passenger) {
     await supabase.from("passengers").update({ status: "blocked" }).eq("id", passenger.id);
+    logAction("Blocked passenger", "passengers", passenger.full_name);
     loadRows();
   }
 
   async function unblockPassenger(passenger) {
     await supabase.from("passengers").update({ status: "active" }).eq("id", passenger.id);
+    logAction("Unblocked passenger", "passengers", passenger.full_name);
     loadRows();
   }
 
@@ -7131,6 +7226,7 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
     const body = newStatus === "blocked" ? "You've reached 5 warnings and your account is now blocked. Contact support." : `Warning ${newCount}/5. Please review SayyaraDrive's driver guidelines.`;
     await supabase.from("notifications").insert({ recipient_phone: driver.mobile_number, recipient_type: "driver", title, body });
     sendPush(driver.mobile_number, title, body);
+    logAction(newStatus === "blocked" ? "Blocked driver" : "Warned driver", "drivers", driver.full_name);
     loadRows();
   }
 
@@ -7140,6 +7236,7 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
     const body = "You can now go online and accept rides again.";
     await supabase.from("notifications").insert({ recipient_phone: driver.mobile_number, recipient_type: "driver", title, body });
     sendPush(driver.mobile_number, title, body);
+    logAction("Unblocked driver", "drivers", driver.full_name);
     loadRows();
   }
 
@@ -7152,11 +7249,14 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
       await supabase.from("notifications").insert({ recipient_phone: driver.mobile_number, recipient_type: "driver", title, body });
       sendPush(driver.mobile_number, title, body);
     }
+    logAction(nowVerified ? "Verified driver" : "Unverified driver", "drivers", driver.full_name);
     loadRows();
   }
 
   async function toggleCompanyVerified(company) {
-    await supabase.from("companies").update({ verified: !company.verified }).eq("id", company.id);
+    const nowVerified = !company.verified;
+    await supabase.from("companies").update({ verified: nowVerified }).eq("id", company.id);
+    logAction(nowVerified ? "Verified company" : "Unverified company", "companies", company.name);
     loadRows();
   }
 
@@ -7168,6 +7268,7 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
 
   async function deleteRow(row) {
     await supabase.from(table).delete().eq("id", row.id);
+    logAction(`Deleted ${table} record`, table, columns.map((c) => row[c.key]).filter(Boolean)[0] || row.id);
     loadRows();
   }
 
@@ -7178,7 +7279,9 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
 
   async function toggleModeration(row) {
     const liveStatus = table === "rental_listings" ? "active" : "visible";
-    await supabase.from(table).update({ status: row.status === "hidden" ? liveStatus : "hidden" }).eq("id", row.id);
+    const nowHidden = row.status !== "hidden";
+    await supabase.from(table).update({ status: nowHidden ? "hidden" : liveStatus }).eq("id", row.id);
+    logAction(nowHidden ? "Hidden listing" : "Unhidden listing", table, columns.map((c) => row[c.key]).filter(Boolean)[0] || row.id);
     loadRows();
   }
 
@@ -7194,6 +7297,7 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
       const body = newStatus === "approved" ? `Your ${row.type} application has been approved. Our team will be in touch.` : `Your ${row.type} application was not approved this time.`;
       await supabase.from("notifications").insert({ recipient_phone: row.phone, recipient_type: "driver", title, body });
       sendPush(row.phone, title, body);
+      logAction(newStatus === "approved" ? "Approved application" : "Rejected application", "partner_applications", row.full_name);
     }
     loadRows();
   }
@@ -7869,6 +7973,101 @@ function AdminAnalytics({ goBack }) {
   );
 }
 
+/* ---------- ADMIN DATA CLEANUP ---------- */
+function AdminDataCleanup({ goBack }) {
+  const [counts, setCounts] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [cleaning, setCleaning] = useState(null);
+  const [done, setDone] = useState("");
+
+  const tasks = [
+    { id: "old_crash_reports", label: "Error reports older than 30 days", table: "crash_reports", filter: (q) => q.lt("created_at", new Date(Date.now() - 30 * 86400000).toISOString()) },
+    { id: "resolved_reports", label: "Resolved user reports", table: "reports", filter: (q) => q.eq("status", "resolved") },
+    { id: "stale_typing", label: "Stale typing indicators (>1 day old)", table: "chat_typing", filter: (q) => q.lt("updated_at", new Date(Date.now() - 86400000).toISOString()) },
+    { id: "old_rejected_apps", label: "Rejected applications older than 90 days", table: "partner_applications", filter: (q) => q.eq("status", "rejected").lt("created_at", new Date(Date.now() - 90 * 86400000).toISOString()) },
+    { id: "sold_listings_old", label: "Sold marketplace items older than 60 days", table: "marketplace_listings", filter: (q) => q.eq("status", "sold").lt("created_at", new Date(Date.now() - 60 * 86400000).toISOString()) },
+  ];
+
+  async function loadCounts() {
+    setLoading(true);
+    const results = {};
+    for (const t of tasks) {
+      const { count } = await t.filter(supabase.from(t.table).select("*", { count: "exact", head: true }));
+      results[t.id] = count || 0;
+    }
+    setCounts(results);
+    setLoading(false);
+  }
+  useEffect(() => { loadCounts(); }, []);
+
+  async function runCleanup(task) {
+    setCleaning(task.id);
+    setDone("");
+    const { error } = await task.filter(supabase.from(task.table).delete());
+    if (!error) {
+      await supabase.from("audit_logs").insert({ action: "data_cleanup", target_table: task.table, target_label: task.label, performed_by: "admin" });
+      setDone(task.id);
+    }
+    setCleaning(null);
+    loadCounts();
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Data Cleanup" onBack={goBack} />
+      <div className="px-5 mb-4">
+        <p className="text-xs" style={{ color: MUTE }}>Remove old, resolved, or stale records to keep your database tidy. These actions can't be undone.</p>
+      </div>
+      <div className="px-5 flex flex-col gap-2">
+        {tasks.map((t) => (
+          <div key={t.id} className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div>
+              <p className="text-sm font-semibold">{t.label}</p>
+              <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{loading ? "…" : `${counts[t.id] ?? 0} record${(counts[t.id] ?? 0) !== 1 ? "s" : ""}`}</p>
+            </div>
+            <button
+              onClick={() => runCleanup(t)}
+              disabled={cleaning === t.id || (counts[t.id] ?? 0) === 0}
+              className="px-3.5 py-1.5 rounded-full text-xs font-semibold shrink-0"
+              style={{ background: (counts[t.id] ?? 0) === 0 ? BORDER : "rgba(192,117,91,0.14)", color: (counts[t.id] ?? 0) === 0 ? "#5C736D" : "#C0755B" }}
+            >
+              {cleaning === t.id ? "Clearing…" : done === t.id ? "Cleared ✓" : "Clear"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- ADMIN SECURITY ---------- */
+function AdminSecurity({ goBack }) {
+  const measures = [
+    { title: "Personal data protection", detail: "Emails, Iqama numbers, and account IDs are blocked from public/anonymous access at the database level — only logged-in accounts can read their own full profile." },
+    { title: "Row-level security", detail: "Every table enforces database-level access rules (RLS), not just app-level checks, so data can't be pulled directly even by bypassing the app." },
+    { title: "Secure authentication", detail: "Real email/password accounts via Supabase Auth, with sessions that persist safely and mobile/username login resolved through a protected lookup function — never a raw table query." },
+    { title: "Driver verification workflow", detail: "New drivers submit an application for review before gaining account access. Verified badge and document checks are admin-controlled." },
+    { title: "Account moderation", detail: "Drivers and passengers can be warned, blocked, or unblocked from the admin panel, with automatic notifications sent to the affected account." },
+    { title: "Audit trail", detail: "Key admin actions are logged with a timestamp so there's a record of what changed and when." },
+  ];
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Security" onBack={goBack} />
+      <div className="px-5 flex flex-col gap-2">
+        {measures.map((m) => (
+          <div key={m.title} className="rounded-xl px-4 py-3 flex items-start gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Shield size={15} color={GREEN} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold">{m.title}</p>
+              <p className="text-[11px] mt-1" style={{ color: FAINT }}>{m.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminBroadcast({ goBack }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -7939,7 +8138,10 @@ const ADMIN_SECTIONS = [
   { id: "food_orders", label: "Food Orders", table: "food_orders", icon: UtensilsCrossed },
   { id: "logistics_parcels", label: "Logistics", table: "logistics_parcels", icon: Truck },
   { id: "fleet_vehicles", label: "Fleet", table: "fleet_vehicles", icon: Car },
+  { id: "fleet_routes", label: "Fleet Routes", table: "fleet_routes", icon: MapPin },
+  { id: "call_logs", label: "Calls", table: "call_logs", icon: PhoneCall },
   { id: "violations", label: "Violations", table: "violations", icon: Shield },
+  { id: "audit_logs", label: "Audit Logs", table: "audit_logs", icon: Package },
 ];
 
 function AdminOverview({ navigate, goBack, onLogout }) {
@@ -7990,6 +8192,12 @@ function AdminOverview({ navigate, goBack, onLogout }) {
           </button>
           <button onClick={() => navigate("admin_support_inbox")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: CARD, border: `1px solid ${GOLD}`, color: GOLD }}>
             <HelpCircle size={13} /> Support
+          </button>
+          <button onClick={() => navigate("admin_security")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+            <Shield size={13} /> Security
+          </button>
+          <button onClick={() => navigate("admin_data_cleanup")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+            <RefreshCw size={13} /> Data Cleanup
           </button>
           <button onClick={() => navigate("admin_broadcast")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: GOLD, color: BG }}>
             <Bell size={13} /> Announce
@@ -8204,6 +8412,11 @@ export default function SayyaraDriveApp() {
     admin_reports: <AdminListPage goBack={goBack} title="Reports" table="reports" deletable resolveToggle columns={[{key:"reference_title",label:"Listing"},{key:"context",label:"Section"},{key:"reason",label:"Reason"}]} />,
     admin_companies: <AdminListPage goBack={goBack} title="Companies" table="companies" deletable companyActions columns={[{key:"name",label:"Name"},{key:"cr_number",label:"CR Number"},{key:"contact_name",label:"Contact"},{key:"mobile_number",label:"Mobile"},{key:"email",label:"Email"}]} />,
     admin_rental_listings: <AdminListPage goBack={goBack} title="Car Listings" table="rental_listings" deletable moderationToggle columns={[{key:"model",label:"Model"},{key:"owner_name",label:"Owner"},{key:"owner_phone",label:"Phone"},{key:"city",label:"City"},{key:"price_per_day",label:"Price/day"}]} />,
+    admin_audit_logs: <AdminListPage goBack={goBack} title="Audit Logs" table="audit_logs" columns={[{key:"action",label:"Action"},{key:"target_label",label:"Target"},{key:"performed_by",label:"By"},{key:"target_table",label:"Table"}]} />,
+    admin_call_logs: <AdminListPage goBack={goBack} title="Calls" table="call_logs" columns={[{key:"caller_name",label:"Caller"},{key:"callee_name",label:"Callee"},{key:"connected",label:"Connected"},{key:"duration_seconds",label:"Duration (s)"}]} />,
+    admin_fleet_routes: <AdminListPage goBack={goBack} title="Fleet Routes" table="fleet_routes" deletable columns={[{key:"route_name",label:"Route"},{key:"from_city",label:"From"},{key:"to_city",label:"To"}]} />,
+    admin_data_cleanup: <AdminDataCleanup goBack={goBack} />,
+    admin_security: <AdminSecurity goBack={goBack} />,
     admin_marketplace_listings: <AdminListPage goBack={goBack} title="Marketplace" table="marketplace_listings" deletable statusToggle columns={[{key:"title",label:"Title"},{key:"seller_name",label:"Seller"},{key:"price",label:"Price"},{key:"category",label:"Category"},{key:"location",label:"Location"}]} addFields={[{key:"title",label:"Title",required:true},{key:"price",label:"Price (SAR)",required:true},{key:"category",label:"Category",type:"select",options:["Cars","Electronics","Furniture","Fashion","Spare parts"],required:true},{key:"location",label:"City",required:true},{key:"seller_name",label:"Seller name"},{key:"seller_phone",label:"Seller phone"},{key:"condition",label:"Condition (e.g. Excellent, Like New)"},{key:"year",label:"Year (cars only)"},{key:"km",label:"Mileage (cars only)"},{key:"image_url",label:"Image URL (optional)"}]} />,
     admin_restaurants: <AdminListPage goBack={goBack} title="Restaurants" table="restaurants" deletable columns={[{key:"name",label:"Name"},{key:"cuisine",label:"Cuisine"},{key:"city",label:"City"},{key:"hours",label:"Hours"}]} addFields={[{key:"name",label:"Restaurant name",required:true},{key:"cuisine",label:"Cuisine (e.g. Arabic, Fast food)",required:true},{key:"city",label:"City",required:true},{key:"hours",label:"Hours (e.g. 10:00–23:00)"},{key:"food_category",label:"Photo type",type:"select",options:["rice","burger","dessert","pasta","butter-chicken"],required:true}]} />,
     admin_jobs: <AdminListPage goBack={goBack} title="Jobs" table="jobs" deletable columns={[{key:"title",label:"Title"},{key:"company",label:"Company"},{key:"location",label:"Location"},{key:"pay",label:"Pay"}]} addFields={[{key:"title",label:"Job title",required:true},{key:"company",label:"Company name",required:true},{key:"location",label:"City",required:true},{key:"pay",label:"Pay",required:true},{key:"job_type",label:"Type",type:"select",options:["Full-time","Part-time","Flexible","Freelance"]},{key:"phone",label:"Contact phone"},{key:"description",label:"Description"}]} />,
