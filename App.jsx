@@ -5300,11 +5300,16 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
     return `${m}:${sec.toString().padStart(2, "0")}`;
   }
 
+  const hasLoadedOnceRef = useRef(false);
   async function load() {
     const { data } = await supabase.from("messages").select("*").eq("booking_ref", bookingRef).order("created_at", { ascending: true });
     setItems(data || []);
     // mark incoming messages as read
     const unread = (data || []).filter((m) => m.sender_role !== role && !m.read);
+    // Play an audible alert for new incoming messages — but only after the chat has
+    // already loaded once, so opening a chat with old unread messages doesn't ring.
+    if (hasLoadedOnceRef.current && unread.length > 0) playOfferAlertSound();
+    hasLoadedOnceRef.current = true;
     if (unread.length > 0) {
       await supabase.from("messages").update({ read: true }).in("id", unread.map((m) => m.id));
     }
@@ -5342,7 +5347,12 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
   }
 
   async function notifyOtherParty(preview) {
-    if (role !== "passenger") return; // only notify the driver for now (drivers are the only ones with push subscriptions)
+    // Push notifications (for when the app is closed/backgrounded) currently only work
+    // driver → passenger direction is not wired: the rides table has no passenger
+    // phone/ID stored against it, so there's no reliable way to look up who to notify.
+    // That's a schema-level gap, not fixable from the chat UI alone. The audible
+    // in-app alert in load() above still rings on both sides whenever the chat is open.
+    if (role !== "passenger") return;
     const { data: ride } = await supabase.from("rides").select("driver_id").eq("booking_ref", bookingRef).maybeSingle();
     if (!ride?.driver_id) return;
     const { data: driver } = await supabase.from("drivers").select("mobile_number").eq("id", ride.driver_id).maybeSingle();
@@ -5779,10 +5789,13 @@ function SupportChatScreen({ goBack, currentDriver }) {
   const chunksRef = useRef([]);
   const scrollRef = useRef(null);
 
+  const hasLoadedOnceRef = useRef(false);
   async function load() {
     const { data } = await supabase.from("messages").select("*").eq("context", "support").eq("booking_ref", threadId).order("created_at", { ascending: true });
     setItems(data || []);
     const unread = (data || []).filter((m) => m.sender_role === "support" && !m.read);
+    if (hasLoadedOnceRef.current && unread.length > 0) playOfferAlertSound();
+    hasLoadedOnceRef.current = true;
     if (unread.length > 0) await supabase.from("messages").update({ read: true }).in("id", unread.map((m) => m.id));
   }
 
@@ -6097,11 +6110,14 @@ function FriendChatScreen({ goBack, activeFriendChat }) {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   }
 
+  const hasLoadedOnceRef = useRef(false);
   async function load() {
     if (!threadId) return;
     const { data } = await supabase.from("messages").select("*").eq("context", "friend").eq("booking_ref", threadId).order("created_at", { ascending: true });
     setItems(data || []);
     const unread = (data || []).filter((m) => m.sender_phone !== me.phone && !m.read);
+    if (hasLoadedOnceRef.current && unread.length > 0) playOfferAlertSound();
+    hasLoadedOnceRef.current = true;
     if (unread.length > 0) await supabase.from("messages").update({ read: true }).in("id", unread.map((m) => m.id));
   }
 
