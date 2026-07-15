@@ -679,7 +679,7 @@ function AppMenu({ onClose, navigate, currentDriver, driverLogout, identity }) {
     { icon: MessageCircle, label: "Friends & family", route: "friends" },
     { icon: Bell, label: "Notifications", route: "notifications" },
     { icon: Settings, label: "Account settings", route: "profile" },
-    { icon: HelpCircle, label: "Help & support", route: "profile" },
+    { icon: HelpCircle, label: "Help & support", route: "support_chat" },
   ];
   return (
     <div className="fixed inset-0 z-50 flex" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
@@ -3738,14 +3738,18 @@ function Profile({ goBack, navigate, currentDriver, driverLogout }) {
           <span className="flex items-center gap-3 text-sm"><Shield size={15} color={GOLD} /> Safety</span>
           <ChevronRight size={14} color="#5C736D" />
         </button>
+        <button onClick={() => navigate("support_chat")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+          <span className="flex items-center gap-3 text-sm"><HelpCircle size={15} color={GOLD} /> Message support</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
         <a
           href={`https://wa.me/${SUPPORT_WHATSAPP_NUMBER}?text=${encodeURIComponent("Hi SayyaraDrive, I need help with the app.")}`}
           target="_blank"
           rel="noopener noreferrer"
           className="w-full flex items-center justify-between rounded-2xl px-4 py-3"
-          style={{ background: CARD, border: `1px solid ${BORDER}` }}
+          style={{ background: "transparent", border: `1px solid ${BORDER}` }}
         >
-          <span className="flex items-center gap-3 text-sm"><MessageCircle size={15} color="#25D366" /> Contact support</span>
+          <span className="flex items-center gap-3 text-sm" style={{ color: MUTE }}><MessageCircle size={15} color="#25D366" /> Contact support on WhatsApp</span>
           <ChevronRight size={14} color="#5C736D" />
         </a>
       </div>
@@ -5152,6 +5156,14 @@ function FriendsListScreen({ goBack, navigate, setActiveFriendChat }) {
         <button onClick={() => setShowEditMe(true)} className="text-[11px] underline" style={{ color: GOLD }}>Edit</button>
       </div>
       <div className="px-5 mb-4">
+        <button onClick={() => navigate("support_chat")} className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 mb-2" style={{ background: "rgba(217,166,83,0.1)", border: `1px solid ${GOLD}` }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}><HelpCircle size={18} color={BG} /></div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-sm font-semibold">SayyaraDrive Support</p>
+            <p className="text-[11px]" style={{ color: FAINT }}>We usually reply within a few hours</p>
+          </div>
+          <ChevronRight size={14} color={GOLD} />
+        </button>
         <button onClick={() => setShowAdd(true)} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
           <Plus size={15} /> Add friend or family
         </button>
@@ -5183,6 +5195,23 @@ function FriendsListScreen({ goBack, navigate, setActiveFriendChat }) {
               <h2 className="text-base font-semibold">Add contact</h2>
               <button onClick={() => setShowAdd(false)}><X size={18} color={MUTE} /></button>
             </div>
+            {typeof navigator !== "undefined" && "contacts" in navigator && "ContactsManager" in window && (
+              <button
+                onClick={async () => {
+                  try {
+                    const picked = await navigator.contacts.select(["name", "tel"], { multiple: false });
+                    if (picked && picked[0]) {
+                      if (picked[0].name?.[0]) setAddName(picked[0].name[0]);
+                      if (picked[0].tel?.[0]) setAddPhone(picked[0].tel[0]);
+                    }
+                  } catch (e) { /* user cancelled the picker */ }
+                }}
+                className="w-full mb-3 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold"
+                style={{ background: "rgba(217,166,83,0.14)", border: `1px solid ${GOLD}`, color: GOLD }}
+              >
+                <Users size={15} /> Choose from phone contacts
+              </button>
+            )}
             <div className="flex flex-col gap-3 mb-4">
               <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
                 <User size={14} color={GOLD} />
@@ -5221,6 +5250,161 @@ function FriendsListScreen({ goBack, navigate, setActiveFriendChat }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------- SUPPORT CHAT (built-in, replaces WhatsApp as primary contact channel) ---------- */
+function SupportChatScreen({ goBack, currentDriver }) {
+  const identity = resolveIdentity(currentDriver);
+  const me = { phone: identity.id, name: identity.name };
+  const threadId = `support:${me.phone}`;
+  const [items, setItems] = useState([]);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordError, setRecordError] = useState("");
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const scrollRef = useRef(null);
+
+  async function load() {
+    const { data } = await supabase.from("messages").select("*").eq("context", "support").eq("booking_ref", threadId).order("created_at", { ascending: true });
+    setItems(data || []);
+    const unread = (data || []).filter((m) => m.sender_role === "support" && !m.read);
+    if (unread.length > 0) await supabase.from("messages").update({ read: true }).in("id", unread.map((m) => m.id));
+  }
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(() => { if (!document.hidden) load(); }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [items]);
+
+  async function send() {
+    if (!text.trim()) return;
+    setSending(true);
+    await supabase.from("messages").insert({
+      context: "support", reference_title: me.name, booking_ref: threadId,
+      sender_role: "user", sender_name: me.name, sender_phone: me.phone, recipient_phone: "support",
+      body: text.trim(),
+    });
+    setText("");
+    setSending(false);
+    load();
+  }
+
+  async function startRecording() {
+    setRecordError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        await uploadVoice(blob);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+    } catch (e) {
+      setRecordError("Couldn't access your microphone. Check browser permissions.");
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorderRef.current) mediaRecorderRef.current.stop();
+    setRecording(false);
+  }
+
+  async function uploadVoice(blob) {
+    setSending(true);
+    try {
+      const fileName = `${threadId}-${Date.now()}.webm`;
+      const { error: uploadError } = await supabase.storage.from("voice-messages").upload(fileName, blob, { contentType: "audio/webm" });
+      if (uploadError) throw uploadError;
+      const { data: publicData } = supabase.storage.from("voice-messages").getPublicUrl(fileName);
+      await supabase.from("messages").insert({
+        context: "support", reference_title: me.name, booking_ref: threadId,
+        sender_role: "user", sender_name: me.name, sender_phone: me.phone, recipient_phone: "support",
+        body: "🎤 Voice message", audio_url: publicData.publicUrl,
+      });
+      load();
+    } catch (e) {
+      setRecordError("Couldn't send voice message. Please try again.");
+    }
+    setSending(false);
+  }
+
+  async function uploadImage(file) {
+    if (!file) return;
+    setSending(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const fileName = `${threadId}-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("chat-images").upload(fileName, file);
+      if (uploadError) throw uploadError;
+      const { data: publicData } = supabase.storage.from("chat-images").getPublicUrl(fileName);
+      await supabase.from("messages").insert({
+        context: "support", reference_title: me.name, booking_ref: threadId,
+        sender_role: "user", sender_name: me.name, sender_phone: me.phone, recipient_phone: "support",
+        body: "📷 Photo", image_url: publicData.publicUrl,
+      });
+      load();
+    } catch (e) {
+      setRecordError("Couldn't send image. Please try again.");
+    }
+    setSending(false);
+  }
+
+  return (
+    <div style={{ color: TEXT }} className="flex flex-col">
+      <Header title="SayyaraDrive Support" onBack={goBack} />
+      <p className="px-5 -mt-3 mb-2 text-[11px]" style={{ color: FAINT }}>We usually reply within a few hours</p>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-2 flex flex-col gap-2" style={{ minHeight: "55vh", maxHeight: "65vh" }}>
+        {items.length === 0 && (
+          <p className="text-xs text-center mt-6" style={{ color: FAINT }}>Send a message and our team will get back to you here.</p>
+        )}
+        {items.map((m) => {
+          const mine = m.sender_role === "user";
+          return (
+            <div key={m.id} className={`max-w-[80%] rounded-xl px-3.5 py-2.5 ${mine ? "self-end" : "self-start"}`} style={{ background: mine ? GOLD : CARD, border: mine ? "none" : `1px solid ${BORDER}` }}>
+              {m.audio_url ? (
+                <audio controls src={m.audio_url} style={{ height: 32, width: 180 }} />
+              ) : m.image_url ? (
+                <img src={m.image_url} alt="Shared" loading="lazy" className="rounded-lg" style={{ maxWidth: 200, maxHeight: 200 }} />
+              ) : (
+                <p className="text-xs" style={{ color: mine ? BG : TEXT }}>{m.body}</p>
+              )}
+              <p className="text-[9px] mt-1" style={{ color: mine ? "rgba(15,33,30,0.6)" : FAINT }}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+            </div>
+          );
+        })}
+      </div>
+      {recordError && <p className="px-5 text-[11px] mb-1" style={{ color: "#C0755B" }}>{recordError}</p>}
+      <div className="flex items-center gap-1.5 px-5 py-4" style={{ borderTop: `1px solid ${BORDER}` }}>
+        <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder={recording ? "Recording…" : "Type a message…"} disabled={recording} className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none min-w-0" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+        <label className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer" style={{ background: "rgba(217,166,83,0.14)" }}>
+          <ImageIcon size={14} color={GOLD} />
+          <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadImage(e.target.files[0])} disabled={sending} />
+        </label>
+        <button
+          onClick={recording ? stopRecording : startRecording}
+          disabled={sending}
+          aria-label={recording ? "Stop recording" : "Record voice message"}
+          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: recording ? "#C0755B" : "rgba(91,143,212,0.16)" }}
+        >
+          <Mic size={14} color={recording ? "#fff" : GREEN} className={recording ? "animate-pulse" : ""} />
+        </button>
+        <button onClick={send} disabled={sending || !text.trim() || recording} aria-label="Send message" className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}><Send size={14} color={BG} /></button>
+      </div>
     </div>
   );
 }
@@ -6664,6 +6848,107 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
   );
 }
 
+/* ---------- ADMIN SUPPORT INBOX ---------- */
+function AdminSupportInbox({ goBack }) {
+  const [threads, setThreads] = useState([]);
+  const [openThread, setOpenThread] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [reply, setReply] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  async function loadThreads() {
+    setLoading(true);
+    const { data } = await supabase.from("messages").select("*").eq("context", "support").order("created_at", { ascending: false });
+    const grouped = {};
+    (data || []).forEach((m) => {
+      if (!grouped[m.booking_ref]) grouped[m.booking_ref] = { booking_ref: m.booking_ref, reference_title: m.reference_title, last: m, count: 0, unread: 0 };
+      grouped[m.booking_ref].count++;
+      if (m.sender_role === "user" && !m.read) grouped[m.booking_ref].unread++;
+      if (new Date(m.created_at) > new Date(grouped[m.booking_ref].last.created_at)) grouped[m.booking_ref].last = m;
+    });
+    setThreads(Object.values(grouped).sort((a, b) => new Date(b.last.created_at) - new Date(a.last.created_at)));
+    setLoading(false);
+  }
+  useEffect(() => { loadThreads(); }, []);
+
+  async function openChat(t) {
+    setOpenThread(t);
+    const { data } = await supabase.from("messages").select("*").eq("booking_ref", t.booking_ref).order("created_at", { ascending: true });
+    setMessages(data || []);
+    const unread = (data || []).filter((m) => m.sender_role === "user" && !m.read);
+    if (unread.length > 0) await supabase.from("messages").update({ read: true }).in("id", unread.map((m) => m.id));
+  }
+
+  async function sendReply() {
+    if (!reply.trim() || !openThread) return;
+    await supabase.from("messages").insert({
+      context: "support",
+      reference_title: openThread.reference_title,
+      booking_ref: openThread.booking_ref,
+      sender_role: "support",
+      sender_name: "SayyaraDrive Team",
+      sender_phone: "support",
+      recipient_phone: openThread.booking_ref.replace("support:", ""),
+      body: reply.trim(),
+    });
+    setReply("");
+    openChat(openThread);
+  }
+
+  if (openThread) return (
+    <div style={{ color: TEXT }}>
+      <Header title={openThread.reference_title || "Support chat"} onBack={() => { setOpenThread(null); loadThreads(); }} />
+      <div className="px-5 flex flex-col gap-2 mb-4" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+        {messages.map((m) => (
+          <div key={m.id} className={`max-w-[80%] rounded-xl px-3.5 py-2.5 ${m.sender_role === "user" ? "self-start" : "self-end ml-auto"}`} style={{ background: m.sender_role === "user" ? CARD : GOLD, border: m.sender_role === "user" ? `1px solid ${BORDER}` : "none" }}>
+            {m.audio_url ? (
+              <audio controls src={m.audio_url} style={{ height: 32, width: 180 }} />
+            ) : m.image_url ? (
+              <img src={m.image_url} alt="Shared" loading="lazy" className="rounded-lg" style={{ maxWidth: 200, maxHeight: 200 }} />
+            ) : (
+              <p className="text-xs" style={{ color: m.sender_role === "user" ? TEXT : BG }}>{m.body}</p>
+            )}
+            <p className="text-[9px] mt-1" style={{ color: m.sender_role === "user" ? FAINT : "rgba(15,33,30,0.6)" }}>{new Date(m.created_at).toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
+      <div className="px-5 flex items-center gap-2">
+        <input value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendReply()} placeholder="Reply as SayyaraDrive Team…" className="flex-1 rounded-full px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+        <button onClick={sendReply} className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}><Send size={16} color={BG} /></button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Support inbox" onBack={goBack} />
+      <div className="px-5">
+        {loading && <p className="text-sm text-center mt-6" style={{ color: MUTE }}>Loading…</p>}
+        {!loading && threads.length === 0 && (
+          <div className="flex flex-col items-center text-center py-12">
+            <MessageCircle size={32} color={FAINT} />
+            <p className="text-sm font-semibold mt-3">No support messages yet</p>
+          </div>
+        )}
+        <div className="flex flex-col gap-2">
+          {threads.map((t) => (
+            <button key={t.booking_ref} onClick={() => openChat(t)} className="w-full text-left rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">{t.reference_title || t.booking_ref}</p>
+                <div className="flex items-center gap-2">
+                  {t.unread > 0 && <span className="w-2 h-2 rounded-full" style={{ background: GOLD }} />}
+                  <span className="text-[10px]" style={{ color: FAINT }}>{t.count} msg{t.count > 1 ? "s" : ""}</span>
+                </div>
+              </div>
+              <p className="text-[11px] mt-1 truncate" style={{ color: FAINT }}>{t.last.sender_role === "user" ? "" : "You: "}{t.last.body}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- ADMIN RIDE CHATS ---------- */
 function AdminRideChats({ goBack }) {
   const [threads, setThreads] = useState([]);
@@ -7061,6 +7346,9 @@ function AdminOverview({ navigate, goBack, onLogout }) {
           <button onClick={() => navigate("admin_ride_chats")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
             <MessageCircle size={13} /> Chats
           </button>
+          <button onClick={() => navigate("admin_support_inbox")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: CARD, border: `1px solid ${GOLD}`, color: GOLD }}>
+            <HelpCircle size={13} /> Support
+          </button>
           <button onClick={() => navigate("admin_broadcast")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: GOLD, color: BG }}>
             <Bell size={13} /> Announce
           </button>
@@ -7171,10 +7459,16 @@ export default function SayyaraDriveApp() {
               setCurrentDriver({ email, type: "driver", profile: driverRow });
               setHistory(["driver"]);
             } else {
-              const { data: companyRow } = await supabase.from("companies").select("*").eq("auth_user_id", session.user.id).maybeSingle();
-              if (companyRow) {
-                setCurrentCompany({ email, profile: companyRow });
-                setHistory(["company_dashboard"]);
+              const { data: passengerRow } = await supabase.from("passengers").select("*").eq("auth_user_id", session.user.id).maybeSingle();
+              if (passengerRow) {
+                setCurrentDriver({ email, type: "passenger", profile: passengerRow });
+                setHistory(["home"]);
+              } else {
+                const { data: companyRow } = await supabase.from("companies").select("*").eq("auth_user_id", session.user.id).maybeSingle();
+                if (companyRow) {
+                  setCurrentCompany({ email, profile: companyRow });
+                  setHistory(["company_dashboard"]);
+                }
               }
             }
           }
@@ -7274,6 +7568,8 @@ export default function SayyaraDriveApp() {
     admin_broadcast: <AdminBroadcast goBack={goBack} />,
     admin_analytics: <AdminAnalytics goBack={goBack} />,
     admin_ride_chats: <AdminRideChats goBack={goBack} />,
+    admin_support_inbox: <AdminSupportInbox goBack={goBack} />,
+    support_chat: <SupportChatScreen goBack={goBack} currentDriver={currentDriver} />,
     admin_rental_bookings: <AdminListPage goBack={goBack} title="Car Rentals" table="rental_bookings" columns={[{key:"renter_name",label:"Renter"},{key:"provider",label:"Company"},{key:"car_model",label:"Car"},{key:"pickup_date",label:"Pickup"},{key:"return_date",label:"Return"},{key:"total_price",label:"Total"}]} />,
     admin_food_orders: <AdminListPage goBack={goBack} title="Food Delivery" table="food_orders" columns={[{key:"restaurant_name",label:"Restaurant"},{key:"customer_name",label:"Customer"},{key:"total",label:"Total"}]} />,
     admin_logistics_parcels: <AdminListPage goBack={goBack} title="Logistics" table="logistics_parcels" columns={[{key:"sender_name",label:"Sender"},{key:"pickup_address",label:"Pickup"},{key:"dropoff_address",label:"Dropoff"}]} />,
