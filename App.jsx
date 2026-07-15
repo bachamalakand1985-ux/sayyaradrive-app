@@ -148,6 +148,16 @@ function playOfferAlertSound() {
   } catch (e) { /* audio is best-effort */ }
 }
 
+// Repeats the same two-tone alert every 2.5s to act as an incoming-call ringtone,
+// since browsers won't play a real ringtone without a user-uploaded audio file.
+function startRingtone(intervalRef) {
+  playOfferAlertSound();
+  intervalRef.current = setInterval(playOfferAlertSound, 2500);
+}
+function stopRingtone(intervalRef) {
+  if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+}
+
 const SAUDI_CITY_COORDS = {
   Riyadh: { lat: 24.7136, lng: 46.6753 },
   Jeddah: { lat: 21.4858, lng: 39.1925 },
@@ -1903,6 +1913,14 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
         <div className="px-5 mt-4">
           <div className="rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
             <p className="text-sm font-semibold mb-3">Trip accepted — heading to pickup</p>
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${request?.pickup_lat},${request?.pickup_lng}&travelmode=driving`}
+              target="_blank" rel="noopener noreferrer"
+              className="w-full mb-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold"
+              style={{ background: GOLD, color: BG }}
+            >
+              <Navigation size={15} /> Navigate to pickup
+            </a>
             <button onClick={() => setDriverChatOpen(true)} className="w-full mb-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat with passenger</button>
             <button onClick={markArrived} className="w-full rounded-full py-2.5 text-sm font-semibold" style={{ background: GREEN, color: BG }}>I've arrived at pickup</button>
           </div>
@@ -1921,6 +1939,14 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
         <div className="px-5 mt-4">
           <div className="rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
             <p className="text-sm font-semibold mb-3">Trip in progress</p>
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(request?.dropoff_label || "")}&travelmode=driving`}
+              target="_blank" rel="noopener noreferrer"
+              className="w-full mb-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold"
+              style={{ background: GOLD, color: BG }}
+            >
+              <Navigation size={15} /> Navigate to drop-off
+            </a>
             <button onClick={() => setDriverChatOpen(true)} className="w-full mb-2 flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat with passenger</button>
             <button onClick={completeTrip} className="w-full rounded-full py-2.5 text-sm font-semibold" style={{ background: GREEN, color: BG }}>Complete trip</button>
           </div>
@@ -5126,6 +5152,7 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
   const callTimerRef = useRef(null);
   const ringTimeoutRef = useRef(null);
   const pendingOfferRef = useRef(null);
+  const ringtoneIntervalRef = useRef(null);
   const ICE_SERVERS = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
@@ -5200,6 +5227,7 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
     if (!offerPayload) return;
     setCallError("");
     isCallerRef.current = false;
+    stopRingtone(ringtoneIntervalRef);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
@@ -5218,6 +5246,7 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
 
   function declineCall() {
     sendSignal({ kind: "hangup" });
+    stopRingtone(ringtoneIntervalRef);
     pendingOfferRef.current = null;
     setCallState("idle");
   }
@@ -5231,6 +5260,7 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
       }).then(() => {});
     }
     isCallerRef.current = false;
+    stopRingtone(ringtoneIntervalRef);
     if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
     if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
@@ -5253,12 +5283,14 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
       if (callState !== "idle") { getCallChannel().send({ type: "broadcast", event: "signal", payload: { kind: "hangup", from: role } }); return; }
       pendingOfferRef.current = payload;
       setCallState("ringing");
+      startRingtone(ringtoneIntervalRef);
     } else if (payload.kind === "answer") {
       if (pcRef.current) pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
       if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
     } else if (payload.kind === "ice") {
       if (pcRef.current) pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(() => {});
     } else if (payload.kind === "hangup") {
+      stopRingtone(ringtoneIntervalRef);
       endCall(false);
     }
   }
@@ -5915,6 +5947,7 @@ function FriendChatScreen({ goBack, activeFriendChat }) {
   const callTimerRef = useRef(null);
   const ringTimeoutRef = useRef(null);
   const pendingOfferRef = useRef(null);
+  const ringtoneIntervalRef = useRef(null);
   const ICE_SERVERS = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
@@ -5991,6 +6024,7 @@ function FriendChatScreen({ goBack, activeFriendChat }) {
     if (!offerPayload) return;
     setCallError("");
     isCallerRef.current = false;
+    stopRingtone(ringtoneIntervalRef);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
@@ -6009,6 +6043,7 @@ function FriendChatScreen({ goBack, activeFriendChat }) {
 
   function declineCall() {
     sendSignal({ kind: "hangup" });
+    stopRingtone(ringtoneIntervalRef);
     pendingOfferRef.current = null;
     setCallState("idle");
   }
@@ -6022,6 +6057,7 @@ function FriendChatScreen({ goBack, activeFriendChat }) {
       }).then(() => {});
     }
     isCallerRef.current = false;
+    stopRingtone(ringtoneIntervalRef);
     if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
     if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
@@ -6044,12 +6080,14 @@ function FriendChatScreen({ goBack, activeFriendChat }) {
       if (callState !== "idle") { const ch = getCallChannel(); if (ch) ch.send({ type: "broadcast", event: "signal", payload: { kind: "hangup", from: me.phone } }); return; }
       pendingOfferRef.current = payload;
       setCallState("ringing");
+      startRingtone(ringtoneIntervalRef);
     } else if (payload.kind === "answer") {
       if (pcRef.current) pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
       if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
     } else if (payload.kind === "ice") {
       if (pcRef.current) pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(() => {});
     } else if (payload.kind === "hangup") {
+      stopRingtone(ringtoneIntervalRef);
       endCall(false);
     }
   }
