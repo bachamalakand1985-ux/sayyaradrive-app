@@ -4036,7 +4036,10 @@ function RegisterChoiceScreen({ goBack, navigate }) {
 /* ---------- AUTH (SIGN UP / LOGIN) ---------- */
 function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
   const [mode, setMode] = useState("login");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => {
+    try { return localStorage.getItem(`sayyara_last_email_${type}`) || ""; } catch (e) { return ""; }
+  });
+  const [rememberMe, setRememberMe] = useState(true);
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [mobile, setMobile] = useState("");
@@ -4049,6 +4052,13 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
   const [resetSent, setResetSent] = useState(false);
 
   const isDriver = type === "driver";
+
+  function rememberEmail() {
+    try {
+      if (rememberMe) localStorage.setItem(`sayyara_last_email_${type}`, email.trim());
+      else localStorage.removeItem(`sayyara_last_email_${type}`);
+    } catch (e) {}
+  }
 
   function validateSignup() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
@@ -4136,6 +4146,7 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
       }
       if (!profile) throw new Error("Account created, but your profile is still syncing — please try logging in again in a moment.");
       if (onLoggedIn) onLoggedIn({ email, type: isDriver ? "driver" : "passenger", profile });
+      rememberEmail();
       setSuccess(true);
     } catch (e) {
       setError(e.message || "Something went wrong. Please try again.");
@@ -4171,6 +4182,7 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         }
       }
       if (onLoggedIn) onLoggedIn({ email, type, profile });
+      rememberEmail();
       setSuccess(true);
     } catch (e) {
       setError(e.message || "Invalid email or password.");
@@ -4247,7 +4259,15 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
           </div>
           {mode === "login" && (
-            <button onClick={() => { setMode("forgot"); setError(""); }} className="text-right text-[12px] -mt-1.5" style={{ color: GOLD }}>Forgot password?</button>
+            <div className="flex items-center justify-between -mt-1.5">
+              <button onClick={() => setRememberMe((r) => !r)} className="flex items-center gap-2 text-[12px]" style={{ color: MUTE }}>
+                <span className="w-4 h-4 rounded flex items-center justify-center shrink-0" style={{ background: rememberMe ? GOLD : "transparent", border: `1px solid ${rememberMe ? GOLD : BORDER}` }}>
+                  {rememberMe && <Check size={11} color={BG} />}
+                </span>
+                Remember me
+              </button>
+              <button onClick={() => { setMode("forgot"); setError(""); }} className="text-[12px]" style={{ color: GOLD }}>Forgot password?</button>
+            </div>
           )}
         </div>
 
