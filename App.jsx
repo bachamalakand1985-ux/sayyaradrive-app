@@ -1564,7 +1564,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
         if (!window.H || !mapRef.current) throw new Error("no sdk");
         const platform = new window.H.service.Platform({ apikey: HERE_API_KEY });
         const defaultLayers = platform.createDefaultLayers();
-        const map = new window.H.Map(mapRef.current, defaultLayers.vector.normal.traffic, { zoom: 13, center: driverLoc, pixelRatio: window.devicePixelRatio || 1 });
+        const map = new window.H.Map(mapRef.current, defaultLayers.vector.normal.map, { zoom: 13, center: driverLoc, pixelRatio: window.devicePixelRatio || 1 });
         new window.H.mapevents.Behavior(new window.H.mapevents.MapEvents(map));
         new window.H.ui.UI.createDefault(map, defaultLayers);
         const driverIcon = new window.H.map.Icon(
@@ -1582,12 +1582,18 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     init();
   }, []);
 
-  // Show pickup marker on the map when a ride request comes in
+  const routeLineRef = useRef(null);
+
+  // Show pickup marker AND a real driving route on the map when a ride request comes in
   useEffect(() => {
     if (!mapObjRef.current || !window.H) return;
     if (pickupMarkerRef.current) {
       mapObjRef.current.removeObject(pickupMarkerRef.current);
       pickupMarkerRef.current = null;
+    }
+    if (routeLineRef.current) {
+      mapObjRef.current.removeObject(routeLineRef.current);
+      routeLineRef.current = null;
     }
     if (request && request.pickup_lat) {
       const pickupCoords = { lat: request.pickup_lat, lng: request.pickup_lng };
@@ -1597,12 +1603,38 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
       const marker = new window.H.map.Marker(pickupCoords, { icon });
       mapObjRef.current.addObject(marker);
       pickupMarkerRef.current = marker;
-      mapObjRef.current.getViewModel().setLookAtData({ bounds: new window.H.geo.Rect(
-        Math.max(driverLoc.lat, pickupCoords.lat) + 0.01,
-        Math.min(driverLoc.lng, pickupCoords.lng) - 0.01,
-        Math.min(driverLoc.lat, pickupCoords.lat) - 0.01,
-        Math.max(driverLoc.lng, pickupCoords.lng) + 0.01,
-      ) });
+
+      // Draw the actual driving route from the driver's current location to pickup,
+      // instead of just dropping a marker with no path shown.
+      fetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${driverLoc.lat},${driverLoc.lng}&destination=${pickupCoords.lat},${pickupCoords.lng}&return=summary,polyline&apiKey=${HERE_API_KEY}`)
+        .then((res) => res.json())
+        .then((routeData) => {
+          const route = routeData?.routes?.[0];
+          if (route?.sections?.[0]?.polyline && mapObjRef.current) {
+            const lineString = window.H.geo.LineString.fromFlexiblePolyline(route.sections[0].polyline);
+            const routeLine = new window.H.map.Polyline(lineString, { style: { lineWidth: 4, strokeColor: "#D9A653" } });
+            mapObjRef.current.addObject(routeLine);
+            routeLineRef.current = routeLine;
+            mapObjRef.current.getViewModel().setLookAtData({ bounds: routeLine.getBoundingBox() });
+          } else {
+            mapObjRef.current.getViewModel().setLookAtData({ bounds: new window.H.geo.Rect(
+              Math.max(driverLoc.lat, pickupCoords.lat) + 0.01,
+              Math.min(driverLoc.lng, pickupCoords.lng) - 0.01,
+              Math.min(driverLoc.lat, pickupCoords.lat) - 0.01,
+              Math.max(driverLoc.lng, pickupCoords.lng) + 0.01,
+            ) });
+          }
+        })
+        .catch(() => {
+          if (mapObjRef.current) {
+            mapObjRef.current.getViewModel().setLookAtData({ bounds: new window.H.geo.Rect(
+              Math.max(driverLoc.lat, pickupCoords.lat) + 0.01,
+              Math.min(driverLoc.lng, pickupCoords.lng) - 0.01,
+              Math.min(driverLoc.lat, pickupCoords.lat) - 0.01,
+              Math.max(driverLoc.lng, pickupCoords.lng) + 0.01,
+            ) });
+          }
+        });
     }
   }, [request]);
 
