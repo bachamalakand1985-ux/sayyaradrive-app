@@ -3973,20 +3973,49 @@ function WelcomeScreen({ navigate }) {
           <span className="flex items-center gap-1.5"><MapPin size={12} color={GREEN} /> All major cities</span>
         </div>
 
-        <button onClick={() => navigate("passenger_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: GOLD, color: BG, boxShadow: "0 8px 20px rgba(217,166,83,0.3)" }}>
-          Log in / Sign up as passenger
+        <button onClick={() => navigate("auth_choice")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: GOLD, color: BG, boxShadow: "0 8px 20px rgba(217,166,83,0.3)" }}>
+          Log in / Sign up
         </button>
-        <button onClick={() => navigate("driver_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-5" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
-          Driver login / sign up
+        <button onClick={() => navigate("register_choice")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-5" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+          Register
         </button>
 
-        <div className="w-full max-w-sm rounded-2xl px-4 py-4 mb-4" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
-          <p className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: FAINT }}>Apply as a business (subject to review)</p>
-          <button onClick={() => navigate("register_fleet")} className="w-full mb-2 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
+        <p className="text-[10px]" style={{ color: FAINT }}>By continuing, you agree to use SayyaraDrive responsibly and respectfully.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- AUTH CHOICE (passenger vs driver) ---------- */
+function AuthChoiceScreen({ goBack, navigate }) {
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Log in / Sign up" onBack={goBack} />
+      <div className="px-5 flex flex-col gap-3 mt-2">
+        <button onClick={() => navigate("passenger_login")} className="w-full rounded-full py-4 text-sm font-semibold" style={{ background: GOLD, color: BG, boxShadow: "0 8px 20px rgba(217,166,83,0.3)" }}>
+          Log in / Sign up as passenger
+        </button>
+        <button onClick={() => navigate("driver_login")} className="w-full rounded-full py-4 text-sm font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+          Driver login / sign up
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- REGISTER CHOICE (business applications) ---------- */
+function RegisterChoiceScreen({ goBack, navigate }) {
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Register" onBack={goBack} />
+      <div className="px-5">
+        <p className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: FAINT }}>Apply as a business (subject to review)</p>
+        <div className="flex flex-col gap-2">
+          <button onClick={() => navigate("register_fleet")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
             <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: TEXT }}><Users size={15} color={GREEN} /> Apply to register your company</span>
             <ChevronRight size={14} color={GREEN} />
           </button>
-          <button onClick={() => navigate("register_rental")} className="w-full mb-2 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+          <button onClick={() => navigate("register_rental")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
             <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: TEXT }}><Key size={15} color={GOLD} /> Own a car? Apply to list it for rent</span>
             <ChevronRight size={14} color={GOLD} />
           </button>
@@ -3995,8 +4024,6 @@ function WelcomeScreen({ navigate }) {
             <ChevronRight size={14} color={MUTE} />
           </button>
         </div>
-
-        <p className="text-[10px]" style={{ color: FAINT }}>By continuing, you agree to use SayyaraDrive responsibly and respectfully.</p>
       </div>
     </div>
   );
@@ -4080,29 +4107,31 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
           return;
         }
       }
-      const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+      // Profile row is created automatically by a database trigger in the same
+      // transaction as the auth account — passing the details as signup metadata
+      // avoids a race condition where a separate insert can fire before the
+      // auth user is fully visible to the database.
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email, password,
+        options: {
+          data: isDriver
+            ? { role: "driver", full_name: fullName, mobile_number: mobile, iqama_number: iqama, vehicle_number: vehicleNumber, city_type: cityType }
+            : { role: "passenger", full_name: fullName, mobile_number: mobile },
+        },
+      });
       if (signUpError) throw signUpError;
       const authUserId = data.user?.id;
-      if (isDriver) {
-        const { data: insertedDriver, error: insertError } = await supabase.from("drivers").insert({
-          auth_user_id: authUserId,
-          full_name: fullName,
-          mobile_number: mobile,
-          iqama_number: iqama,
-          vehicle_number: vehicleNumber,
-          city_type: cityType,
-        }).select().single();
-        if (insertError) throw insertError;
-        if (onLoggedIn) onLoggedIn({ email, type: "driver", profile: insertedDriver });
-      } else {
-        const { data: insertedPassenger, error: insertError } = await supabase.from("passengers").insert({
-          auth_user_id: authUserId,
-          full_name: fullName,
-          mobile_number: mobile,
-        }).select().single();
-        if (insertError) throw insertError;
-        if (onLoggedIn) onLoggedIn({ email, type: "passenger", profile: insertedPassenger });
+      const table = isDriver ? "drivers" : "passengers";
+      // The trigger runs synchronously in the same transaction, so the row should
+      // already exist — but retry briefly in case of any read-replica lag.
+      let profile = null;
+      for (let attempt = 0; attempt < 4 && !profile; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 400));
+        const { data: found } = await supabase.from(table).select("*").eq("auth_user_id", authUserId).maybeSingle();
+        if (found) profile = found;
       }
+      if (!profile) throw new Error("Account created, but your profile is still syncing — please try logging in again in a moment.");
+      if (onLoggedIn) onLoggedIn({ email, type: isDriver ? "driver" : "passenger", profile });
       setSuccess(true);
     } catch (e) {
       setError(e.message || "Something went wrong. Please try again.");
@@ -5801,20 +5830,20 @@ function CompanyAuthScreen({ goBack, navigate, onLoggedIn }) {
     const v = validate();
     if (v) { setError(v); setLoading(false); return; }
     try {
-      const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email, password,
+        options: { data: { role: "company", name: companyName, cr_number: crNumber, contact_name: contactName, mobile_number: mobile } },
+      });
       if (signUpError) throw signUpError;
-      const { data: inserted, error: insertError } = await supabase.from("companies").insert({
-        auth_user_id: data.user?.id,
-        name: companyName,
-        cr_number: crNumber,
-        contact_name: contactName,
-        mobile_number: mobile,
-        email,
-        status: "active",
-        verified: false,
-      }).select().single();
-      if (insertError) throw insertError;
-      if (onLoggedIn) onLoggedIn({ email, profile: inserted });
+      const authUserId = data.user?.id;
+      let profile = null;
+      for (let attempt = 0; attempt < 4 && !profile; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 400));
+        const { data: found } = await supabase.from("companies").select("*").eq("auth_user_id", authUserId).maybeSingle();
+        if (found) profile = found;
+      }
+      if (!profile) throw new Error("Account created, but your profile is still syncing — please try logging in again in a moment.");
+      if (onLoggedIn) onLoggedIn({ email, profile });
       setSuccess(true);
     } catch (e) {
       setError(e.message || "Something went wrong. Please try again.");
@@ -7192,6 +7221,8 @@ export default function SayyaraDriveApp() {
 
   const SCREEN_MAP = {
     welcome: <WelcomeScreen navigate={navigate} />,
+    auth_choice: <AuthChoiceScreen goBack={goBack} navigate={navigate} />,
+    register_choice: <RegisterChoiceScreen goBack={goBack} navigate={navigate} />,
     home: <Home navigate={navigate} lang={lang} setLang={setLang} t={t} currentDriver={currentDriver} driverLogout={driverLogout} />,
     ride: <BookRide goBack={goBack} />,
     driver: <DriverApp goBack={goBack} navigate={navigate} currentDriver={currentDriver} />,
