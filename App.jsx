@@ -1920,6 +1920,7 @@ function PartnerRegister({ goBack, type }) {
     setSubmitError("");
     try {
       const detailsText = cfg.detailFields.map((f) => `${f.label}: ${details[f.key]}`).join(" · ");
+      // Kept for your records — every application still logs here regardless of type.
       await supabase.from("partner_applications").insert({
         type,
         full_name: name,
@@ -1930,10 +1931,43 @@ function PartnerRegister({ goBack, type }) {
         details: detailsText,
         status: "pending",
       });
+
+      // Rentals, marketplace items, and restaurants publish live immediately —
+      // no manual review needed. Driver, fleet, and logistics applications still
+      // need a real account (handled separately via Login/Signup) so those stay
+      // as review-only applications above.
+      if (type === "rental_owner") {
+        await supabase.from("rental_listings").insert({
+          owner_name: name,
+          owner_phone: phone,
+          provider: `Private owner — ${name}`,
+          model: details.vehicleModel || "Car for rent",
+          price_per_day: parseFloat(details.dailyRate) || null,
+          city,
+          status: "active",
+        });
+      } else if (type === "seller") {
+        await supabase.from("marketplace_listings").insert({
+          title: details.storeName || "New listing",
+          category: details.category || "Other",
+          location: city,
+          seller_name: name,
+          seller_phone: phone,
+          status: "active",
+        });
+      } else if (type === "food_partner") {
+        await supabase.from("restaurants").insert({
+          name: details.restaurantName || name,
+          cuisine: details.cuisine || "Restaurant",
+          city,
+          status: "active",
+        });
+      }
+
       await supabase.from("notifications").insert({
         recipient_type: "admin",
-        title: "New application received",
-        body: `${name} applied as a ${type.replace(/_/g, " ")}`,
+        title: type === "rental_owner" || type === "seller" || type === "food_partner" ? "New listing published" : "New application received",
+        body: `${name} ${type === "rental_owner" || type === "seller" || type === "food_partner" ? "published a listing as a" : "applied as a"} ${type.replace(/_/g, " ")}`,
       });
       setStep(4);
     } catch (e) {
@@ -2238,7 +2272,31 @@ function CarRental({ goBack, navigate }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [renterName, setRenterName] = useState(""); const [renterPhone, setRenterPhone] = useState("");
   const [saving, setSaving] = useState(false);
-  const chosen = CARS.find((c) => c.id === carId);
+  const [dbCars, setDbCars] = useState([]);
+
+  useEffect(() => {
+    async function loadRentalListings() {
+      const { data } = await supabase.from("rental_listings").select("*").eq("status", "active").order("created_at", { ascending: false });
+      if (data) {
+        setDbCars(data.map((r) => ({
+          id: `db-${r.id}`,
+          label: r.label || "Sedan",
+          model: r.model,
+          price: r.price_per_day || 0,
+          provider: r.provider || `Private owner — ${r.owner_name}`,
+          transmission: r.transmission || "Automatic",
+          seats: r.seats || 5,
+          fuel: r.fuel || "Petrol",
+          img: r.image_url || "https://loremflickr.com/400/300/car/all",
+          ownerPhone: r.owner_phone || null,
+        })));
+      }
+    }
+    loadRentalListings();
+  }, []);
+
+  const allCars = [...dbCars, ...CARS];
+  const chosen = allCars.find((c) => c.id === carId);
   const can = pickupDate && returnDate && returnDate >= pickupDate;
   const days = can ? Math.max(1, Math.round((new Date(returnDate) - new Date(pickupDate)) / 86400000) || 1) : 0;
   const canReserve = renterName.trim() && renterPhone.trim();
@@ -2308,7 +2366,7 @@ function CarRental({ goBack, navigate }) {
       {stage === "input" && view === "search" && (
         <div className="px-5">
           <button onClick={() => navigate("register_rental")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
-            <span className="flex items-center gap-2 text-sm font-semibold"><Key size={15} color={GOLD} /> Own a car? Apply to list it for rent</span>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Key size={15} color={GOLD} /> Own a car? List it for rent</span>
             <ChevronRight size={14} color={GOLD} />
           </button>
           <button onClick={() => navigate("register_fleet")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
@@ -2353,7 +2411,7 @@ function CarRental({ goBack, navigate }) {
           )}
           {!companyFilter && <div className="mb-3" />}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-            {(companyFilter ? CARS.filter((c) => c.provider === companyFilter) : CARS).map((c) => {
+            {(companyFilter ? allCars.filter((c) => c.provider === companyFilter) : allCars).map((c) => {
               const isSel = carId === c.id;
               return (
                 <button key={c.id} onClick={() => setCarId(c.id)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-left" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
@@ -2560,8 +2618,6 @@ function Marketplace({ goBack, navigate }) {
           context="marketplace"
           referenceTitle={contactListing.title}
           recipientPhone={contactListing.phone}
-          whatsappNumber={SUPPORT_WHATSAPP_NUMBER}
-          whatsappMessage={`Hi, I'm interested in "${contactListing.title}" listed on SayyaraDrive Marketplace.`}
           onClose={() => setContactListing(null)}
         />
       )}
@@ -2925,13 +2981,6 @@ function FoodDelivery({ goBack, navigate }) {
           <span className="flex items-center gap-1"><Clock size={11} /> {openRestaurant.hours}</span>
           <span className="flex items-center gap-1"><Star size={11} color={GOLD} /> {openRestaurant.rating}</span>
           <span className="flex items-center gap-1"><Truck size={11} color={GREEN} /> Delivery available</span>
-          <a
-            href={`https://wa.me/${SUPPORT_WHATSAPP_NUMBER}?text=${encodeURIComponent(`Hi, I have a question about ${openRestaurant.name} on SayyaraDrive.`)}`}
-            target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1" style={{ color: GREEN }}
-          >
-            <MessageCircle size={11} /> WhatsApp
-          </a>
         </div>
       </div>
 
@@ -2993,7 +3042,7 @@ function FoodDelivery({ goBack, navigate }) {
         <p className="text-xs mt-2" style={{ color: MUTE }}>Discover restaurants near you and get your meal delivered in minutes.</p>
         <div className="flex flex-wrap justify-center gap-2 mt-4">
           <button onClick={() => navigate("register_food")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold" style={{ background: GOLD, color: BG }}>
-            <UtensilsCrossed size={13} /> Apply to list your restaurant
+            <UtensilsCrossed size={13} /> List your restaurant
           </button>
           <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
             <Bag size={13} /> My orders
@@ -3241,6 +3290,7 @@ function JobsPortal({ goBack }) {
   const [postForm, setPostForm] = useState({ title: "", company: "", city: "", jobType: "", employment: "", minSalary: "", maxSalary: "", description: "", requirements: "", phone: "", email: "" });
   const [postSubmitting, setPostSubmitting] = useState(false);
   const [postDone, setPostDone] = useState(false);
+  const [postError, setPostError] = useState("");
   const postCan = postForm.title.trim() && postForm.company.trim() && postForm.city.trim() && postForm.jobType.trim() && postForm.description.trim() && postForm.phone.trim();
 
   async function loadJobs() {
@@ -3269,24 +3319,30 @@ function JobsPortal({ goBack }) {
 
   async function submitPost() {
     setPostSubmitting(true);
+    setPostError("");
     const pay = postForm.minSalary && postForm.maxSalary
       ? `${postForm.minSalary}–${postForm.maxSalary} SAR/mo`
       : postForm.minSalary ? `From ${postForm.minSalary} SAR/mo` : "Salary on request";
-    try {
-      await supabase.from("jobs").insert({
-        title: postForm.title,
-        company: postForm.company,
-        location: postForm.city,
-        pay,
-        job_type: postForm.jobType,
-        category: "Driving",
-        phone: postForm.phone,
-        email: postForm.email,
-        description: postForm.description || "No description provided.",
-        status: "active",
-      });
-      await loadJobs();
-    } catch (e) { /* insert failed, job just won't show up until retried */ }
+    // Supabase queries return an { error } object on failure rather than throwing —
+    // that error must be checked explicitly, or a failed post silently shows as "success".
+    const { error } = await supabase.from("jobs").insert({
+      title: postForm.title,
+      company: postForm.company,
+      location: postForm.city,
+      pay,
+      job_type: postForm.jobType,
+      category: "Driving",
+      phone: postForm.phone,
+      email: postForm.email,
+      description: postForm.description || "No description provided.",
+      status: "active",
+    });
+    if (error) {
+      setPostError("Couldn't post your job. Please check your details and try again.");
+      setPostSubmitting(false);
+      return;
+    }
+    await loadJobs();
     setPostSubmitting(false);
     setPostDone(true);
   }
@@ -3466,6 +3522,7 @@ function JobsPortal({ goBack }) {
                   </div>
                 </div>
 
+                {postError && <p className="text-[12px] text-center" style={{ color: "#C0755B" }}>{postError}</p>}
                 <button onClick={submitPost} disabled={!postCan || postSubmitting} className="w-full flex items-center justify-center gap-2 rounded-full py-3.5 text-sm font-semibold mt-2" style={{ background: postCan ? GOLD : BORDER, color: postCan ? BG : "#5C736D" }}>
                   <Send size={14} /> {postSubmitting ? "Publishing…" : "Publish Job Opening"}
                 </button>
@@ -3742,16 +3799,6 @@ function Profile({ goBack, navigate, currentDriver, driverLogout }) {
           <span className="flex items-center gap-3 text-sm"><HelpCircle size={15} color={GOLD} /> Message support</span>
           <ChevronRight size={14} color="#5C736D" />
         </button>
-        <a
-          href={`https://wa.me/${SUPPORT_WHATSAPP_NUMBER}?text=${encodeURIComponent("Hi SayyaraDrive, I need help with the app.")}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full flex items-center justify-between rounded-2xl px-4 py-3"
-          style={{ background: "transparent", border: `1px solid ${BORDER}` }}
-        >
-          <span className="flex items-center gap-3 text-sm" style={{ color: MUTE }}><MessageCircle size={15} color="#25D366" /> Contact support on WhatsApp</span>
-          <ChevronRight size={14} color="#5C736D" />
-        </a>
       </div>
       <div className="px-5">
         <button onClick={handleSignOut} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: "#C0755B" }}>
@@ -4020,7 +4067,7 @@ function RegisterChoiceScreen({ goBack, navigate }) {
             <ChevronRight size={14} color={GREEN} />
           </button>
           <button onClick={() => navigate("register_rental")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
-            <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: TEXT }}><Key size={15} color={GOLD} /> Own a car? Apply to list it for rent</span>
+            <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: TEXT }}><Key size={15} color={GOLD} /> Own a car? List it for rent</span>
             <ChevronRight size={14} color={GOLD} />
           </button>
           <button onClick={() => navigate("company_login")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "transparent", border: `1px solid ${BORDER}` }}>
@@ -4040,8 +4087,12 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
     try { return localStorage.getItem(`sayyara_last_email_${type}`) || ""; } catch (e) { return ""; }
   });
   const [rememberMe, setRememberMe] = useState(true);
+  const [loginMethod, setLoginMethod] = useState("email");
+  const [mobileLogin, setMobileLogin] = useState("");
+  const [usernameLogin, setUsernameLogin] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
   const [mobile, setMobile] = useState("");
   const [iqama, setIqama] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
@@ -4053,9 +4104,9 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
 
   const isDriver = type === "driver";
 
-  function rememberEmail() {
+  function rememberEmail(emailToSave) {
     try {
-      if (rememberMe) localStorage.setItem(`sayyara_last_email_${type}`, email.trim());
+      if (rememberMe) localStorage.setItem(`sayyara_last_email_${type}`, (emailToSave || email).trim());
       else localStorage.removeItem(`sayyara_last_email_${type}`);
     } catch (e) {}
   }
@@ -4069,6 +4120,9 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
     }
     if (!fullName.trim() || fullName.trim().length < 2) {
       return "Please enter your full name.";
+    }
+    if (!/^[a-zA-Z0-9_.]{3,20}$/.test(username.trim())) {
+      return "Username must be 3-20 characters (letters, numbers, underscore, or period only).";
     }
     const mobileDigits = mobile.replace(/[\s-]/g, "");
     if (!/^(05\d{8}|9665\d{8}|\+9665\d{8})$/.test(mobileDigits)) {
@@ -4121,6 +4175,13 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
           return;
         }
       }
+      const table = isDriver ? "drivers" : "passengers";
+      const { data: existingUsername } = await supabase.from(table).select("id").eq("username", username.trim()).maybeSingle();
+      if (existingUsername) {
+        setError("That username is already taken. Please choose another.");
+        setLoading(false);
+        return;
+      }
       // Profile row is created automatically by a database trigger in the same
       // transaction as the auth account — passing the details as signup metadata
       // avoids a race condition where a separate insert can fire before the
@@ -4129,13 +4190,12 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         email, password,
         options: {
           data: isDriver
-            ? { role: "driver", full_name: fullName, mobile_number: mobile, iqama_number: iqama, vehicle_number: vehicleNumber, city_type: cityType }
-            : { role: "passenger", full_name: fullName, mobile_number: mobile },
+            ? { role: "driver", full_name: fullName, mobile_number: mobile, iqama_number: iqama, vehicle_number: vehicleNumber, city_type: cityType, username: username.trim() }
+            : { role: "passenger", full_name: fullName, mobile_number: mobile, username: username.trim() },
         },
       });
       if (signUpError) throw signUpError;
       const authUserId = data.user?.id;
-      const table = isDriver ? "drivers" : "passengers";
       // The trigger runs synchronously in the same transaction, so the row should
       // already exist — but retry briefly in case of any read-replica lag.
       let profile = null;
@@ -4145,6 +4205,10 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         if (found) profile = found;
       }
       if (!profile) throw new Error("Account created, but your profile is still syncing — please try logging in again in a moment.");
+      // The signup trigger builds the profile row from auth metadata, which doesn't include
+      // email — store it separately so mobile-number login can look it up later.
+      await supabase.from(table).update({ email }).eq("id", profile.id);
+      profile.email = email;
       if (onLoggedIn) onLoggedIn({ email, type: isDriver ? "driver" : "passenger", profile });
       rememberEmail();
       setSuccess(true);
@@ -4157,13 +4221,42 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
 
   async function handleLogin() {
     setError(""); setLoading(true);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    let loginEmail = email.trim();
+    if (loginMethod === "mobile") {
+      if (!mobileLogin.trim()) {
+        setError("Please enter your mobile number.");
+        setLoading(false);
+        return;
+      }
+      const table = isDriver ? "drivers" : "passengers";
+      const { data: foundEmail } = await supabase.rpc("lookup_login_email", { p_table: table, p_field: "mobile_number", p_value: mobileLogin.trim() });
+      if (!foundEmail) {
+        setError("No account found with this mobile number. Try email instead, or sign up.");
+        setLoading(false);
+        return;
+      }
+      loginEmail = foundEmail;
+    } else if (loginMethod === "username") {
+      if (!usernameLogin.trim()) {
+        setError("Please enter your username.");
+        setLoading(false);
+        return;
+      }
+      const table = isDriver ? "drivers" : "passengers";
+      const { data: foundEmail } = await supabase.rpc("lookup_login_email", { p_table: table, p_field: "username", p_value: usernameLogin.trim() });
+      if (!foundEmail) {
+        setError("No account found with this username. Try email instead, or sign up.");
+        setLoading(false);
+        return;
+      }
+      loginEmail = foundEmail;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail)) {
       setError("Please enter a valid email address.");
       setLoading(false);
       return;
     }
     try {
-      const { data: signInData, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+      const { data: signInData, error: loginError } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
       if (loginError) throw loginError;
       let profile = null;
       if (isDriver) {
@@ -4181,8 +4274,9 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
           return;
         }
       }
-      if (onLoggedIn) onLoggedIn({ email, type, profile });
-      rememberEmail();
+      if (onLoggedIn) onLoggedIn({ email: loginEmail, type, profile });
+      setEmail(loginEmail);
+      rememberEmail(loginEmail);
       setSuccess(true);
     } catch (e) {
       setError(e.message || "Invalid email or password.");
@@ -4250,10 +4344,29 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         </div>
 
         <div className="flex flex-col gap-3 mb-4">
-          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <Mail size={14} color={GOLD} />
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
-          </div>
+          {mode === "login" && (
+            <div className="flex rounded-full p-1" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <button onClick={() => setLoginMethod("email")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: loginMethod === "email" ? CARD : "transparent", color: loginMethod === "email" ? GOLD : MUTE }}>Email</button>
+              <button onClick={() => setLoginMethod("mobile")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: loginMethod === "mobile" ? CARD : "transparent", color: loginMethod === "mobile" ? GOLD : MUTE }}>Mobile</button>
+              <button onClick={() => setLoginMethod("username")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: loginMethod === "username" ? CARD : "transparent", color: loginMethod === "username" ? GOLD : MUTE }}>Username</button>
+            </div>
+          )}
+          {mode === "login" && loginMethod === "mobile" ? (
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Phone size={14} color={GOLD} />
+              <input value={mobileLogin} onChange={(e) => setMobileLogin(e.target.value)} placeholder="Mobile number (e.g. 05XXXXXXXX)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+          ) : mode === "login" && loginMethod === "username" ? (
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <User size={14} color={GOLD} />
+              <input value={usernameLogin} onChange={(e) => setUsernameLogin(e.target.value)} placeholder="Username" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Mail size={14} color={GOLD} />
+              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+          )}
           <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <Key size={14} color={GOLD} />
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
@@ -4276,6 +4389,10 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
             <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <User size={14} color={GOLD} />
               <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <User size={14} color={GOLD} />
+              <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username (letters, numbers, _ or .)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
             </div>
             <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <Phone size={14} color={GOLD} />
@@ -7612,17 +7729,15 @@ export default function SayyaraDriveApp() {
       <div className={`w-full relative z-10 ${screen === "admin" ? "max-w-6xl" : "max-w-md lg:max-w-5xl"}`} style={{ paddingBottom: isTab ? 70 : 20, paddingTop: isOffline ? 32 : 0 }}>
         {SCREEN_MAP[screen] || <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />}
 
-        {screen !== "welcome" && screen !== "admin" && screen !== "admin_login" && (
-          <a
-            href={`https://wa.me/${SUPPORT_WHATSAPP_NUMBER}?text=${encodeURIComponent("Hi SayyaraDrive, I need help with the app.")}`}
-            target="_blank"
-            rel="noopener noreferrer"
+        {screen !== "welcome" && screen !== "admin" && screen !== "admin_login" && screen !== "support_chat" && (
+          <button
+            onClick={() => navigate("support_chat")}
             className="fixed right-5 w-12 h-12 rounded-full flex items-center justify-center shadow-lg z-40"
-            style={{ background: "#25D366", bottom: isTab ? 86 : 24 }}
-            aria-label="Contact support on WhatsApp"
+            style={{ background: GOLD, bottom: isTab ? 86 : 24 }}
+            aria-label="Message support"
           >
-            <MessageCircle size={21} color="#fff" fill="#fff" />
-          </a>
+            <HelpCircle size={21} color={BG} />
+          </button>
         )}
 
         {isTab && <BottomNav screen={screen} navigate={navigate} t={t} />}
