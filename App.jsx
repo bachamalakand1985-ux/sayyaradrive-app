@@ -4480,19 +4480,15 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
     if (password.length < 6) {
       return "Password must be at least 6 characters.";
     }
-    if (!fullName.trim() || fullName.trim().length < 2) {
+    if (!fullName.trim()) {
       return "Please enter your full name.";
     }
-    if (!/^[a-zA-Z0-9_.]{3,20}$/.test(username.trim())) {
-      return "Username must be 3-20 characters (letters, numbers, underscore, or period only).";
-    }
-    const mobileDigits = mobile.replace(/[\s-]/g, "");
-    if (!/^(05\d{8}|9665\d{8}|\+9665\d{8})$/.test(mobileDigits)) {
-      return "Please enter a valid Saudi mobile number (e.g. 05XXXXXXXX).";
+    if (!mobile.trim()) {
+      return "Please enter your mobile number.";
     }
     if (isDriver) {
-      if (!/^\d{10}$/.test(iqama.trim())) {
-        return "Iqama number must be exactly 10 digits.";
+      if (!iqama.trim()) {
+        return "Please enter your Iqama number.";
       }
       if (!vehicleNumber.trim()) {
         return "Please enter your vehicle number.";
@@ -4501,13 +4497,37 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
     return null;
   }
 
+  const [forgotMethod, setForgotMethod] = useState("email");
+  const [forgotMobile, setForgotMobile] = useState("");
+  const [forgotUsername, setForgotUsername] = useState("");
+  const [resolvedResetEmail, setResolvedResetEmail] = useState("");
+
   async function handleForgotPassword() {
     setError(""); setLoading(true);
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      let resetEmail = email.trim();
+      if (forgotMethod === "mobile") {
+        if (!forgotMobile.trim()) { setError("Please enter your mobile number."); setLoading(false); return; }
+        const table = isDriver ? "drivers" : "passengers";
+        const { data: found } = await supabase.rpc("lookup_login_email", { p_table: table, p_field: "mobile_number", p_value: forgotMobile.trim() });
+        if (!found) { setError("No account found with this mobile number."); setLoading(false); return; }
+        resetEmail = found;
+      } else if (forgotMethod === "username") {
+        if (!forgotUsername.trim()) { setError("Please enter your username."); setLoading(false); return; }
+        const table = isDriver ? "drivers" : "passengers";
+        const { data: found } = await supabase.rpc("lookup_login_email", { p_table: table, p_field: "username", p_value: forgotUsername.trim() });
+        if (!found) { setError("No account found with this username."); setLoading(false); return; }
+        resetEmail = found;
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resetEmail)) {
+        setError("Please enter a valid email address.");
+        setLoading(false);
+        return;
+      }
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(resetEmail, {
         redirectTo: window.location.origin,
       });
       if (resetError) throw resetError;
+      setResolvedResetEmail(resetEmail);
       setResetSent(true);
     } catch (e) {
       setError(e.message || "Couldn't send reset email. Please try again.");
@@ -4538,11 +4558,25 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         }
       }
       const table = isDriver ? "drivers" : "passengers";
-      const { data: existingUsername } = await supabase.from(table).select("id").eq("username", username.trim()).maybeSingle();
-      if (existingUsername) {
-        setError("That username is already taken. Please choose another.");
-        setLoading(false);
-        return;
+      let finalUsername = username.trim();
+      if (!finalUsername) {
+        // Username is optional now — auto-generate one from the person's name so
+        // it's never a reason signup gets blocked or feels like extra work.
+        const base = fullName.trim().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || "user";
+        let candidate = `${base}${Math.floor(1000 + Math.random() * 9000)}`;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const { data: taken } = await supabase.from(table).select("id").eq("username", candidate).maybeSingle();
+          if (!taken) break;
+          candidate = `${base}${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+        finalUsername = candidate;
+      } else {
+        const { data: existingUsername } = await supabase.from(table).select("id").eq("username", finalUsername).maybeSingle();
+        if (existingUsername) {
+          setError("That username is already taken. Please choose another.");
+          setLoading(false);
+          return;
+        }
       }
       const { data: existingMobile } = await supabase.from(table).select("id").eq("mobile_number", mobile.trim()).maybeSingle();
       if (existingMobile) {
@@ -4558,8 +4592,8 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         email: email.trim(), password,
         options: {
           data: isDriver
-            ? { role: "driver", full_name: fullName, mobile_number: mobile, iqama_number: iqama, vehicle_number: vehicleNumber, city_type: cityType, username: username.trim() }
-            : { role: "passenger", full_name: fullName, mobile_number: mobile, username: username.trim() },
+            ? { role: "driver", full_name: fullName, mobile_number: mobile, iqama_number: iqama, vehicle_number: vehicleNumber, city_type: cityType, username: finalUsername }
+            : { role: "passenger", full_name: fullName, mobile_number: mobile, username: finalUsername },
         },
       });
       if (signUpError) throw signUpError;
@@ -4675,13 +4709,30 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         <div className="px-5">
           {!resetSent ? (
             <>
-              <p className="text-sm mb-4" style={{ color: MUTE }}>Enter your account email and we'll send you a link to reset your password.</p>
-              <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <Mail size={14} color={GOLD} />
-                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              <p className="text-sm mb-4" style={{ color: MUTE }}>Enter your email, mobile number, or username — we'll find your account and send a reset link to the email on file.</p>
+              <div className="flex rounded-full p-1 mb-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <button onClick={() => setForgotMethod("email")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: forgotMethod === "email" ? CARD : "transparent", color: forgotMethod === "email" ? GOLD : MUTE }}>Email</button>
+                <button onClick={() => setForgotMethod("mobile")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: forgotMethod === "mobile" ? CARD : "transparent", color: forgotMethod === "mobile" ? GOLD : MUTE }}>Mobile</button>
+                <button onClick={() => setForgotMethod("username")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: forgotMethod === "username" ? CARD : "transparent", color: forgotMethod === "username" ? GOLD : MUTE }}>Username</button>
               </div>
+              {forgotMethod === "mobile" ? (
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <Phone size={14} color={GOLD} />
+                  <input value={forgotMobile} onChange={(e) => setForgotMobile(e.target.value)} placeholder="Mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                </div>
+              ) : forgotMethod === "username" ? (
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <User size={14} color={GOLD} />
+                  <input value={forgotUsername} onChange={(e) => setForgotUsername(e.target.value)} placeholder="Username" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <Mail size={14} color={GOLD} />
+                  <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                </div>
+              )}
               {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
-              <button onClick={handleForgotPassword} disabled={loading || !email} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: (loading || !email) ? BORDER : GOLD, color: (loading || !email) ? "#5C736D" : BG }}>
+              <button onClick={handleForgotPassword} disabled={loading} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: loading ? BORDER : GOLD, color: loading ? "#5C736D" : BG }}>
                 {loading ? "Sending…" : "Send reset link"}
               </button>
             </>
@@ -4689,7 +4740,7 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
             <div className="flex flex-col items-center text-center py-8">
               <CheckCircle2 size={44} color={GREEN} />
               <h2 className="mt-4 text-lg font-semibold">Check your email</h2>
-              <p className="mt-1 text-sm" style={{ color: MUTE }}>We sent a password reset link to {email}. Follow it to set a new password.</p>
+              <p className="mt-1 text-sm" style={{ color: MUTE }}>We sent a password reset link to {resolvedResetEmail || email}. Follow it to set a new password.</p>
               <button onClick={() => { setMode("login"); setResetSent(false); }} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back to login</button>
             </div>
           )}
@@ -4756,7 +4807,7 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
             </div>
             <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <User size={14} color={GOLD} />
-              <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username (letters, numbers, _ or .)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
             </div>
             <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <Phone size={14} color={GOLD} />
@@ -6549,8 +6600,7 @@ function CompanyAuthScreen({ goBack, navigate, onLoggedIn }) {
       if (!companyName.trim()) return "Please enter your company name.";
       if (!crNumber.trim()) return "Please enter your Commercial Registration number.";
       if (!contactName.trim()) return "Please enter a contact person's name.";
-      const mobileDigits = mobile.replace(/[\s-]/g, "");
-      if (!/^(05\d{8}|9665\d{8}|\+9665\d{8})$/.test(mobileDigits)) return "Please enter a valid Saudi mobile number.";
+      if (!mobile.trim()) return "Please enter your mobile number.";
     }
     return null;
   }
