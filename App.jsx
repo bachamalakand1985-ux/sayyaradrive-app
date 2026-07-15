@@ -704,7 +704,6 @@ function AppMenu({ onClose, navigate, currentDriver, driverLogout, identity }) {
     { icon: MessageCircle, label: "Friends & family", route: "friends" },
     { icon: Bell, label: "Notifications", route: "notifications" },
     { icon: Settings, label: "Account settings", route: "profile" },
-    { icon: HelpCircle, label: "Help & support", route: "support_chat" },
   ];
   return (
     <div className="fixed inset-0 z-50 flex" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
@@ -1849,9 +1848,6 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
               <span className="text-xs font-semibold text-left">Safety</span>
             </button>
           </div>
-          <button onClick={() => navigate("support_chat")} className="w-full mt-2 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(217,166,83,0.1)", border: `1px solid ${GOLD}`, color: GOLD }}>
-            <HelpCircle size={15} /> Message support
-          </button>
         </div>
       )}
       {!online && currentDriver?.profile && (
@@ -5647,14 +5643,6 @@ function FriendsListScreen({ goBack, navigate, setActiveFriendChat }) {
         <button onClick={() => setShowEditMe(true)} className="text-[11px] underline" style={{ color: GOLD }}>Edit</button>
       </div>
       <div className="px-5 mb-4">
-        <button onClick={() => navigate("support_chat")} className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 mb-2" style={{ background: "rgba(217,166,83,0.1)", border: `1px solid ${GOLD}` }}>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}><HelpCircle size={18} color={BG} /></div>
-          <div className="flex-1 min-w-0 text-left">
-            <p className="text-sm font-semibold">SayyaraDrive Support</p>
-            <p className="text-[11px]" style={{ color: FAINT }}>We usually reply within a few hours</p>
-          </div>
-          <ChevronRight size={14} color={GOLD} />
-        </button>
         <button onClick={() => setShowAdd(true)} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
           <Plus size={15} /> Add friend or family
         </button>
@@ -8603,17 +8591,6 @@ export default function SayyaraDriveApp() {
       </div>
       <div className={`w-full relative z-10 ${screen === "admin" ? "max-w-6xl" : "max-w-md lg:max-w-5xl"}`} style={{ paddingBottom: isTab ? 70 : 20, paddingTop: isOffline ? 32 : 0 }}>
         {SCREEN_MAP[screen] || <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />}
-
-        {screen !== "welcome" && screen !== "admin" && screen !== "admin_login" && screen !== "support_chat" && (
-          <button
-            onClick={() => navigate("support_chat")}
-            className="fixed right-5 w-12 h-12 rounded-full flex items-center justify-center shadow-lg z-40"
-            style={{ background: GOLD, bottom: isTab ? 86 : 24 }}
-            aria-label="Message support"
-          >
-            <HelpCircle size={21} color={BG} />
-          </button>
-        )}
 
         {isTab && <BottomNav screen={screen} navigate={navigate} t={t} currentDriver={currentDriver} />}
       </div>
