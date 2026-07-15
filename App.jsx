@@ -8,7 +8,8 @@ import {
   Plus, Tag, X, Star, ShoppingBag as Bag, Minus,
   Package, Phone, DollarSign,
   Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check,
-  Link, Globe, Trophy, MessageCircle, Mic, RefreshCw, Flag, Image as ImageIcon, PhoneOff, PhoneCall
+  Link, Globe, Trophy, MessageCircle, Mic, RefreshCw, Flag, Image as ImageIcon, PhoneOff, PhoneCall,
+  Settings, LogIn, HelpCircle
 } from "lucide-react";
 
 /* ---------- support contact ---------- */
@@ -239,7 +240,7 @@ function PinMapPicker({ coords, onMove, height = 150 }) {
 
 /* ---------- Saudi Arabia cities & districts ---------- */
 const SAUDI_CITIES = {
-  Riyadh: ["Al Olaya", "Al Malaz", "Al Naseem", "Al Yasmin", "King Fahd District", "Al Sulimaniyah", "Diriyah", "Al Rawdah"],
+  Riyadh: ["Al Olaya", "Al Malaz", "Al Naseem", "Al Yasmin", "King Fahd District", "Al Sulimaniyah", "Diriyah", "Al Rawdah", "Al Nakheel", "Al Malqa", "Al Narjis", "Hittin", "Al Wadi", "Al Sahafah", "Al Aqiq", "Al Ghadir", "King Abdullah District", "Al Nada", "Al Rabie", "Al Izdihar", "Al Falah", "Al Wurud", "Al Muruj", "An Nuzhah", "Qurtubah", "Al Rimal", "Ishbiliyah", "Al Rayyan", "Al Mursalat", "Al Munsiyah", "Al Andalus", "Al Rabwah", "Al Masif", "Al Muhammadiyah", "Diplomatic Quarter", "Al Murabba", "Ad Dirah", "Al Batha", "Umm Al Hamam East", "Umm Al Hamam West", "As Sulay", "Ad Dar Al Baida", "Al Manar", "Ash Shifa", "Ash Shuhada", "Al Fayha", "Al Jazeera", "Al Yamamah", "Namar", "Dhahrat Laban", "Irqah", "Al Aziziyah", "Laban", "Badr", "Uraija", "As Suwaidi", "Okaz", "Al Wisham", "Al Marwah", "Al Manakh", "Al Faisaliyah", "Salah Al Din", "Ar Rehab", "Ar Rahmaniyah", "Al Iskan", "Al Hazm", "Taybah", "As Salam", "Ad Dubbat", "Ar Rawabi", "Al Yarmuk", "Al Qadisiyah", "Ash Sharafeyah", "Ad Difa", "Al Khaleej"],
   Jeddah: ["Al Balad", "Al Hamra", "Al Rawdah", "Al Salamah", "Al Zahra", "Obhur", "Al Faisaliyah"],
   Dammam: ["Al Faisaliyah", "Al Shati", "Al Adamah", "Al Manar", "Uhud District"],
   Makkah: ["Al Aziziyah", "Al Awali", "Al Naseem", "Ajyad", "Al Shubaikah"],
@@ -291,35 +292,73 @@ function detectLocation({ onStart, onSuccess, onError, _retriesLeft = 2 }) {
     }
   }
 
-  navigator.geolocation.getCurrentPosition(
-    (pos) => resolveWithCoords(pos.coords.latitude, pos.coords.longitude),
+  function handleFailure(err) {
+    // Permission denied — no point retrying, and don't fall back silently since the user explicitly said no
+    if (err.code === 1) {
+      onError && onError("Location permission denied — allow location access for this site in your browser settings.", "denied");
+      return;
+    }
+    // Timed out / unavailable — retry automatically a couple of times before giving up
+    if (_retriesLeft > 0) {
+      setTimeout(() => detectLocation({ onStart: undefined, onSuccess, onError, _retriesLeft: _retriesLeft - 1 }), 1200);
+      return;
+    }
+    // Out of retries — fall back to last known location if we have one (offline recovery)
+    try {
+      const cached = JSON.parse(localStorage.getItem("sayyara_last_location") || "null");
+      if (cached && Date.now() - cached.ts < 30 * 60 * 1000) {
+        onSuccess && onSuccess({ lat: cached.lat, lng: cached.lng, label: `${cached.label} (last known location)`, city: cached.city });
+        return;
+      }
+    } catch (e) {}
+    const messages = { 2: "Your location is unavailable right now — try again.", 3: "Location request timed out — try again." };
+    onError && onError(messages[err.code] || "Couldn't get your location.", "unavailable");
+  }
+
+  // A single getCurrentPosition() reading on mobile can return a coarse, network-based
+  // fix before the GPS chip locks on. Sample for a few seconds and keep whichever
+  // reading reports the best (lowest) accuracy radius, exiting early on a good fix.
+  let best = null;
+  let settled = false;
+  let watchId = null;
+
+  function settle() {
+    if (settled) return;
+    settled = true;
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    if (best) resolveWithCoords(best.lat, best.lng);
+    else handleFailure({ code: 3 });
+  }
+
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const acc = pos.coords.accuracy ?? 9999;
+      if (!best || acc < best.accuracy) {
+        best = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: acc };
+      }
+      if (acc <= 15) settle(); // GPS-grade fix already — no need to keep waiting
+    },
     (err) => {
-      // Permission denied — no point retrying, and don't fall back silently since the user explicitly said no
-      if (err.code === 1) {
-        onError && onError("Location permission denied — allow location access for this site in your browser settings.", "denied");
-        return;
-      }
-      // Timed out / unavailable — retry automatically a couple of times before giving up
-      if (_retriesLeft > 0) {
-        setTimeout(() => detectLocation({ onStart: undefined, onSuccess, onError, _retriesLeft: _retriesLeft - 1 }), 1200);
-        return;
-      }
-      // Out of retries — fall back to last known location if we have one (offline recovery)
-      try {
-        const cached = JSON.parse(localStorage.getItem("sayyara_last_location") || "null");
-        if (cached && Date.now() - cached.ts < 30 * 60 * 1000) {
-          onSuccess && onSuccess({ lat: cached.lat, lng: cached.lng, label: `${cached.label} (last known location)`, city: cached.city });
-          return;
-        }
-      } catch (e) {}
-      const messages = { 2: "Your location is unavailable right now — try again.", 3: "Location request timed out — try again." };
-      onError && onError(messages[err.code] || "Couldn't get your location.", "unavailable");
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      if (best) { settle(); return; }
+      handleFailure(err);
     },
     { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
   );
+
+  setTimeout(settle, 4000); // give the GPS chip a few seconds to refine before locking in the best sample
 }
 
 /* ---------- language system ---------- */
+const LANGUAGES = [
+  { code: "en", label: "English", native: "English" },
+  { code: "ar", label: "Arabic", native: "العربية" },
+  { code: "ur", label: "Urdu", native: "اردو" },
+  { code: "hi", label: "Hindi", native: "हिन्दी" },
+  { code: "tl", label: "Tagalog", native: "Tagalog" },
+];
+const RTL_LANGS = ["ar", "ur"];
+
 const TRANSLATIONS = {
   en: {
     tagline: "One app. Every way to move, earn, and deliver.",
@@ -359,7 +398,89 @@ const TRANSLATIONS = {
     useMyLocation: "استخدم موقعي الحالي",
     detecting: "جارٍ تحديد الموقع…",
   },
+  ur: {
+    tagline: "ایک ایپ۔ سفر، کمائی اور ڈیلیوری کا ہر طریقہ۔",
+    whereTo: "کہاں جانا ہے؟",
+    bookRideNow: "ابھی سواری بک کریں",
+    services: "خدمات",
+    available: "دستیاب",
+    home: "ہوم", activity: "سرگرمی", wallet: "والٹ", profile: "پروفائل",
+    ride: "سواری", cityRides: "شہر کے اندر سواری",
+    airport: "ہوائی اڈہ", transfers: "ٹرانسفر",
+    intercity: "شہر سے باہر", cityToCity: "شہر سے شہر",
+    rentals: "کرایہ", rentACar: "کار کرائے پر لیں",
+    marketplace: "بازار", buySell: "خرید و فروخت",
+    food: "کھانا", delivery: "ڈیلیوری",
+    logistics: "لاجسٹکس", sendParcels: "پارسل بھیجیں",
+    jobs: "ملازمتیں", driveEarn: "ڈرائیو کریں اور کمائیں",
+    fleet: "فلیٹ", manageCars: "گاڑیوں کا انتظام",
+    useMyLocation: "میرا موجودہ مقام استعمال کریں",
+    detecting: "مقام کا پتہ لگایا جا رہا ہے…",
+  },
+  hi: {
+    tagline: "एक ऐप। चलने, कमाने और डिलीवरी का हर तरीका।",
+    whereTo: "कहाँ जाना है?",
+    bookRideNow: "अभी सवारी बुक करें",
+    services: "सेवाएं",
+    available: "उपलब्ध",
+    home: "होम", activity: "गतिविधि", wallet: "वॉलेट", profile: "प्रोफ़ाइल",
+    ride: "सवारी", cityRides: "शहर के भीतर सवारी",
+    airport: "हवाई अड्डा", transfers: "स्थानांतरण",
+    intercity: "शहर के बाहर", cityToCity: "शहर से शहर",
+    rentals: "किराया", rentACar: "कार किराए पर लें",
+    marketplace: "बाज़ार", buySell: "खरीदें और बेचें",
+    food: "भोजन", delivery: "डिलीवरी",
+    logistics: "लॉजिस्टिक्स", sendParcels: "पार्सल भेजें",
+    jobs: "नौकरियां", driveEarn: "ड्राइव करें और कमाएं",
+    fleet: "फ्लीट", manageCars: "कारों का प्रबंधन",
+    useMyLocation: "मेरा वर्तमान स्थान उपयोग करें",
+    detecting: "स्थान का पता लगाया जा रहा है…",
+  },
+  tl: {
+    tagline: "Isang app. Bawat paraan para gumalaw, kumita, at maghatid.",
+    whereTo: "Saan tayo pupunta?",
+    bookRideNow: "Mag-book ng sakay ngayon",
+    services: "Mga serbisyo",
+    available: "magagamit",
+    home: "Home", activity: "Aktibidad", wallet: "Wallet", profile: "Profile",
+    ride: "Sakay", cityRides: "Sakay sa loob ng lungsod",
+    airport: "Paliparan", transfers: "Transpers",
+    intercity: "Labas ng lungsod", cityToCity: "Lungsod hanggang lungsod",
+    rentals: "Renta", rentACar: "Umarkila ng kotse",
+    marketplace: "Marketplace", buySell: "Bumili at magbenta",
+    food: "Pagkain", delivery: "Delivery",
+    logistics: "Logistics", sendParcels: "Magpadala ng parsela",
+    jobs: "Trabaho", driveEarn: "Magmaneho at kumita",
+    fleet: "Fleet", manageCars: "Pamahalaan ang mga sasakyan",
+    useMyLocation: "Gamitin ang kasalukuyang lokasyon ko",
+    detecting: "Hinahanap ang lokasyon…",
+  },
 };
+
+/* ---------- language picker modal ---------- */
+function LanguagePicker({ lang, setLang, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-3xl px-5 pt-5 pb-8" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+        <div className="w-10 h-1 rounded-full mx-auto mb-4" style={{ background: BORDER }} />
+        <h3 className="text-sm font-semibold mb-4" style={{ color: TEXT }}>Choose language</h3>
+        <div className="flex flex-col gap-2">
+          {LANGUAGES.map((l) => (
+            <button
+              key={l.code}
+              onClick={() => { setLang(l.code); onClose(); }}
+              className="w-full flex items-center justify-between rounded-xl px-4 py-3"
+              style={{ background: lang === l.code ? "rgba(217,166,83,0.14)" : "transparent", border: `1px solid ${lang === l.code ? GOLD : BORDER}` }}
+            >
+              <span className="text-sm font-semibold" style={{ color: TEXT }}>{l.native}</span>
+              {lang === l.code && <CheckCircle2 size={16} color={GOLD} />}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ---------- Riyadh skyline + desert silhouette background ---------- */
 function SkylineBackground({ opacity = 1 }) {
@@ -534,8 +655,80 @@ const SERVICES = [
   { id: "jobs", label: "Jobs", sub: "Drive & earn", subKey: "driveEarn", icon: Briefcase },
 ];
 
-function Home({ navigate, lang, setLang, t }) {
+/* ---------- identity helper (used by header + profile + app menu) ---------- */
+function resolveIdentity(currentDriver) {
+  if (currentDriver?.profile) {
+    return {
+      name: currentDriver.profile.full_name || "Account",
+      id: currentDriver.profile.mobile_number || currentDriver.email || "",
+      type: currentDriver.type === "driver" ? "Driver" : "Passenger",
+      loggedIn: true,
+    };
+  }
+  try {
+    const name = localStorage.getItem("sayyara_chat_name");
+    const phone = localStorage.getItem("sayyara_chat_phone");
+    if (name && phone) return { name, id: phone, type: "Guest ID", loggedIn: false };
+  } catch (e) {}
+  return { name: "Guest", id: "Not signed in", type: null, loggedIn: false };
+}
+
+function AppMenu({ onClose, navigate, currentDriver, driverLogout, identity }) {
+  const items = [
+    { icon: User, label: "My profile", route: "profile" },
+    { icon: MessageCircle, label: "Friends & family", route: "friends" },
+    { icon: Bell, label: "Notifications", route: "notifications" },
+    { icon: Settings, label: "Account settings", route: "profile" },
+    { icon: HelpCircle, label: "Help & support", route: "profile" },
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-[78%] max-w-xs h-full flex flex-col" style={{ background: CARD, borderRight: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 pt-8 pb-5" style={{ borderBottom: `1px solid ${BORDER}` }}>
+          <div className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-semibold mb-3" style={{ background: BORDER, color: GOLD }}>
+            {identity.name.charAt(0).toUpperCase()}
+          </div>
+          <p className="text-sm font-semibold truncate" style={{ color: TEXT }}>{identity.name}</p>
+          <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{identity.id}</p>
+          {identity.type && (
+            <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+              {identity.type}
+            </span>
+          )}
+        </div>
+        <div className="flex-1 overflow-y-auto py-3">
+          {items.map((item) => (
+            <button
+              key={item.label}
+              onClick={() => { onClose(); navigate(item.route); }}
+              className="w-full flex items-center gap-3 px-5 py-3 text-sm"
+              style={{ color: TEXT }}
+            >
+              <item.icon size={16} color={GOLD} /> {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="px-5 py-5" style={{ borderTop: `1px solid ${BORDER}` }}>
+          {identity.loggedIn ? (
+            <button onClick={() => { onClose(); driverLogout(); }} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "#C0755B", color: "#fff" }}>
+              <LogOut size={15} /> Sign out
+            </button>
+          ) : (
+            <button onClick={() => { onClose(); navigate("passenger_login"); }} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+              <LogIn size={15} /> Log in / Sign up
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showLangPicker, setShowLangPicker] = useState(false);
+  const [showAppMenu, setShowAppMenu] = useState(false);
+  const identity = resolveIdentity(currentDriver);
   useEffect(() => {
     async function loadUnread() {
       const { count } = await supabase.from("notifications").select("*", { count: "exact", head: true }).eq("recipient_type", "all").eq("read", false);
@@ -544,18 +737,27 @@ function Home({ navigate, lang, setLang, t }) {
     loadUnread();
   }, []);
   return (
-    <div className="pb-4 relative overflow-hidden" style={{ color: TEXT }} dir={lang === "ar" ? "rtl" : "ltr"}>
+    <div className="pb-4 relative overflow-hidden" style={{ color: TEXT }} dir={RTL_LANGS.includes(lang) ? "rtl" : "ltr"}>
       <SkylineBackground opacity={0.9} />
       <div className="relative flex items-center justify-between px-5 pt-6 pb-2">
-        <button aria-label="Menu" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}><Menu size={18} color={TEXT} /></button>
+        <button onClick={() => setShowAppMenu(true)} aria-label="Menu" className="flex items-center gap-2 min-w-0">
+          <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: CARD }}><Menu size={18} color={TEXT} /></span>
+          <span className="flex flex-col items-start leading-tight min-w-0">
+            <span className="text-xs font-semibold truncate max-w-[100px]" style={{ color: TEXT }}>{identity.name}</span>
+            <span className="text-[9px] truncate max-w-[100px]" style={{ color: FAINT }}>{identity.id}</span>
+          </span>
+        </button>
         <div className="text-[10px] uppercase" style={{ color: GREEN, letterSpacing: "0.25em" }}>Riyadh, Saudi Arabia</div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setLang(lang === "en" ? "ar" : "en")}
+            onClick={() => setShowLangPicker(true)}
             className="px-2.5 h-9 rounded-full flex items-center justify-center text-[11px] font-semibold"
             style={{ background: CARD, color: GOLD }}
           >
-            {lang === "en" ? "AR" : "EN"}
+            {lang.toUpperCase()}
+          </button>
+          <button onClick={() => navigate("friends")} aria-label="Friends & family chat" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}>
+            <MessageCircle size={17} color={TEXT} />
           </button>
           <button onClick={() => navigate("notifications")} aria-label="Notifications" className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
             <Bell size={17} color={TEXT} />
@@ -563,6 +765,8 @@ function Home({ navigate, lang, setLang, t }) {
           </button>
         </div>
       </div>
+      {showAppMenu && <AppMenu onClose={() => setShowAppMenu(false)} navigate={navigate} currentDriver={currentDriver} driverLogout={driverLogout} identity={identity} />}
+      {showLangPicker && <LanguagePicker lang={lang} setLang={setLang} onClose={() => setShowLangPicker(false)} />}
       <div className="relative px-5 pt-4 pb-6">
         <div className="flex items-center gap-2.5">
           <div
@@ -601,7 +805,7 @@ function Home({ navigate, lang, setLang, t }) {
               <p className="text-[11px] mt-1" style={{ color: FAINT }}>Arriving in minutes, anywhere in the city</p>
             </div>
             <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0" style={{ background: `linear-gradient(135deg, ${GOLD}, #B8863B)`, boxShadow: "0 6px 16px rgba(217,166,83,0.4)" }}>
-              <ChevronRight size={22} color={BG} style={{ transform: lang === "ar" ? "rotate(180deg)" : "none" }} />
+              <ChevronRight size={22} color={BG} style={{ transform: RTL_LANGS.includes(lang) ? "rotate(180deg)" : "none" }} />
             </div>
           </div>
         </button>
@@ -790,11 +994,45 @@ function BookRide({ goBack }) {
 
   const [activeField, setActiveField] = useState(null); // "pickup" | "dropoff" | null
   const cityPlaces = SAUDI_PLACES.filter((p) => p.city === pickupCity);
+  const [pickupLive, setPickupLive] = useState([]);
+  const [dropoffLive, setDropoffLive] = useState([]);
+
+  // live autosuggest — covers every real neighborhood, not just our static shortlist
+  useEffect(() => {
+    if (activeField !== "pickup" || !pickup.trim() || pickup === "Current location") { setPickupLive([]); return; }
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const center = SAUDI_CITY_COORDS[pickupCity] || SAUDI_CITY_COORDS.Riyadh;
+        const res = await fetch(`https://autosuggest.search.hereapi.com/v1/autosuggest?q=${encodeURIComponent(pickup)}&at=${center.lat},${center.lng}&in=countryCode:SAU&limit=6&lang=en-US&apiKey=${HERE_API_KEY}`, { signal: controller.signal });
+        const data = await res.json();
+        const items = (data?.items || []).filter((it) => it.address?.label || it.title).map((it) => ({ label: it.address?.label || it.title, lat: it.position?.lat, lng: it.position?.lng }));
+        setPickupLive(items);
+      } catch (e) { /* network/aborted — static fallback list still shows below */ }
+    }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [pickup, activeField, pickupCity]);
+
+  useEffect(() => {
+    if (activeField !== "dropoff" || !dropoff.trim()) { setDropoffLive([]); return; }
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const center = SAUDI_CITY_COORDS[pickupCity] || SAUDI_CITY_COORDS.Riyadh;
+        const res = await fetch(`https://autosuggest.search.hereapi.com/v1/autosuggest?q=${encodeURIComponent(dropoff)}&at=${center.lat},${center.lng}&in=countryCode:SAU&limit=6&lang=en-US&apiKey=${HERE_API_KEY}`, { signal: controller.signal });
+        const data = await res.json();
+        const items = (data?.items || []).filter((it) => it.address?.label || it.title).map((it) => ({ label: it.address?.label || it.title, lat: it.position?.lat, lng: it.position?.lng }));
+        setDropoffLive(items);
+      } catch (e) { /* network/aborted — static fallback list still shows below */ }
+    }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [dropoff, activeField, pickupCity]);
+
   const pickupSuggestions = activeField === "pickup" && pickup.trim()
-    ? cityPlaces.filter((p) => p.label.toLowerCase().includes(pickup.toLowerCase())).slice(0, 6)
+    ? (pickupLive.length > 0 ? pickupLive : cityPlaces.filter((p) => p.label.toLowerCase().includes(pickup.toLowerCase())).slice(0, 6))
     : [];
   const dropoffSuggestions = activeField === "dropoff" && dropoff.trim()
-    ? cityPlaces.filter((p) => p.label.toLowerCase().includes(dropoff.toLowerCase())).slice(0, 6)
+    ? (dropoffLive.length > 0 ? dropoffLive : cityPlaces.filter((p) => p.label.toLowerCase().includes(dropoff.toLowerCase())).slice(0, 6))
     : [];
   const [rideType, setRideType] = useState("economy");
   const [locating, setLocating] = useState(false);
@@ -1500,13 +1738,14 @@ function DriverApp({ goBack, navigate, currentDriver }) {
         <div className="px-5 mt-6">
           <p className="text-sm text-center" style={{ color: FAINT }}>Go online to start receiving ride requests.</p>
           <button onClick={() => navigate("driver_login")} className="w-full mt-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
-            <span className="flex items-center gap-2 text-sm font-semibold"><User size={15} color={GOLD} /> Driver login</span>
+            <span className="flex items-center gap-2 text-sm font-semibold"><User size={15} color={GOLD} /> Already have an account? Log in / Sign up</span>
             <ChevronRight size={14} color={GOLD} />
           </button>
           <button onClick={() => navigate("register_driver")} className="w-full mt-2 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <span className="flex items-center gap-2 text-sm font-semibold"><Car size={15} color={GOLD} /> New driver? Register here</span>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Car size={15} color={GOLD} /> New driver? Submit an application first</span>
             <ChevronRight size={14} color={GOLD} />
           </button>
+          <p className="text-[10px] mt-2 text-center" style={{ color: FAINT }}>New drivers: submit an application for review. Once approved, use "Log in / Sign up" to create your account.</p>
         </div>
       )}
       {request && tripState === "idle" && (
@@ -2069,15 +2308,15 @@ function CarRental({ goBack, navigate }) {
       {stage === "input" && view === "search" && (
         <div className="px-5">
           <button onClick={() => navigate("register_rental")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
-            <span className="flex items-center gap-2 text-sm font-semibold"><Key size={15} color={GOLD} /> Own a car? List it for rent</span>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Key size={15} color={GOLD} /> Own a car? Apply to list it for rent</span>
             <ChevronRight size={14} color={GOLD} />
           </button>
           <button onClick={() => navigate("register_fleet")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
-            <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GREEN} /> Own a fleet? Register your transport company</span>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GREEN} /> Own a fleet? Apply to register your company</span>
             <ChevronRight size={14} color={GREEN} />
           </button>
           <button onClick={() => navigate("company_login")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <span className="flex items-center gap-2 text-sm font-semibold"><Briefcase size={15} color={GOLD} /> Already registered? Company login</span>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Briefcase size={15} color={GOLD} /> Already approved? Company log in / Sign up</span>
             <ChevronRight size={14} color={GOLD} />
           </button>
           <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -2754,7 +2993,7 @@ function FoodDelivery({ goBack, navigate }) {
         <p className="text-xs mt-2" style={{ color: MUTE }}>Discover restaurants near you and get your meal delivered in minutes.</p>
         <div className="flex flex-wrap justify-center gap-2 mt-4">
           <button onClick={() => navigate("register_food")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold" style={{ background: GOLD, color: BG }}>
-            <UtensilsCrossed size={13} /> Register restaurant
+            <UtensilsCrossed size={13} /> Apply to list your restaurant
           </button>
           <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
             <Bag size={13} /> My orders
@@ -3393,7 +3632,7 @@ function FleetManagement({ goBack, navigate }) {
       <Header title="Fleet" onBack={goBack} />
       <div className="px-5 mb-4">
         <button onClick={() => navigate("register_fleet")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
-          <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GOLD} /> Register a new fleet company</span>
+          <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GOLD} /> Apply to register a fleet company</span>
           <ChevronRight size={14} color={GOLD} />
         </button>
       </div>
@@ -3418,25 +3657,85 @@ function FleetManagement({ goBack, navigate }) {
 }
 
 /* ---------- PROFILE ---------- */
-function Profile({ goBack, navigate }) {
-  const profile = { name: "Muhammad Ilyas", phone: "+966 5X XXX XXXX", email: "muhammad@sayyaradrive.com", city: "Riyadh" };
+function Profile({ goBack, navigate, currentDriver, driverLogout }) {
+  const identity = resolveIdentity(currentDriver);
+  const [rating, setRating] = useState(null);
+  const [showLangPicker, setShowLangPicker] = useState(false);
+  const [lang, setLang] = useState(() => { try { return localStorage.getItem("sayyara_lang") || "en"; } catch (e) { return "en"; } });
+  function updateLang(code) {
+    setLang(code);
+    try { localStorage.setItem("sayyara_lang", code); } catch (e) {}
+  }
+
+  useEffect(() => {
+    async function loadRating() {
+      if (!currentDriver?.profile?.id) { setRating(null); return; }
+      const { data } = await supabase.from("ratings").select("rating").eq("rating_type", "driver").eq("target_id", String(currentDriver.profile.id)).eq("status", "visible");
+      if (data && data.length > 0) setRating((data.reduce((s, r) => s + r.rating, 0) / data.length).toFixed(1));
+    }
+    loadRating();
+  }, [currentDriver]);
+
+  function handleSignOut() {
+    if (currentDriver) {
+      driverLogout();
+    } else {
+      try { localStorage.removeItem("sayyara_chat_name"); localStorage.removeItem("sayyara_chat_phone"); } catch (e) {}
+      navigate("home");
+    }
+  }
+
   return (
     <div style={{ color: TEXT }}>
       <Header title="Profile" onBack={goBack} />
       <div className="px-5 flex flex-col items-center text-center mb-5">
-        <div className="w-20 h-20 rounded-full flex items-center justify-center text-xl font-semibold" style={{ background: BORDER, color: GOLD }}>MI</div>
-        <h2 className="mt-3 text-base font-semibold">{profile.name}</h2>
-        <p className="text-xs flex items-center gap-1 mt-1" style={{ color: MUTE }}><Star size={11} color={GOLD} /> 4.9 · {profile.city}</p>
+        <div className="w-20 h-20 rounded-full flex items-center justify-center text-xl font-semibold" style={{ background: BORDER, color: GOLD }}>{identity.name.charAt(0).toUpperCase()}</div>
+        <h2 className="mt-3 text-base font-semibold">{identity.name}</h2>
+        <p className="text-xs flex items-center gap-1 mt-1" style={{ color: MUTE }}>
+          {rating && <><Star size={11} color={GOLD} /> {rating} · </>}Riyadh, Saudi Arabia
+        </p>
+        {identity.type && (
+          <span className="inline-block mt-2 px-2.5 py-1 rounded-full text-[10px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>{identity.type}</span>
+        )}
       </div>
       <div className="px-5 mb-5">
         <div className="rounded-2xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><Phone size={14} color={FAINT} /><span className="text-sm">{profile.phone}</span></div>
-          <div className="flex items-center gap-3 py-3"><Mail size={14} color={FAINT} /><span className="text-sm">{profile.email}</span></div>
+          <div className="flex items-center gap-3 py-3"><Phone size={14} color={FAINT} /><span className="text-sm">{identity.id}</span></div>
         </div>
       </div>
       <div className="px-5 mb-5 flex flex-col gap-2">
+        {currentDriver?.type === "driver" && (
+          <button onClick={() => navigate("driver_edit_profile")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <span className="flex items-center gap-3 text-sm"><User size={15} color={GOLD} /> Edit profile / My ID</span>
+            <ChevronRight size={14} color="#5C736D" />
+          </button>
+        )}
+        <button onClick={() => setShowLangPicker(true)} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><Globe size={15} color={GOLD} /> Language</span>
+          <span className="flex items-center gap-1 text-xs" style={{ color: FAINT }}>{lang.toUpperCase()} <ChevronRight size={14} color="#5C736D" /></span>
+        </button>
+        <button onClick={() => navigate("wallet")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><DollarSign size={15} color={GOLD} /> Payments & wallet</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
+        <button onClick={() => navigate("activity")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><Route size={15} color={GOLD} /> Ride history</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
+        <button onClick={() => navigate("friends")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><MessageCircle size={15} color={GOLD} /> Friends & family chat</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
         <button onClick={() => navigate("driver")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <span className="flex items-center gap-3 text-sm"><Car size={15} color={GOLD} /> Switch to driver mode</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
+        <button onClick={() => navigate("notifications")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><Bell size={15} color={GOLD} /> Notifications</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
+        <button onClick={() => navigate("home")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><Shield size={15} color={GOLD} /> Safety</span>
           <ChevronRight size={14} color="#5C736D" />
         </button>
         <a
@@ -3450,7 +3749,12 @@ function Profile({ goBack, navigate }) {
           <ChevronRight size={14} color="#5C736D" />
         </a>
       </div>
-      <div className="px-5"><button className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: "#C0755B" }}><LogOut size={15} /> Log out</button></div>
+      <div className="px-5">
+        <button onClick={handleSignOut} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: "#C0755B" }}>
+          <LogOut size={15} /> {currentDriver ? "Sign out" : "Reset guest ID"}
+        </button>
+      </div>
+      {showLangPicker && <LanguagePicker lang={lang} setLang={updateLang} onClose={() => setShowLangPicker(false)} />}
     </div>
   );
 }
@@ -3669,24 +3973,21 @@ function WelcomeScreen({ navigate }) {
           <span className="flex items-center gap-1.5"><MapPin size={12} color={GREEN} /> All major cities</span>
         </div>
 
-        <button onClick={() => navigate("home")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: GOLD, color: BG, boxShadow: "0 8px 20px rgba(217,166,83,0.3)" }}>
-          Continue as passenger
+        <button onClick={() => navigate("passenger_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: GOLD, color: BG, boxShadow: "0 8px 20px rgba(217,166,83,0.3)" }}>
+          Log in / Sign up as passenger
         </button>
-        <button onClick={() => navigate("driver_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-3" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+        <button onClick={() => navigate("driver_login")} className="w-full max-w-sm rounded-full py-4 text-sm font-semibold mb-5" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
           Driver login / sign up
-        </button>
-        <button onClick={() => navigate("home")} className="w-full max-w-sm rounded-full py-3.5 text-sm font-semibold mb-5" style={{ background: "transparent", border: `1px solid ${FAINT}`, color: MUTE }}>
-          Continue as visitor
         </button>
 
         <div className="w-full max-w-sm rounded-2xl px-4 py-4 mb-4" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
-          <p className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: FAINT }}>Register a business</p>
+          <p className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: FAINT }}>Apply as a business (subject to review)</p>
           <button onClick={() => navigate("register_fleet")} className="w-full mb-2 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
-            <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: TEXT }}><Users size={15} color={GREEN} /> Register your company</span>
+            <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: TEXT }}><Users size={15} color={GREEN} /> Apply to register your company</span>
             <ChevronRight size={14} color={GREEN} />
           </button>
           <button onClick={() => navigate("register_rental")} className="w-full mb-2 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
-            <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: TEXT }}><Key size={15} color={GOLD} /> Own a car? List it for rent</span>
+            <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: TEXT }}><Key size={15} color={GOLD} /> Own a car? Apply to list it for rent</span>
             <ChevronRight size={14} color={GOLD} />
           </button>
           <button onClick={() => navigate("company_login")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "transparent", border: `1px solid ${BORDER}` }}>
@@ -4049,6 +4350,10 @@ function DriverProfile({ goBack, navigate, currentDriver, onLogout }) {
       )}
 
       <div className="px-5 mb-5 flex flex-col gap-2">
+        <button onClick={() => navigate("driver_edit_profile")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <span className="flex items-center gap-3 text-sm"><User size={15} color={GOLD} /> Edit profile</span>
+          <ChevronRight size={14} color="#5C736D" />
+        </button>
         <button onClick={() => navigate("driver_trips")} className="w-full flex items-center justify-between rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <span className="flex items-center gap-3 text-sm"><Route size={15} color={GOLD} /> Trip history & earnings</span>
           <ChevronRight size={14} color="#5C736D" />
@@ -4074,6 +4379,97 @@ function DriverProfile({ goBack, navigate, currentDriver, onLogout }) {
       <div className="px-5">
         <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: "#C0755B" }}>
           <LogOut size={15} /> Log out
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- DRIVER EDIT PROFILE ---------- */
+function DriverEditProfile({ goBack, currentDriver, setCurrentDriver }) {
+  const profile = currentDriver?.profile;
+  const [fullName, setFullName] = useState(profile?.full_name || "");
+  const [mobile, setMobile] = useState(profile?.mobile_number || "");
+  const [iqama, setIqama] = useState(profile?.iqama_number || "");
+  const [vehicleNumber, setVehicleNumber] = useState(profile?.vehicle_number || "");
+  const [cityType, setCityType] = useState(profile?.city_type || "inside_city");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  if (!profile) {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="Edit profile" onBack={goBack} />
+        <div className="px-5 flex flex-col items-center text-center py-12">
+          <User size={32} color={FAINT} />
+          <p className="text-sm font-semibold mt-3">No profile loaded</p>
+        </div>
+      </div>
+    );
+  }
+
+  async function save() {
+    if (!fullName.trim() || !mobile.trim() || !iqama.trim() || !vehicleNumber.trim()) {
+      setError("Please fill in all fields.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    const { data, error: updErr } = await supabase
+      .from("drivers")
+      .update({
+        full_name: fullName.trim(),
+        mobile_number: mobile.trim(),
+        iqama_number: iqama.trim(),
+        vehicle_number: vehicleNumber.trim(),
+        city_type: cityType,
+      })
+      .eq("id", profile.id)
+      .select()
+      .maybeSingle();
+    setSaving(false);
+    if (updErr) {
+      setError(updErr.message.includes("duplicate") ? "That mobile number or Iqama is already in use." : "Could not save changes. Please try again.");
+      return;
+    }
+    setCurrentDriver({ ...currentDriver, profile: data });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Edit profile" onBack={goBack} />
+      <div className="px-5 flex flex-col gap-3 mb-4">
+        <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <User size={14} color={GOLD} />
+          <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+        </div>
+        <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <Phone size={14} color={GOLD} />
+          <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+        </div>
+        <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <User size={14} color={GOLD} />
+          <input value={iqama} onChange={(e) => setIqama(e.target.value)} placeholder="Iqama number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+        </div>
+        <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <Car size={14} color={GOLD} />
+          <input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} placeholder="Vehicle number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+        </div>
+        <div className="rounded-xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <select value={cityType} onChange={(e) => setCityType(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+            <option value="inside_city" style={{ background: CARD }}>Inside-city driver</option>
+            <option value="intercity" style={{ background: CARD }}>Outside-city driver</option>
+          </select>
+        </div>
+      </div>
+      {error && <p className="px-5 text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+      {saved && <p className="px-5 text-[12px] mb-3" style={{ color: GREEN }}>Saved!</p>}
+      <div className="px-5">
+        <button onClick={save} disabled={saving} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: saving ? BORDER : GOLD, color: saving ? "#5C736D" : BG }}>
+          {saving ? "Saving…" : "Save changes"}
         </button>
       </div>
     </div>
@@ -4225,6 +4621,10 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
   const ICE_SERVERS = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:openrelay.metered.ca:80" },
+    { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
   ];
 
   function getCallChannel() {
@@ -4579,7 +4979,7 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
                 ) : m.image_url ? (
                   <img src={m.image_url} alt="Shared" loading="lazy" className="rounded-lg" style={{ maxWidth: 200, maxHeight: 200 }} />
                 ) : m.location_lat ? (
-                  <a href={`https://www.google.com/maps?q=${m.location_lat},${m.location_lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs underline" style={{ color: mine ? BG : GREEN }}>
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${m.location_lat},${m.location_lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs underline" style={{ color: mine ? BG : GREEN }}>
                     <MapPin size={12} /> {m.body}
                   </a>
                 ) : (
@@ -4622,6 +5022,563 @@ function RideChat({ bookingRef, contextLabel, onClose, senderRole, senderName })
           </button>
           <button onClick={send} disabled={sending || !text.trim() || recording} aria-label="Send message" className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}><Send size={14} color={BG} /></button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- FRIENDS & FAMILY ---------- */
+function FriendsListScreen({ goBack, navigate, setActiveFriendChat }) {
+  const [myPhone, setMyPhone] = useState("");
+  const [myName, setMyName] = useState("");
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const [friends, setFriends] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [addPhone, setAddPhone] = useState("");
+  const [error, setError] = useState("");
+  const [showEditMe, setShowEditMe] = useState(false);
+
+  useEffect(() => {
+    const storedPhone = localStorage.getItem("sayyara_chat_phone") || "";
+    const storedName = localStorage.getItem("sayyara_chat_name") || "";
+    if (!storedPhone || !storedName) {
+      setNeedsSetup(true);
+      setLoading(false);
+    } else {
+      setMyPhone(storedPhone);
+      setMyName(storedName);
+      loadFriends(storedPhone);
+    }
+  }, []);
+
+  async function loadFriends(phone) {
+    setLoading(true);
+    const { data } = await supabase.from("friends").select("*").eq("owner_phone", phone).order("friend_name", { ascending: true });
+    setFriends(data || []);
+    setLoading(false);
+  }
+
+  function saveMyIdentity() {
+    if (!myName.trim() || !myPhone.trim()) { setError("Enter your name and mobile number."); return; }
+    localStorage.setItem("sayyara_chat_name", myName.trim());
+    localStorage.setItem("sayyara_chat_phone", myPhone.trim());
+    setNeedsSetup(false);
+    setShowEditMe(false);
+    setError("");
+    loadFriends(myPhone.trim());
+  }
+
+  async function addFriend() {
+    if (!addName.trim() || !addPhone.trim()) { setError("Enter a name and mobile number."); return; }
+    if (addPhone.trim() === myPhone) { setError("That's your own number."); return; }
+    setError("");
+    const { error: insErr } = await supabase.from("friends").upsert({
+      owner_phone: myPhone, owner_name: myName, friend_phone: addPhone.trim(), friend_name: addName.trim(),
+    }, { onConflict: "owner_phone,friend_phone" });
+    if (insErr) { setError("Couldn't add contact. Try again."); return; }
+    setAddName(""); setAddPhone(""); setShowAdd(false);
+    loadFriends(myPhone);
+  }
+
+  async function removeFriend(id) {
+    await supabase.from("friends").delete().eq("id", id);
+    loadFriends(myPhone);
+  }
+
+  function openChat(friend) {
+    setActiveFriendChat({ phone: friend.friend_phone, name: friend.friend_name, myPhone, myName });
+    navigate("friend_chat");
+  }
+
+  if (needsSetup) {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="Friends & Family" onBack={goBack} />
+        <div className="px-5">
+          <p className="text-sm mb-4" style={{ color: MUTE }}>Set up your name and mobile number once so friends recognize your messages.</p>
+          <div className="flex flex-col gap-3 mb-4">
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <User size={14} color={GOLD} />
+              <input value={myName} onChange={(e) => setMyName(e.target.value)} placeholder="Your name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Phone size={14} color={GOLD} />
+              <input value={myPhone} onChange={(e) => setMyPhone(e.target.value)} placeholder="Your mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+          </div>
+          {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+          <button onClick={saveMyIdentity} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Continue</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Friends & Family" onBack={goBack} />
+      <div className="px-5 mb-4 flex items-center justify-between">
+        <p className="text-xs" style={{ color: FAINT }}>Chatting as <span style={{ color: TEXT, fontWeight: 600 }}>{myName}</span></p>
+        <button onClick={() => setShowEditMe(true)} className="text-[11px] underline" style={{ color: GOLD }}>Edit</button>
+      </div>
+      <div className="px-5 mb-4">
+        <button onClick={() => setShowAdd(true)} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+          <Plus size={15} /> Add friend or family
+        </button>
+      </div>
+      {loading && <div className="px-5 flex flex-col gap-2">{[1, 2, 3].map((i) => <SkeletonRow key={i} />)}</div>}
+      {!loading && friends.length === 0 && (
+        <EmptyState icon={Users} title="No contacts yet" subtitle="Add a friend or family member's mobile number to start chatting." />
+      )}
+      <div className="px-5 flex flex-col gap-2">
+        {friends.map((f) => (
+          <div key={f.id} className="w-full flex items-center gap-3 rounded-2xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <button onClick={() => openChat(f)} className="flex items-center gap-3 flex-1 text-left min-w-0">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0" style={{ background: BORDER, color: GOLD }}>{f.friend_name.charAt(0)}</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate">{f.friend_name}</p>
+                <p className="text-[11px]" style={{ color: FAINT }}>{f.friend_phone}</p>
+              </div>
+              <ChevronRight size={14} color="#5C736D" />
+            </button>
+            <button onClick={() => removeFriend(f.id)} aria-label="Remove contact"><X size={14} color={FAINT} /></button>
+          </div>
+        ))}
+      </div>
+
+      {showAdd && (
+        <div className="fixed inset-0 flex items-end justify-center z-50" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setShowAdd(false)}>
+          <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold">Add contact</h2>
+              <button onClick={() => setShowAdd(false)}><X size={18} color={MUTE} /></button>
+            </div>
+            <div className="flex flex-col gap-3 mb-4">
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <User size={14} color={GOLD} />
+                <input value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="Name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <Phone size={14} color={GOLD} />
+                <input value={addPhone} onChange={(e) => setAddPhone(e.target.value)} placeholder="Mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+            </div>
+            {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+            <button onClick={addFriend} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Add contact</button>
+          </div>
+        </div>
+      )}
+
+      {showEditMe && (
+        <div className="fixed inset-0 flex items-end justify-center z-50" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setShowEditMe(false)}>
+          <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold">Your info</h2>
+              <button onClick={() => setShowEditMe(false)}><X size={18} color={MUTE} /></button>
+            </div>
+            <div className="flex flex-col gap-3 mb-4">
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <User size={14} color={GOLD} />
+                <input value={myName} onChange={(e) => setMyName(e.target.value)} placeholder="Your name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <Phone size={14} color={GOLD} />
+                <input value={myPhone} onChange={(e) => setMyPhone(e.target.value)} placeholder="Your mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+            </div>
+            {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+            <button onClick={saveMyIdentity} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Save</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FriendChatScreen({ goBack, activeFriendChat }) {
+  const friend = activeFriendChat;
+  const me = { phone: friend?.myPhone, name: friend?.myName };
+  const threadId = friend ? `friend:${[me.phone, friend.phone].sort().join("_")}` : null;
+  const [items, setItems] = useState([]);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordError, setRecordError] = useState("");
+  const [otherTyping, setOtherTyping] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const scrollRef = useRef(null);
+
+  /* ---- Voice call (WebRTC, signaled over Supabase Realtime broadcast) ---- */
+  const [callState, setCallState] = useState("idle"); // idle | calling | ringing | connected
+  const [callError, setCallError] = useState("");
+  const [callSeconds, setCallSeconds] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const pcRef = useRef(null);
+  const callChannelRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const callTimerRef = useRef(null);
+  const ringTimeoutRef = useRef(null);
+  const pendingOfferRef = useRef(null);
+  const ICE_SERVERS = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:openrelay.metered.ca:80" },
+    { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+  ];
+
+  function getCallChannel() {
+    if (!callChannelRef.current && threadId) {
+      callChannelRef.current = supabase.channel(`call:${threadId}`, { config: { broadcast: { self: false } } });
+      callChannelRef.current
+        .on("broadcast", { event: "signal" }, ({ payload }) => handleSignal(payload))
+        .subscribe();
+    }
+    return callChannelRef.current;
+  }
+
+  useEffect(() => {
+    if (!threadId) return;
+    getCallChannel();
+    return () => {
+      endCall(false);
+      if (callChannelRef.current) { supabase.removeChannel(callChannelRef.current); callChannelRef.current = null; }
+    };
+  }, [threadId]);
+
+  function sendSignal(data) {
+    const ch = getCallChannel();
+    if (ch) ch.send({ type: "broadcast", event: "signal", payload: { ...data, from: me.phone } });
+  }
+
+  function newPeerConnection() {
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    pc.onicecandidate = (e) => { if (e.candidate) sendSignal({ kind: "ice", candidate: e.candidate }); };
+    pc.ontrack = (e) => { if (remoteAudioRef.current) remoteAudioRef.current.srcObject = e.streams[0]; };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "connected") {
+        setCallState("connected");
+        setCallError("");
+        callTimerRef.current = setInterval(() => setCallSeconds((s) => s + 1), 1000);
+      }
+      if (["failed", "disconnected", "closed"].includes(pc.connectionState) && callState !== "idle") {
+        if (pc.connectionState === "failed") setCallError("Call connection failed — this can happen on some mobile networks.");
+      }
+    };
+    pcRef.current = pc;
+    return pc;
+  }
+
+  async function startCall() {
+    setCallError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+      const pc = newPeerConnection();
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sendSignal({ kind: "offer", sdp: offer, callerName: me.name });
+      setCallState("calling");
+      ringTimeoutRef.current = setTimeout(() => { if (callState !== "connected") { setCallError("No answer."); endCall(true); } }, 30000);
+    } catch (e) {
+      setCallError("Couldn't access your microphone. Check browser permissions.");
+    }
+  }
+
+  async function acceptCall() {
+    const offerPayload = pendingOfferRef.current;
+    if (!offerPayload) return;
+    setCallError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+      const pc = newPeerConnection();
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      await pc.setRemoteDescription(new RTCSessionDescription(offerPayload.sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sendSignal({ kind: "answer", sdp: answer });
+      setCallState("connected");
+    } catch (e) {
+      setCallError("Couldn't access your microphone. Check browser permissions.");
+      declineCall();
+    }
+  }
+
+  function declineCall() {
+    sendSignal({ kind: "hangup" });
+    pendingOfferRef.current = null;
+    setCallState("idle");
+  }
+
+  function endCall(notify = true) {
+    if (notify && callState !== "idle") sendSignal({ kind: "hangup" });
+    if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
+    if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+    if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
+    if (localStreamRef.current) { localStreamRef.current.getTracks().forEach((t) => t.stop()); localStreamRef.current = null; }
+    pendingOfferRef.current = null;
+    setCallSeconds(0);
+    setMuted(false);
+    setCallState("idle");
+  }
+
+  function toggleMute() {
+    if (!localStreamRef.current) return;
+    localStreamRef.current.getAudioTracks().forEach((t) => { t.enabled = muted; });
+    setMuted((m) => !m);
+  }
+
+  function handleSignal(payload) {
+    if (payload.from === me.phone) return;
+    if (payload.kind === "offer") {
+      if (callState !== "idle") { const ch = getCallChannel(); if (ch) ch.send({ type: "broadcast", event: "signal", payload: { kind: "hangup", from: me.phone } }); return; }
+      pendingOfferRef.current = payload;
+      setCallState("ringing");
+    } else if (payload.kind === "answer") {
+      if (pcRef.current) pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+    } else if (payload.kind === "ice") {
+      if (pcRef.current) pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(() => {});
+    } else if (payload.kind === "hangup") {
+      endCall(false);
+    }
+  }
+
+  function formatCallTime(s) {
+    const m = Math.floor(s / 60), sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  }
+
+  async function load() {
+    if (!threadId) return;
+    const { data } = await supabase.from("messages").select("*").eq("context", "friend").eq("booking_ref", threadId).order("created_at", { ascending: true });
+    setItems(data || []);
+    const unread = (data || []).filter((m) => m.sender_phone !== me.phone && !m.read);
+    if (unread.length > 0) await supabase.from("messages").update({ read: true }).in("id", unread.map((m) => m.id));
+  }
+
+  async function pollTyping() {
+    if (!threadId) return;
+    const { data } = await supabase.from("chat_typing").select("*").eq("booking_ref", threadId).eq("role", friend.phone).maybeSingle();
+    if (data) {
+      const secondsAgo = (Date.now() - new Date(data.updated_at).getTime()) / 1000;
+      setOtherTyping(secondsAgo < 4);
+    } else setOtherTyping(false);
+  }
+
+  useEffect(() => {
+    if (!threadId) return;
+    load();
+    const interval = setInterval(() => { if (!document.hidden) { load(); pollTyping(); } }, 3000);
+    return () => clearInterval(interval);
+  }, [threadId]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [items, otherTyping]);
+
+  function notifyTyping() {
+    if (!threadId) return;
+    supabase.from("chat_typing").upsert({ booking_ref: threadId, role: me.phone, updated_at: new Date().toISOString() }).then(() => {});
+  }
+
+  async function send() {
+    if (!text.trim() || !threadId) return;
+    setSending(true);
+    await supabase.from("messages").insert({
+      context: "friend", reference_title: friend.name, booking_ref: threadId,
+      sender_role: me.phone, sender_name: me.name, sender_phone: me.phone, recipient_phone: friend.phone,
+      body: text.trim(),
+    });
+    setText("");
+    setSending(false);
+    load();
+  }
+
+  async function startRecording() {
+    setRecordError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        await uploadVoice(blob);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+    } catch (e) {
+      setRecordError("Couldn't access your microphone. Check browser permissions.");
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorderRef.current) mediaRecorderRef.current.stop();
+    setRecording(false);
+  }
+
+  async function uploadVoice(blob) {
+    setSending(true);
+    try {
+      const fileName = `${threadId}-${Date.now()}.webm`;
+      const { error: uploadError } = await supabase.storage.from("voice-messages").upload(fileName, blob, { contentType: "audio/webm" });
+      if (uploadError) throw uploadError;
+      const { data: publicData } = supabase.storage.from("voice-messages").getPublicUrl(fileName);
+      await supabase.from("messages").insert({
+        context: "friend", reference_title: friend.name, booking_ref: threadId,
+        sender_role: me.phone, sender_name: me.name, sender_phone: me.phone, recipient_phone: friend.phone,
+        body: "🎤 Voice message", audio_url: publicData.publicUrl,
+      });
+      load();
+    } catch (e) {
+      setRecordError("Couldn't send voice message. Please try again.");
+    }
+    setSending(false);
+  }
+
+  async function uploadImage(file) {
+    if (!file || !threadId) return;
+    setSending(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const fileName = `${threadId}-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("chat-images").upload(fileName, file);
+      if (uploadError) throw uploadError;
+      const { data: publicData } = supabase.storage.from("chat-images").getPublicUrl(fileName);
+      await supabase.from("messages").insert({
+        context: "friend", reference_title: friend.name, booking_ref: threadId,
+        sender_role: me.phone, sender_name: me.name, sender_phone: me.phone, recipient_phone: friend.phone,
+        body: "📷 Photo", image_url: publicData.publicUrl,
+      });
+      load();
+    } catch (e) {
+      setRecordError("Couldn't send image. Please try again.");
+    }
+    setSending(false);
+  }
+
+  function shareLocation() {
+    setSending(true);
+    detectLocation({
+      onSuccess: async ({ lat, lng, label }) => {
+        await supabase.from("messages").insert({
+          context: "friend", reference_title: friend.name, booking_ref: threadId,
+          sender_role: me.phone, sender_name: me.name, sender_phone: me.phone, recipient_phone: friend.phone,
+          body: `📍 ${label}`, location_lat: lat, location_lng: lng,
+        });
+        setSending(false);
+        load();
+      },
+      onError: () => { setRecordError("Couldn't get your location."); setSending(false); },
+    });
+  }
+
+  if (!friend) {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="Chat" onBack={goBack} />
+        <div className="px-5 flex flex-col items-center text-center py-12">
+          <MessageCircle size={32} color={FAINT} />
+          <p className="text-sm font-semibold mt-3">No chat selected</p>
+          <p className="text-xs mt-1" style={{ color: FAINT }}>Go back and pick a contact from Friends & Family.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ color: TEXT }} className="flex flex-col">
+      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: "none" }} />
+      {callState !== "idle" && (
+        <div className="fixed inset-0 flex flex-col items-center justify-center z-[60]" style={{ background: BG }}>
+          <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6" style={{ background: "rgba(217,166,83,0.14)" }}>
+            <PhoneCall size={36} color={GOLD} className={callState !== "connected" ? "animate-pulse" : ""} />
+          </div>
+          <p className="text-lg font-semibold" style={{ color: TEXT }}>{friend.name}</p>
+          <p className="text-sm mt-2" style={{ color: MUTE }}>
+            {callState === "calling" && "Calling…"}
+            {callState === "ringing" && "Incoming call…"}
+            {callState === "connected" && formatCallTime(callSeconds)}
+          </p>
+          {callError && <p className="text-xs mt-3 text-center px-8" style={{ color: "#C0755B" }}>{callError}</p>}
+          <div className="flex items-center gap-6 mt-10">
+            {callState === "ringing" ? (
+              <>
+                <button onClick={declineCall} className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "#C0755B" }}><PhoneOff size={22} color="#fff" /></button>
+                <button onClick={acceptCall} className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: GREEN }}><PhoneCall size={22} color="#fff" /></button>
+              </>
+            ) : (
+              <>
+                {callState === "connected" && (
+                  <button onClick={toggleMute} className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: muted ? GOLD : BORDER }}>
+                    <Mic size={20} color={muted ? BG : TEXT} />
+                  </button>
+                )}
+                <button onClick={() => endCall(true)} className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "#C0755B" }}><PhoneOff size={22} color="#fff" /></button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      <Header title={friend.name} onBack={goBack} right={
+        <button onClick={startCall} aria-label="Start voice call" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}>
+          <PhoneCall size={16} color={GREEN} />
+        </button>
+      } />
+      <p className="px-5 -mt-3 mb-2 text-[11px]" style={{ color: FAINT }}>{otherTyping ? "typing…" : friend.phone}</p>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-2 flex flex-col gap-2" style={{ minHeight: "55vh", maxHeight: "65vh" }}>
+        {items.length === 0 && (
+          <p className="text-xs text-center mt-6" style={{ color: FAINT }}>Send a message to {friend.name} to start chatting.</p>
+        )}
+        {items.map((m) => {
+          const mine = m.sender_phone === me.phone;
+          return (
+            <div key={m.id} className={`max-w-[80%] rounded-xl px-3.5 py-2.5 ${mine ? "self-end" : "self-start"}`} style={{ background: mine ? GOLD : CARD, border: mine ? "none" : `1px solid ${BORDER}` }}>
+              {m.audio_url ? (
+                <audio controls src={m.audio_url} style={{ height: 32, width: 180 }} />
+              ) : m.image_url ? (
+                <img src={m.image_url} alt="Shared" loading="lazy" className="rounded-lg" style={{ maxWidth: 200, maxHeight: 200 }} />
+              ) : m.location_lat ? (
+                <a href={`https://www.google.com/maps/search/?api=1&query=${m.location_lat},${m.location_lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs underline" style={{ color: mine ? BG : GREEN }}>
+                  <MapPin size={12} /> {m.body}
+                </a>
+              ) : (
+                <p className="text-xs" style={{ color: mine ? BG : TEXT }}>{m.body}</p>
+              )}
+              <p className="text-[9px] mt-1" style={{ color: mine ? "rgba(15,33,30,0.6)" : FAINT }}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+            </div>
+          );
+        })}
+      </div>
+      {recordError && <p className="px-5 text-[11px] mb-1" style={{ color: "#C0755B" }}>{recordError}</p>}
+      <div className="flex items-center gap-1.5 px-5 py-4" style={{ borderTop: `1px solid ${BORDER}` }}>
+        <input value={text} onChange={(e) => { setText(e.target.value); notifyTyping(); }} onKeyDown={(e) => e.key === "Enter" && send()} placeholder={recording ? "Recording…" : "Type a message…"} disabled={recording} className="flex-1 rounded-full px-4 py-2.5 text-sm outline-none min-w-0" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+        <label className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer" style={{ background: "rgba(217,166,83,0.14)" }}>
+          <ImageIcon size={14} color={GOLD} />
+          <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadImage(e.target.files[0])} disabled={sending} />
+        </label>
+        <button onClick={shareLocation} disabled={sending} aria-label="Share location" className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(217,166,83,0.14)" }}>
+          <MapPin size={14} color={GOLD} />
+        </button>
+        <button
+          onClick={recording ? stopRecording : startRecording}
+          disabled={sending}
+          aria-label={recording ? "Stop recording" : "Record voice message"}
+          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: recording ? "#C0755B" : "rgba(91,143,212,0.16)" }}
+        >
+          <Mic size={14} color={recording ? "#fff" : GREEN} className={recording ? "animate-pulse" : ""} />
+        </button>
+        <button onClick={send} disabled={sending || !text.trim() || recording} aria-label="Send message" className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: GOLD }}><Send size={14} color={BG} /></button>
       </div>
     </div>
   );
@@ -5732,7 +6689,7 @@ function AdminRideChats({ goBack }) {
             ) : m.image_url ? (
               <img src={m.image_url} alt="Shared" loading="lazy" className="rounded-lg" style={{ maxWidth: 200, maxHeight: 200 }} />
             ) : m.location_lat ? (
-              <a href={`https://www.google.com/maps?q=${m.location_lat},${m.location_lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs underline" style={{ color: m.sender_role === "passenger" ? GREEN : BG }}>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${m.location_lat},${m.location_lng}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs underline" style={{ color: m.sender_role === "passenger" ? GREEN : BG }}>
                 <MapPin size={12} /> {m.body}
               </a>
             ) : (
@@ -6108,6 +7065,7 @@ export default function SayyaraDriveApp() {
   const isAdminLink = typeof window !== "undefined" && window.location.search.includes("owner2026");
   const [history, setHistory] = useState([isAdminLink ? "admin_login" : "welcome"]);
   const [currentDriver, setCurrentDriver] = useState(null);
+  const [activeFriendChat, setActiveFriendChat] = useState(null);
   const [currentCompany, setCurrentCompany] = useState(null);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   useEffect(() => {
@@ -6122,7 +7080,13 @@ export default function SayyaraDriveApp() {
   }, []);
   const [currentAdmin, setCurrentAdmin] = useState(null);
   const [sessionChecked, setSessionChecked] = useState(false);
-  const [lang, setLang] = useState("en");
+  const [lang, setLangRaw] = useState(() => {
+    try { return localStorage.getItem("sayyara_lang") || "en"; } catch (e) { return "en"; }
+  });
+  function setLang(code) {
+    setLangRaw(code);
+    try { localStorage.setItem("sayyara_lang", code); } catch (e) {}
+  }
   const screen = history[history.length - 1];
 
   // App-wide crash reporting — catches real errors, no third-party service needed
@@ -6228,13 +7192,16 @@ export default function SayyaraDriveApp() {
 
   const SCREEN_MAP = {
     welcome: <WelcomeScreen navigate={navigate} />,
-    home: <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />,
+    home: <Home navigate={navigate} lang={lang} setLang={setLang} t={t} currentDriver={currentDriver} driverLogout={driverLogout} />,
     ride: <BookRide goBack={goBack} />,
     driver: <DriverApp goBack={goBack} navigate={navigate} currentDriver={currentDriver} />,
     driver_profile: <DriverProfile goBack={goBack} navigate={navigate} currentDriver={currentDriver} onLogout={driverLogout} />,
+    driver_edit_profile: <DriverEditProfile goBack={goBack} currentDriver={currentDriver} setCurrentDriver={setCurrentDriver} />,
     driver_trips: <DriverTripHistory goBack={goBack} currentDriver={currentDriver} />,
     driver_documents: <DriverDocuments goBack={goBack} currentDriver={currentDriver} />,
     notifications: <NotificationsScreen goBack={goBack} currentDriver={currentDriver} currentAdmin={currentAdmin} />,
+    friends: <FriendsListScreen goBack={goBack} navigate={navigate} setActiveFriendChat={setActiveFriendChat} />,
+    friend_chat: <FriendChatScreen goBack={goBack} activeFriendChat={activeFriendChat} />,
     driver_messages: <DriverMessages goBack={goBack} currentDriver={currentDriver} />,
     push_settings: <PushSettings goBack={goBack} currentDriver={currentDriver} />,
     airport: <BookRide goBack={goBack} />,
@@ -6245,7 +7212,7 @@ export default function SayyaraDriveApp() {
     logistics: <Logistics goBack={goBack} navigate={navigate} />,
     jobs: <JobsPortal goBack={goBack} navigate={navigate} />,
     fleet: <FleetManagement goBack={goBack} navigate={navigate} />,
-    profile: <Profile goBack={goBack} navigate={navigate} />,
+    profile: <Profile goBack={goBack} navigate={navigate} currentDriver={currentDriver} driverLogout={driverLogout} />,
     activity: <TripHistory goBack={goBack} />,
     wallet: <WalletTab goBack={goBack} />,
     admin: currentAdmin ? <AdminOverview navigate={navigate} goBack={goBack} onLogout={() => { supabase.auth.signOut(); setCurrentAdmin(null); navigate("welcome"); }} /> : <AdminLogin goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAdmin} />,
