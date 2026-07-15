@@ -7167,7 +7167,7 @@ function relativeTimeFrom(iso) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function AdminListPage({ goBack, title, table, columns, showDriverActions, deletable, addFields, statusToggle, approvalActions, moderationToggle, resolveToggle, companyActions, passengerActions }) {
+function AdminListPage({ goBack, navigate, title, table, columns, showDriverActions, deletable, addFields, statusToggle, approvalActions, moderationToggle, resolveToggle, companyActions, passengerActions }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -7337,6 +7337,11 @@ function AdminListPage({ goBack, title, table, columns, showDriverActions, delet
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${title.toLowerCase()}…`} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
           {search && <button onClick={() => setSearch("")}><X size={14} color={FAINT} /></button>}
         </div>
+        {table === "rides" && (
+          <p className="text-[11px] mt-2" style={{ color: FAINT }}>
+            Only rides from the last 24h show here — older rides roll into <button onClick={() => navigate("admin_ride_stats")} className="underline font-semibold" style={{ color: GOLD }}>daily & monthly stats</button> automatically.
+          </p>
+        )}
       </div>
       {companyActions && (
         <div className="px-5 mb-4 grid grid-cols-3 gap-2">
@@ -7973,12 +7978,84 @@ function AdminAnalytics({ goBack }) {
   );
 }
 
-/* ---------- ADMIN DATA CLEANUP ---------- */
-function AdminDataCleanup({ goBack }) {
+/* ---------- ADMIN RIDE STATS (daily/monthly rollups) ---------- */
+function AdminRideStats({ goBack }) {
+  const [daily, setDaily] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase.from("ride_stats_daily").select("*").order("date", { ascending: false }).limit(90);
+      setDaily(data || []);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const monthly = {};
+  daily.forEach((d) => {
+    const key = d.date.slice(0, 7);
+    if (!monthly[key]) monthly[key] = { total: 0, completed: 0, cancelled: 0, requested: 0, other: 0 };
+    monthly[key].total += d.total;
+    monthly[key].completed += d.completed;
+    monthly[key].cancelled += d.cancelled;
+    monthly[key].requested += d.requested;
+    monthly[key].other += d.other;
+  });
+  const monthlyRows = Object.entries(monthly).sort((a, b) => b[0].localeCompare(a[0]));
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Ride Stats" onBack={goBack} />
+      <div className="px-5 mb-2">
+        <p className="text-[11px] font-semibold uppercase tracking-widest mb-2" style={{ color: FAINT }}>This month so far</p>
+      </div>
+      <div className="px-5 mb-5">
+        {monthlyRows.length === 0 && !loading ? (
+          <EmptyState icon={Route} title="No rollup data yet" subtitle="Stats appear once rides older than 24h are rolled up (automatic nightly, or from Data Cleanup)." />
+        ) : (
+          monthlyRows.map(([month, m]) => (
+            <div key={month} className="rounded-2xl px-4 py-3 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold">{new Date(month + "-01").toLocaleDateString(undefined, { month: "long", year: "numeric" })}</p>
+                <p className="text-sm font-bold" style={{ color: GOLD }}>{m.total} rides</p>
+              </div>
+              <div className="flex gap-3 text-[11px]" style={{ color: FAINT }}>
+                <span style={{ color: GREEN }}>{m.completed} completed</span>
+                <span style={{ color: "#C0755B" }}>{m.cancelled} cancelled</span>
+                <span>{m.requested} unfulfilled</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="px-5 mb-2">
+        <p className="text-[11px] font-semibold uppercase tracking-widest mb-2" style={{ color: FAINT }}>Daily breakdown</p>
+      </div>
+      <div className="px-5">
+        {loading && <div className="flex flex-col gap-2">{[1, 2, 3].map((i) => <SkeletonRow key={i} />)}</div>}
+        {!loading && daily.map((d) => (
+          <div key={d.date} className="rounded-xl px-4 py-2.5 mb-2 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <p className="text-xs font-semibold">{new Date(d.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
+            <div className="flex gap-2 text-[10px]" style={{ color: FAINT }}>
+              <span>{d.total} total</span>
+              <span style={{ color: GREEN }}>{d.completed} done</span>
+              <span style={{ color: "#C0755B" }}>{d.cancelled} cancelled</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+function AdminDataCleanup({ goBack, navigate }) {
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [cleaning, setCleaning] = useState(null);
   const [done, setDone] = useState("");
+  const [oldRidesCount, setOldRidesCount] = useState(0);
 
   const tasks = [
     { id: "old_crash_reports", label: "Error reports older than 30 days", table: "crash_reports", filter: (q) => q.lt("created_at", new Date(Date.now() - 30 * 86400000).toISOString()) },
@@ -7996,9 +8073,23 @@ function AdminDataCleanup({ goBack }) {
       results[t.id] = count || 0;
     }
     setCounts(results);
+    const { count: rideCount } = await supabase.from("rides").select("*", { count: "exact", head: true }).lt("created_at", new Date(Date.now() - 86400000).toISOString());
+    setOldRidesCount(rideCount || 0);
     setLoading(false);
   }
   useEffect(() => { loadCounts(); }, []);
+
+  async function runRidePurge() {
+    setCleaning("old_rides");
+    setDone("");
+    const { error } = await supabase.rpc("purge_old_rides");
+    if (!error) {
+      await supabase.from("audit_logs").insert({ action: "data_cleanup", target_table: "rides", target_label: "Rolled rides older than 24h into daily stats", performed_by: "admin" });
+      setDone("old_rides");
+    }
+    setCleaning(null);
+    loadCounts();
+  }
 
   async function runCleanup(task) {
     setCleaning(task.id);
@@ -8017,6 +8108,25 @@ function AdminDataCleanup({ goBack }) {
       <Header title="Data Cleanup" onBack={goBack} />
       <div className="px-5 mb-4">
         <p className="text-xs" style={{ color: MUTE }}>Remove old, resolved, or stale records to keep your database tidy. These actions can't be undone.</p>
+      </div>
+      <div className="px-5 mb-2">
+        <div className="rounded-xl px-4 py-3" style={{ background: "rgba(217,166,83,0.08)", border: `1px solid ${GOLD}` }}>
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="text-sm font-semibold">Rides older than 24 hours</p>
+              <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{loading ? "…" : `${oldRidesCount} ride${oldRidesCount !== 1 ? "s" : ""}`} · rolled into daily totals automatically at 3 AM, or tap to run now</p>
+            </div>
+            <button
+              onClick={runRidePurge}
+              disabled={cleaning === "old_rides" || oldRidesCount === 0}
+              className="px-3.5 py-1.5 rounded-full text-xs font-semibold shrink-0"
+              style={{ background: oldRidesCount === 0 ? BORDER : GOLD, color: oldRidesCount === 0 ? "#5C736D" : BG }}
+            >
+              {cleaning === "old_rides" ? "Rolling up…" : done === "old_rides" ? "Done ✓" : "Roll up now"}
+            </button>
+          </div>
+          <button onClick={() => navigate("admin_ride_stats")} className="text-[11px] underline" style={{ color: GOLD }}>View daily & monthly ride stats →</button>
+        </div>
       </div>
       <div className="px-5 flex flex-col gap-2">
         {tasks.map((t) => (
@@ -8406,7 +8516,7 @@ export default function SayyaraDriveApp() {
     admin_login: <AdminLogin goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAdmin} />,
     admin_drivers: <AdminListPage goBack={goBack} title="Drivers" table="drivers" showDriverActions deletable columns={[{key:"full_name",label:"Name"},{key:"iqama_number",label:"Iqama"},{key:"vehicle_number",label:"Vehicle"},{key:"mobile_number",label:"Mobile"},{key:"city_type",label:"City type"}]} />,
     admin_passengers: <AdminListPage goBack={goBack} title="Passengers" table="passengers" passengerActions columns={[{key:"full_name",label:"Name"},{key:"mobile_number",label:"Mobile"}]} />,
-    admin_rides: <AdminListPage goBack={goBack} title="Rides" table="rides" deletable columns={[{key:"ride_type",label:"Type"},{key:"pickup_label",label:"Pickup"},{key:"dropoff_label",label:"Dropoff"},{key:"city",label:"City"},{key:"status",label:"Status"}]} />,
+    admin_rides: <AdminListPage goBack={goBack} navigate={navigate} title="Rides" table="rides" deletable columns={[{key:"ride_type",label:"Type"},{key:"pickup_label",label:"Pickup"},{key:"dropoff_label",label:"Dropoff"},{key:"city",label:"City"},{key:"status",label:"Status"}]} />,
     admin_ratings: <AdminListPage goBack={goBack} title="Ratings & Reviews" table="ratings" deletable moderationToggle columns={[{key:"target_label",label:"About"},{key:"rating_type",label:"Type"},{key:"rating",label:"Stars"},{key:"review",label:"Review"},{key:"reviewer_name",label:"By"}]} />,
     admin_crash_reports: <AdminListPage goBack={goBack} title="Errors" table="crash_reports" deletable columns={[{key:"message",label:"Error"},{key:"url",label:"Page"},{key:"user_agent",label:"Device"}]} />,
     admin_reports: <AdminListPage goBack={goBack} title="Reports" table="reports" deletable resolveToggle columns={[{key:"reference_title",label:"Listing"},{key:"context",label:"Section"},{key:"reason",label:"Reason"}]} />,
@@ -8415,7 +8525,8 @@ export default function SayyaraDriveApp() {
     admin_audit_logs: <AdminListPage goBack={goBack} title="Audit Logs" table="audit_logs" columns={[{key:"action",label:"Action"},{key:"target_label",label:"Target"},{key:"performed_by",label:"By"},{key:"target_table",label:"Table"}]} />,
     admin_call_logs: <AdminListPage goBack={goBack} title="Calls" table="call_logs" columns={[{key:"caller_name",label:"Caller"},{key:"callee_name",label:"Callee"},{key:"connected",label:"Connected"},{key:"duration_seconds",label:"Duration (s)"}]} />,
     admin_fleet_routes: <AdminListPage goBack={goBack} title="Fleet Routes" table="fleet_routes" deletable columns={[{key:"route_name",label:"Route"},{key:"from_city",label:"From"},{key:"to_city",label:"To"}]} />,
-    admin_data_cleanup: <AdminDataCleanup goBack={goBack} />,
+    admin_data_cleanup: <AdminDataCleanup goBack={goBack} navigate={navigate} />,
+    admin_ride_stats: <AdminRideStats goBack={goBack} />,
     admin_security: <AdminSecurity goBack={goBack} />,
     admin_marketplace_listings: <AdminListPage goBack={goBack} title="Marketplace" table="marketplace_listings" deletable statusToggle columns={[{key:"title",label:"Title"},{key:"seller_name",label:"Seller"},{key:"price",label:"Price"},{key:"category",label:"Category"},{key:"location",label:"Location"}]} addFields={[{key:"title",label:"Title",required:true},{key:"price",label:"Price (SAR)",required:true},{key:"category",label:"Category",type:"select",options:["Cars","Electronics","Furniture","Fashion","Spare parts"],required:true},{key:"location",label:"City",required:true},{key:"seller_name",label:"Seller name"},{key:"seller_phone",label:"Seller phone"},{key:"condition",label:"Condition (e.g. Excellent, Like New)"},{key:"year",label:"Year (cars only)"},{key:"km",label:"Mileage (cars only)"},{key:"image_url",label:"Image URL (optional)"}]} />,
     admin_restaurants: <AdminListPage goBack={goBack} title="Restaurants" table="restaurants" deletable columns={[{key:"name",label:"Name"},{key:"cuisine",label:"Cuisine"},{key:"city",label:"City"},{key:"hours",label:"Hours"}]} addFields={[{key:"name",label:"Restaurant name",required:true},{key:"cuisine",label:"Cuisine (e.g. Arabic, Fast food)",required:true},{key:"city",label:"City",required:true},{key:"hours",label:"Hours (e.g. 10:00–23:00)"},{key:"food_category",label:"Photo type",type:"select",options:["rice","burger","dessert","pasta","butter-chicken"],required:true}]} />,
