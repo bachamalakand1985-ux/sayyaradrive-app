@@ -4490,6 +4490,12 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         setLoading(false);
         return;
       }
+      const { data: existingMobile } = await supabase.from(table).select("id").eq("mobile_number", mobile.trim()).maybeSingle();
+      if (existingMobile) {
+        setError(`This mobile number is already registered to a ${isDriver ? "driver" : "passenger"} account. Please log in instead.`);
+        setLoading(false);
+        return;
+      }
       // Profile row is created automatically by a database trigger in the same
       // transaction as the auth account — passing the details as signup metadata
       // avoids a race condition where a separate insert can fire before the
@@ -4512,11 +4518,7 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         const { data: found } = await supabase.from(table).select("*").eq("auth_user_id", authUserId).maybeSingle();
         if (found) profile = found;
       }
-      if (!profile) throw new Error("Account created, but your profile is still syncing — please try logging in again in a moment.");
-      // The signup trigger builds the profile row from auth metadata, which doesn't include
-      // email — store it separately so mobile-number login can look it up later.
-      await supabase.from(table).update({ email }).eq("id", profile.id);
-      profile.email = email;
+      if (!profile) throw new Error("Account created, but your profile couldn't be set up — this usually means the mobile number, username, or Iqama is already in use on another account. Try logging in instead, or use different details.");
       if (onLoggedIn) onLoggedIn({ email, type: isDriver ? "driver" : "passenger", profile });
       rememberEmail();
       setSuccess(true);
@@ -6496,7 +6498,7 @@ function CompanyAuthScreen({ goBack, navigate, onLoggedIn }) {
         const { data: found } = await supabase.from("companies").select("*").eq("auth_user_id", authUserId).maybeSingle();
         if (found) profile = found;
       }
-      if (!profile) throw new Error("Account created, but your profile is still syncing — please try logging in again in a moment.");
+      if (!profile) throw new Error("Account created, but your profile couldn't be set up — this usually means the mobile number, CR number, or email is already in use on another company account. Try logging in instead.");
       if (onLoggedIn) onLoggedIn({ email, profile });
       setSuccess(true);
     } catch (e) {
@@ -8405,6 +8407,16 @@ export default function SayyaraDriveApp() {
 
   useEffect(() => {
     async function restoreSession() {
+      // A password-recovery link lands here with #...type=recovery in the URL.
+      // That still creates a valid session, so without this check the normal
+      // "already logged in" redirect below would race with it and win,
+      // sending the person to their dashboard instead of the reset screen.
+      const isRecoveryLink = typeof window !== "undefined" && window.location.hash.includes("type=recovery");
+      if (isRecoveryLink) {
+        setHistory(["reset_password"]);
+        setSessionChecked(true);
+        return;
+      }
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user?.email) {
