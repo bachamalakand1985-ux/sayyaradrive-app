@@ -385,10 +385,10 @@ const TRANSLATIONS = {
     ride: "Ride", cityRides: "City rides",
     airport: "Airport", transfers: "Transfers",
     intercity: "Outside city", cityToCity: "City to city",
-    rentals: "Rentals", rentACar: "Rent a car",
+    rentals: "Transport", rentACar: "Rent a car",
     marketplace: "Marketplace", buySell: "Buy & sell",
     food: "Food", delivery: "Delivery",
-    logistics: "Logistics", sendParcels: "Send parcels",
+    logistics: "Cargo Delivery", sendParcels: "Send parcels",
     jobs: "Jobs", driveEarn: "Drive & earn",
     fleet: "Fleet", manageCars: "Manage cars",
     useMyLocation: "Use my current location",
@@ -683,10 +683,10 @@ function EmptyState({ icon: Icon, title, subtitle, action }) {
 
 /* ---------- HOME ---------- */
 const SERVICES = [
-  { id: "rentals", label: "Rentals", sub: "Rent a car", subKey: "rentACar", icon: Key },
+  { id: "rentals", label: "Transport", sub: "Rent a car", subKey: "rentACar", icon: Key },
   { id: "market", label: "Marketplace", sub: "Buy & sell", subKey: "buySell", icon: ShoppingBag },
   { id: "food", label: "Food", sub: "Delivery", subKey: "delivery", icon: UtensilsCrossed },
-  { id: "logistics", label: "Logistics", sub: "Send parcels", subKey: "sendParcels", icon: Truck },
+  { id: "logistics", label: "Cargo Delivery", sub: "Send parcels", subKey: "sendParcels", icon: Truck },
   { id: "jobs", label: "Jobs", sub: "Drive & earn", subKey: "driveEarn", icon: Briefcase },
 ];
 
