@@ -773,16 +773,16 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
   return (
     <div className="pb-4 relative overflow-hidden" style={{ color: TEXT }} dir={RTL_LANGS.includes(lang) ? "rtl" : "ltr"}>
       <SkylineBackground opacity={0.9} />
-      <div className="relative flex items-center justify-between px-5 pt-6 pb-2">
-        <button onClick={() => setShowAppMenu(true)} aria-label="Menu" className="flex items-center gap-2 min-w-0">
+      <div className="relative flex items-center justify-between px-5 pt-6 pb-2 gap-1.5">
+        <button onClick={() => setShowAppMenu(true)} aria-label="Menu" className="flex items-center gap-2 min-w-0 shrink-0">
           <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: CARD }}><Menu size={18} color={TEXT} /></span>
           <span className="flex flex-col items-start leading-tight min-w-0">
-            <span className="text-xs font-semibold truncate max-w-[100px]" style={{ color: TEXT }}>{identity.name}</span>
-            <span className="text-[9px] truncate max-w-[100px]" style={{ color: FAINT }}>{identity.id}</span>
+            <span className="text-xs font-semibold truncate max-w-[88px]" style={{ color: TEXT }}>{identity.name}</span>
+            <span className="text-[9px] truncate max-w-[88px]" style={{ color: FAINT }}>{identity.id}</span>
           </span>
         </button>
-        <div className="text-[10px] uppercase" style={{ color: GREEN, letterSpacing: "0.25em" }}>Riyadh, Saudi Arabia</div>
-        <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0 text-center text-[9px] uppercase truncate" style={{ color: GREEN, letterSpacing: "0.12em" }}>Riyadh, Saudi Arabia</div>
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setShowLangPicker(true)}
             className="px-2.5 h-9 rounded-full flex items-center justify-center text-[11px] font-semibold"
@@ -2031,7 +2031,7 @@ const REGISTER_CONFIGS = {
   fleet_owner: {
     title: "Fleet company registration",
     icon: Users,
-    intro: "Register your company's fleet to manage multiple vehicles and drivers.",
+    intro: "Register your company's fleet. This creates your company listing pending verification. To log in and manage vehicles/drivers, also create a login via Company Sign Up using the same details.",
     detailFields: [
       { key: "companyName", label: "Company name", placeholder: "e.g. Al Rasheed Transport Co." },
       { key: "fleetSize", label: "Number of vehicles", placeholder: "e.g. 12" },
@@ -2068,7 +2068,7 @@ function PartnerRegister({ goBack, type }) {
     try {
       const detailsText = cfg.detailFields.map((f) => `${f.label}: ${details[f.key]}`).join(" · ");
       // Kept for your records — every application still logs here regardless of type.
-      await supabase.from("partner_applications").insert({
+      const { error: appError } = await supabase.from("partner_applications").insert({
         type,
         full_name: name,
         phone,
@@ -2078,13 +2078,16 @@ function PartnerRegister({ goBack, type }) {
         details: detailsText,
         status: "pending",
       });
+      if (appError) throw appError;
 
-      // Rentals, marketplace items, and restaurants publish live immediately —
-      // no manual review needed. Driver, fleet, and logistics applications still
-      // need a real account (handled separately via Login/Signup) so those stay
-      // as review-only applications above.
+      // Rentals, marketplace items, restaurants, and fleet companies publish live
+      // immediately — no manual review needed to appear in lists. Driver and
+      // logistics applications still need a real account (handled separately via
+      // Login/Signup) so those stay as review-only applications above. Fleet
+      // companies get a pending listing now, but still need Company Sign Up to
+      // get a real login for the dashboard.
       if (type === "rental_owner") {
-        await supabase.from("rental_listings").insert({
+        const { error: listingError } = await supabase.from("rental_listings").insert({
           owner_name: name,
           owner_phone: phone,
           provider: `Private owner — ${name}`,
@@ -2093,8 +2096,9 @@ function PartnerRegister({ goBack, type }) {
           city,
           status: "active",
         });
+        if (listingError) throw listingError;
       } else if (type === "seller") {
-        await supabase.from("marketplace_listings").insert({
+        const { error: listingError } = await supabase.from("marketplace_listings").insert({
           title: details.storeName || "New listing",
           category: details.category || "Other",
           location: city,
@@ -2102,19 +2106,32 @@ function PartnerRegister({ goBack, type }) {
           seller_phone: phone,
           status: "active",
         });
+        if (listingError) throw listingError;
       } else if (type === "food_partner") {
-        await supabase.from("restaurants").insert({
+        const { error: listingError } = await supabase.from("restaurants").insert({
           name: details.restaurantName || name,
           cuisine: details.cuisine || "Restaurant",
           city,
           status: "active",
         });
+        if (listingError) throw listingError;
+      } else if (type === "fleet_owner") {
+        const { error: companyError } = await supabase.from("companies").insert({
+          name: details.companyName || name,
+          contact_name: name,
+          mobile_number: phone,
+          email: email || null,
+          fleet_size: parseInt(details.fleetSize, 10) || 0,
+          status: "pending",
+          verified: false,
+        });
+        if (companyError) throw companyError;
       }
 
       await supabase.from("notifications").insert({
         recipient_type: "admin",
-        title: type === "rental_owner" || type === "seller" || type === "food_partner" ? "New listing published" : "New application received",
-        body: `${name} ${type === "rental_owner" || type === "seller" || type === "food_partner" ? "published a listing as a" : "applied as a"} ${type.replace(/_/g, " ")}`,
+        title: ["rental_owner", "seller", "food_partner", "fleet_owner"].includes(type) ? "New listing published" : "New application received",
+        body: `${name} ${["rental_owner", "seller", "food_partner", "fleet_owner"].includes(type) ? "published a listing as a" : "applied as a"} ${type.replace(/_/g, " ")}`,
       });
       setStep(4);
     } catch (e) {
