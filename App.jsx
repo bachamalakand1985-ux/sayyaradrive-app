@@ -9,7 +9,7 @@ import {
   Package, Phone, DollarSign,
   Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check,
   Link, Globe, Trophy, MessageCircle, Mic, RefreshCw, Flag, Image as ImageIcon, PhoneOff, PhoneCall,
-  Settings, LogIn, HelpCircle
+  Settings, LogIn, HelpCircle, Building2
 } from "lucide-react";
 
 /* ---------- support contact ---------- */
@@ -758,6 +758,116 @@ function AppMenu({ onClose, navigate, currentDriver, driverLogout, identity }) {
   );
 }
 
+/* ---------- DASHBOARD SERVICE SLIDESHOW ---------- */
+const SERVICE_SLIDES = [
+  { id: "rentals", icon: Car, eyebrow: "TRANSPORT", title: "Wherever you're headed, we're already on the way", sub: "City rides, airport transfers, and car rentals — one tap away.", img: "https://loremflickr.com/900/500/riyadh,car,night/all?lock=901" },
+  { id: "market", icon: ShoppingBag, eyebrow: "MARKETPLACE", title: "Buy it, sell it, find it nearby", sub: "From cars to electronics — your city's marketplace, in your pocket.", img: "https://loremflickr.com/900/500/marketplace,shopping/all?lock=902" },
+  { id: "food", icon: UtensilsCrossed, eyebrow: "FOOD", title: "Cravings, met in minutes", sub: "Your favorite restaurants, delivered hot to your door.", img: "https://loremflickr.com/900/500/food,delivery/all?lock=903" },
+  { id: "logistics", icon: Truck, eyebrow: "CARGO DELIVERY", title: "Send it and forget it", sub: "Parcels picked up and delivered across the Kingdom, same day.", img: "https://loremflickr.com/900/500/delivery-van,parcel/all?lock=904" },
+  { id: "jobs", icon: Briefcase, eyebrow: "JOBS", title: "Turn your car into your career", sub: "Flexible hours, real income — start driving with SayyaraDrive.", img: "https://loremflickr.com/900/500/driver,taxi/all?lock=905" },
+  { id: "register_driver", icon: Navigation, eyebrow: "BECOME A DRIVER", title: "Your car, your schedule, your income", sub: "Join SayyaraDrive as a driver and start earning on your own time.", img: "https://loremflickr.com/900/500/taxi,driver,riyadh/all?lock=906" },
+];
+
+function ServiceSlideshow({ navigate }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const containerRef = useRef(null);
+  const slideRefs = useRef([]);
+  const scrollTimeout = useRef(null);
+  const SLIDE_MS = 5000;
+
+  useEffect(() => {
+    if (isPaused) return;
+    const timer = setInterval(() => {
+      setActiveIndex((i) => (i + 1) % SERVICE_SLIDES.length);
+    }, SLIDE_MS);
+    return () => clearInterval(timer);
+  }, [isPaused, activeIndex]);
+
+  useEffect(() => {
+    slideRefs.current[activeIndex]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+  }, [activeIndex]);
+
+  function handleScroll() {
+    clearTimeout(scrollTimeout.current);
+    scrollTimeout.current = setTimeout(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      let closest = 0, closestDist = Infinity;
+      slideRefs.current.forEach((el, i) => {
+        if (!el) return;
+        const dist = Math.abs(el.offsetLeft - container.scrollLeft);
+        if (dist < closestDist) { closestDist = dist; closest = i; }
+      });
+      setActiveIndex(closest);
+    }, 120);
+  }
+
+  return (
+    <div className="relative px-5 mb-7" onMouseEnter={() => setIsPaused(true)} onMouseLeave={() => setIsPaused(false)}>
+      <style>{`
+        .sd-track::-webkit-scrollbar { display: none; }
+        @keyframes sdFill { from { width: 0%; } to { width: 100%; } }
+      `}</style>
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        onTouchStart={() => setIsPaused(true)}
+        onTouchEnd={() => setTimeout(() => setIsPaused(false), 2500)}
+        className="sd-track flex overflow-x-auto snap-x snap-mandatory gap-4 pb-1"
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+      >
+        {SERVICE_SLIDES.map((s, i) => {
+          const Icon = s.icon;
+          return (
+            <button
+              key={s.id}
+              ref={(el) => (slideRefs.current[i] = el)}
+              onClick={() => navigate(s.id)}
+              className="relative snap-start shrink-0 w-[82%] sm:w-[58%] md:w-[44%] lg:w-[32%] h-48 rounded-3xl overflow-hidden text-left active:scale-[0.98] transition-transform"
+              style={{ border: `1px solid ${BORDER}`, boxShadow: "0 10px 30px rgba(0,0,0,0.35)" }}
+            >
+              <img src={s.img} alt={s.eyebrow} loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0" style={{ background: `linear-gradient(180deg, rgba(7,14,31,0.15) 0%, rgba(7,14,31,0.55) 55%, rgba(7,14,31,0.92) 100%)` }} />
+              <div className="relative h-full flex flex-col justify-between p-4">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "rgba(217,166,83,0.85)" }}>
+                  <Icon size={17} color={BG} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: GOLD }}>{s.eyebrow}</p>
+                  <p className="text-base font-semibold mt-1 leading-snug" style={{ color: TEXT, fontFamily: "'Space Grotesk', sans-serif" }}>{s.title}</p>
+                  <p className="text-[11px] mt-1 leading-snug" style={{ color: "#C7D2E8" }}>{s.sub}</p>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-1.5 mt-3 px-0.5">
+        {SERVICE_SLIDES.map((s, i) => (
+          <button
+            key={s.id}
+            onClick={() => setActiveIndex(i)}
+            aria-label={`Go to ${s.eyebrow} slide`}
+            className="h-1 rounded-full flex-1 overflow-hidden"
+            style={{ background: BORDER }}
+          >
+            {i === activeIndex ? (
+              <div
+                key={activeIndex}
+                className="h-full rounded-full"
+                style={{ background: GOLD, animation: `sdFill ${SLIDE_MS}ms linear forwards`, animationPlayState: isPaused ? "paused" : "running" }}
+              />
+            ) : i < activeIndex ? (
+              <div className="h-full rounded-full" style={{ background: GOLD, width: "100%" }} />
+            ) : null}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showLangPicker, setShowLangPicker] = useState(false);
@@ -844,6 +954,7 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
           </div>
         </button>
       </div>
+      <ServiceSlideshow navigate={navigate} />
       <div className="relative px-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold">{t("services")}</h2>
@@ -2028,6 +2139,17 @@ const REGISTER_CONFIGS = {
     ],
     documents: ["National ID / Iqama", "Driving license (if applicable)"],
   },
+  logistics_company: {
+    title: "Cargo company registration",
+    icon: Truck,
+    intro: "Register your logistics/cargo company. This publishes your company in the Cargo Delivery directory right away, pending verification.",
+    detailFields: [
+      { key: "companyName", label: "Company name", placeholder: "e.g. Al Amal Logistics Co." },
+      { key: "serviceArea", label: "Service area", placeholder: "e.g. Riyadh & nearby cities" },
+      { key: "fleetSize", label: "Number of vehicles", placeholder: "e.g. 8" },
+    ],
+    documents: ["Commercial registration", "National ID / Iqama of owner"],
+  },
   fleet_owner: {
     title: "Fleet company registration",
     icon: Users,
@@ -2126,12 +2248,25 @@ function PartnerRegister({ goBack, type }) {
           verified: false,
         });
         if (companyError) throw companyError;
+      } else if (type === "logistics_company") {
+        const { error: logisticsCoError } = await supabase.from("logistics_companies").insert({
+          company_name: details.companyName || name,
+          owner_name: name,
+          owner_phone: phone,
+          email: email || null,
+          city,
+          service_area: details.serviceArea || city,
+          fleet_size: parseInt(details.fleetSize, 10) || 0,
+          status: "active",
+          verified: false,
+        });
+        if (logisticsCoError) throw logisticsCoError;
       }
 
       await supabase.from("notifications").insert({
         recipient_type: "admin",
-        title: ["rental_owner", "seller", "food_partner", "fleet_owner"].includes(type) ? "New listing published" : "New application received",
-        body: `${name} ${["rental_owner", "seller", "food_partner", "fleet_owner"].includes(type) ? "published a listing as a" : "applied as a"} ${type.replace(/_/g, " ")}`,
+        title: ["rental_owner", "seller", "food_partner", "fleet_owner", "logistics_company"].includes(type) ? "New listing published" : "New application received",
+        body: `${name} ${["rental_owner", "seller", "food_partner", "fleet_owner", "logistics_company"].includes(type) ? "published a listing as a" : "applied as a"} ${type.replace(/_/g, " ")}`,
       });
       setStep(4);
     } catch (e) {
@@ -3281,6 +3416,95 @@ const COURIER_PARTNERS = [
   { name: "Saudi Post (SPL)", coverage: "Official postal service, all of KSA", tiers: [{ label: "Economy", eta: "3-5 days", price: 15 }, { label: "Express", eta: "1-2 days", price: 30 }] },
 ];
 
+/* ---------- CARGO COMPANIES STRIP (shown on the cargo landing page) ---------- */
+function CargoCompaniesStrip({ navigate, setView }) {
+  const [companies, setCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data } = await supabase.from("logistics_companies").select("*").eq("status", "active").order("created_at", { ascending: false }).limit(10);
+      if (!cancelled) { setCompanies(data || []); setLoading(false); }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return null;
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: GREEN }}><Building2 size={13} /> Registered cargo companies</p>
+        <button onClick={() => setView("companies")} className="text-[11px]" style={{ color: GOLD }}>View all</button>
+      </div>
+      {companies.length === 0 ? (
+        <button onClick={() => navigate("register_logistics_company")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px dashed ${BORDER}` }}>
+          <span className="text-xs" style={{ color: FAINT }}>No companies registered yet — be the first</span>
+          <ChevronRight size={14} color={FAINT} />
+        </button>
+      ) : (
+        <div className="flex overflow-x-auto gap-2 pb-1" style={{ scrollbarWidth: "none" }}>
+          {companies.map((c) => (
+            <button key={c.id} onClick={() => setView("companies")} className="shrink-0 w-40 text-left rounded-xl px-3 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <p className="text-xs font-semibold truncate">{c.company_name}</p>
+              <p className="text-[10px] mt-1 truncate" style={{ color: FAINT }}>{c.service_area || c.city}</p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- CARGO COMPANIES DIRECTORY ---------- */
+function CargoCompaniesList({ navigate }) {
+  const [companies, setCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data } = await supabase.from("logistics_companies").select("*").eq("status", "active").order("created_at", { ascending: false });
+      if (!cancelled) { setCompanies(data || []); setLoading(false); }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div className="px-5">
+      <button onClick={() => navigate("register_logistics_company")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+        <span className="flex items-center gap-2 text-sm font-semibold"><Building2 size={15} color={GOLD} /> Register your cargo company</span>
+        <ChevronRight size={14} color={GOLD} />
+      </button>
+      {loading ? (
+        <div className="flex justify-center py-10"><SearchingAnimation /></div>
+      ) : companies.length === 0 ? (
+        <EmptyState icon={Building2} title="No cargo companies yet" subtitle="Registered logistics companies will appear here." />
+      ) : (
+        <div className="flex flex-col gap-2 pb-6">
+          {companies.map((c) => (
+            <div key={c.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">{c.company_name}</p>
+                {c.verified && <span className="text-[9px] px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}>VERIFIED</span>}
+              </div>
+              <p className="text-[11px] mt-1" style={{ color: FAINT }}>{c.service_area || c.city} · {c.fleet_size || 0} vehicles</p>
+              {c.owner_phone && (
+                <a href={`tel:${c.owner_phone}`} className="mt-2 flex items-center gap-2 text-[12px]" style={{ color: GOLD }}>
+                  <Phone size={12} /> {c.owner_phone}
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Logistics({ goBack, navigate }) {
   const [view, setView] = useState("request");
   const [openCourier, setOpenCourier] = useState(null);
@@ -3299,7 +3523,14 @@ function Logistics({ goBack, navigate }) {
   const [dropoffLive, setDropoffLive] = useState([]);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState("");
+  const [pickupCoords, setPickupCoords] = useState(SAUDI_CITY_COORDS.Riyadh);
   useEffect(() => { if (stage === "input") setBookingRef(null); }, [stage]);
+
+  async function onPickupPinMove(coords) {
+    setPickupCoords(coords);
+    const label = await reverseGeocodeCoords(coords.lat, coords.lng);
+    setPickupAddress(label);
+  }
 
   // live autosuggest — same as ride booking
   useEffect(() => {
@@ -3333,7 +3564,7 @@ function Logistics({ goBack, navigate }) {
   function useMyLocationForPickup() {
     detectLocation({
       onStart: () => { setLocating(true); setLocError(""); },
-      onSuccess: ({ label }) => { setPickupAddress(label); setLocating(false); setActiveField(null); },
+      onSuccess: ({ label, lat, lng }) => { setPickupAddress(label); setPickupCoords({ lat, lng }); setLocating(false); setActiveField(null); },
       onError: (msg) => { setLocating(false); setLocError(msg); },
     });
   }
@@ -3342,19 +3573,26 @@ function Logistics({ goBack, navigate }) {
     const ref = `PARCEL-${Date.now().toString(36).toUpperCase()}`;
     setSaving(true);
     try {
-      await supabase.from("logistics_parcels").insert({
+      const { error: insertError } = await supabase.from("logistics_parcels").insert({
         booking_ref: ref,
         sender_name: senderName.trim(),
         sender_phone: pickupContact.trim(),
         recipient_phone: dropoffContact.trim(),
         pickup_address: pickupAddress.trim(),
         dropoff_address: dropoffAddress.trim(),
+        pickup_lat: pickupCoords.lat,
+        pickup_lng: pickupCoords.lng,
         parcel_size: size,
         courier: openCourier?.name || null,
         price: chosenTier ? chosenTier.price : chosen.price,
         status: "requested",
       });
-    } catch (e) { /* best-effort; still show confirmation locally */ }
+      if (insertError) throw insertError;
+    } catch (e) {
+      setSaving(false);
+      alert("Couldn't save your pickup request — please check your connection and try again.");
+      return;
+    }
     setSaving(false);
     setBookingRef(ref);
     setStage("confirmed");
@@ -3398,7 +3636,12 @@ function Logistics({ goBack, navigate }) {
         <button onClick={() => setView("couriers")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "couriers" ? GOLD : CARD, color: view === "couriers" ? BG : MUTE, border: view === "couriers" ? "none" : `1px solid ${BORDER}` }}>
           <Truck size={12} /> Courier Partners
         </button>
+        <button onClick={() => setView("companies")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "companies" ? GOLD : CARD, color: view === "companies" ? BG : MUTE, border: view === "companies" ? "none" : `1px solid ${BORDER}` }}>
+          <Building2 size={12} /> Cargo Companies
+        </button>
       </div>
+
+      {view === "companies" && <CargoCompaniesList navigate={navigate} />}
 
       {view === "couriers" && (
         <div className="px-5 flex flex-col gap-2">
@@ -3420,6 +3663,7 @@ function Logistics({ goBack, navigate }) {
           <span className="flex items-center gap-2 text-sm font-semibold"><Truck size={15} color={GOLD} /> Become a delivery partner</span>
           <ChevronRight size={14} color={GOLD} />
         </button>
+        <CargoCompaniesStrip navigate={navigate} setView={setView} />
         {chosenTier && (
           <div className="rounded-xl px-4 py-3 mb-4 flex items-center justify-between" style={{ background: "rgba(217,166,83,0.1)", border: `1px solid rgba(217,166,83,0.3)` }}>
             <p className="text-xs" style={{ color: MUTE }}>Selected: <span style={{ color: GOLD, fontWeight: 600 }}>{openCourier?.name || chosenTier.label}</span></p>
@@ -3456,6 +3700,7 @@ function Logistics({ goBack, navigate }) {
           </div>
           <div className="flex items-center gap-3 py-3"><Phone size={14} color={GREEN} /><input value={pickupContact} onChange={(e) => setPickupContact(e.target.value)} placeholder="Pickup contact" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
         </div>
+        <PinMapPicker coords={pickupCoords} onMove={onPickupPinMove} height={150} />
         <button onClick={useMyLocationForPickup} disabled={locating} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(91,143,212,0.14)", color: GREEN }}>
           <Navigation size={13} /> {locating ? "Detecting location…" : "Use my current location"}
         </button>
@@ -4480,6 +4725,7 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
 
   const isDriver = type === "driver";
 
@@ -4518,6 +4764,25 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
   const [forgotMobile, setForgotMobile] = useState("");
   const [forgotUsername, setForgotUsername] = useState("");
   const [resolvedResetEmail, setResolvedResetEmail] = useState("");
+
+  async function handleGoogleAuth() {
+    setError("");
+    setLoading(true);
+    try {
+      // Remembered so that when the browser comes back from Google, the app
+      // knows whether to finish setting up a driver or passenger profile.
+      try { localStorage.setItem("sayyara_google_signup_type", type); } catch (e) {}
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin },
+      });
+      if (oauthError) throw oauthError;
+      // On success the browser navigates away to Google — nothing more to do here.
+    } catch (e) {
+      setError(e.message || "Couldn't start Google sign-in. Please try again.");
+      setLoading(false);
+    }
+  }
 
   async function handleForgotPassword() {
     setError(""); setLoading(true);
@@ -4775,6 +5040,31 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
           <button onClick={() => setMode("signup")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: mode === "signup" ? GOLD : "transparent", color: mode === "signup" ? BG : MUTE }}>Sign up</button>
         </div>
 
+        <button
+          onClick={handleGoogleAuth}
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2.5 rounded-full py-3 text-sm font-semibold mb-3"
+          style={{ background: "#FFFFFF", color: "#1F1F1F", opacity: loading ? 0.7 : 1 }}
+        >
+          <svg width="17" height="17" viewBox="0 0 48 48">
+            <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.2-.1-2.4-.4-3.5z" />
+            <path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.6 19 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.3 6.3 14.7z" />
+            <path fill="#4CAF50" d="M24 45c5.5 0 10.4-1.9 14.3-5.1l-6.6-5.6C29.6 36 27 37 24 37c-5.3 0-9.7-3-11.3-7.4l-6.6 5.1C9.6 40.6 16.2 45 24 45z" />
+            <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.7l6.6 5.6C41.8 36 44 30.5 44 24c0-1.2-.1-2.4-.4-3.5z" />
+          </svg>
+          {mode === "signup" ? "Sign up with Google" : "Continue with Google"}
+        </button>
+        <p className="text-[11px] text-center mb-4" style={{ color: FAINT }}>
+          {mode === "signup" ? `We'll detect your email automatically — you'll just add your name and mobile number${isDriver ? " (plus your Iqama and vehicle details)" : ""}.` : "Fastest way in — no password needed."}
+        </p>
+
+        <button onClick={() => setShowEmailForm((v) => !v)} className="w-full flex items-center justify-center gap-1.5 text-[12px] mb-4" style={{ color: MUTE }}>
+          <span style={{ height: 1, width: 20, background: BORDER }} />
+          {showEmailForm ? "Hide email option" : mode === "signup" ? "Sign up with email instead" : "Log in with email instead"}
+          <span style={{ height: 1, width: 20, background: BORDER }} />
+        </button>
+
+        {showEmailForm && (
         <div className="flex flex-col gap-3 mb-4">
           {mode === "login" && (
             <div className="flex rounded-full p-1" style={{ background: BG, border: `1px solid ${BORDER}` }}>
@@ -4815,8 +5105,9 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
             </div>
           )}
         </div>
+        )}
 
-        {mode === "signup" && (
+        {showEmailForm && mode === "signup" && (
           <div className="flex flex-col gap-3 mb-4">
             <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <User size={14} color={GOLD} />
@@ -4853,6 +5144,7 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
 
         {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
 
+        {showEmailForm && (
         <button
           onClick={mode === "signup" ? handleSignup : handleLogin}
           disabled={loading || !email || !password}
@@ -4860,6 +5152,145 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
           style={{ background: (loading || !email || !password) ? BORDER : GOLD, color: (loading || !email || !password) ? "#5C736D" : BG }}
         >
           {loading ? "Please wait…" : mode === "signup" ? "Create account" : "Log in"}
+        </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- COMPLETE PROFILE (after Google sign-in) ---------- */
+function CompleteProfile({ type, navigate, onLoggedIn }) {
+  const isDriver = type === "driver";
+  const [checking, setChecking] = useState(true);
+  const [sessionEmail, setSessionEmail] = useState("");
+  const [authUserId, setAuthUserId] = useState(null);
+  const [fullName, setFullName] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [iqama, setIqama] = useState("");
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [cityType, setCityType] = useState("inside_city");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function loadSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) { navigate("welcome"); return; }
+      setSessionEmail(session.user.email || "");
+      setAuthUserId(session.user.id);
+      const meta = session.user.user_metadata || {};
+      setFullName(meta.full_name || meta.name || "");
+      setChecking(false);
+    }
+    loadSession();
+  }, []);
+
+  function cancelAndLogout() {
+    try { localStorage.removeItem("sayyara_google_signup_type"); } catch (e) {}
+    supabase.auth.signOut();
+    navigate("welcome");
+  }
+
+  async function submit() {
+    setError("");
+    if (!fullName.trim()) { setError("Please enter your full name."); return; }
+    if (!mobile.trim()) { setError("Please enter your mobile number."); return; }
+    if (isDriver) {
+      if (!iqama.trim()) { setError("Please enter your Iqama number."); return; }
+      if (!vehicleNumber.trim()) { setError("Please enter your vehicle number."); return; }
+    }
+    setLoading(true);
+    try {
+      const table = isDriver ? "drivers" : "passengers";
+      if (isDriver) {
+        const { data: existingStatus } = await supabase.rpc("check_iqama_status", { p_iqama: iqama.trim() });
+        if (existingStatus) {
+          setError(existingStatus === "blocked" ? "This Iqama number belongs to a blocked driver account. Contact support for help." : "An account already exists with this Iqama number. Please log in instead.");
+          setLoading(false);
+          return;
+        }
+      }
+      const { data: existingMobile } = await supabase.from(table).select("id").eq("mobile_number", mobile.trim()).maybeSingle();
+      if (existingMobile) {
+        setError(`This mobile number is already registered to a ${isDriver ? "driver" : "passenger"} account. Please log in instead.`);
+        setLoading(false);
+        return;
+      }
+      const base = fullName.trim().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || "user";
+      let finalUsername = `${base}${Math.floor(1000 + Math.random() * 9000)}`;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: taken } = await supabase.from(table).select("id").eq("username", finalUsername).maybeSingle();
+        if (!taken) break;
+        finalUsername = `${base}${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+      const insertPayload = isDriver
+        ? { auth_user_id: authUserId, full_name: fullName.trim(), mobile_number: mobile.trim(), email: sessionEmail, username: finalUsername, iqama_number: iqama.trim(), vehicle_number: vehicleNumber.trim(), city_type: cityType }
+        : { auth_user_id: authUserId, full_name: fullName.trim(), mobile_number: mobile.trim(), email: sessionEmail, username: finalUsername };
+      const { data: newRow, error: insertError } = await supabase.from(table).insert(insertPayload).select().single();
+      if (insertError) throw insertError;
+      try { localStorage.removeItem("sayyara_google_signup_type"); } catch (e) {}
+      if (onLoggedIn) onLoggedIn({ email: sessionEmail, type, profile: newRow });
+      navigate(isDriver ? "driver" : "home");
+    } catch (e) {
+      setError(e.message || "Something went wrong completing your profile.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (checking) {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="Almost there" onBack={cancelAndLogout} />
+        <div className="px-5 py-10 flex justify-center"><SearchingAnimation /></div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title={isDriver ? "Finish driver signup" : "Finish signup"} onBack={cancelAndLogout} />
+      <div className="px-5">
+        <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4" style={{ background: "rgba(91,143,212,0.1)", border: `1px solid ${BORDER}` }}>
+          <CheckCircle2 size={16} color={GREEN} />
+          <div>
+            <p className="text-[10px] uppercase tracking-wide" style={{ color: GREEN }}>Email detected from Google</p>
+            <p className="text-sm font-medium">{sessionEmail}</p>
+          </div>
+        </div>
+        <p className="text-xs mb-4" style={{ color: MUTE }}>Just a couple more details and you're set.</p>
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <User size={14} color={GOLD} />
+            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Phone size={14} color={GOLD} />
+            <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          {isDriver && (
+            <>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <User size={14} color={GOLD} />
+                <input value={iqama} onChange={(e) => setIqama(e.target.value)} placeholder="Iqama number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <Car size={14} color={GOLD} />
+                <input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} placeholder="Vehicle number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+              <div className="rounded-xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <select value={cityType} onChange={(e) => setCityType(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+                  <option value="inside_city" style={{ background: CARD }}>Inside-city driver</option>
+                  <option value="intercity" style={{ background: CARD }}>Outside-city driver</option>
+                </select>
+              </div>
+            </>
+          )}
+        </div>
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <button onClick={submit} disabled={loading} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: loading ? BORDER : GOLD, color: loading ? "#5C736D" : BG }}>
+          {loading ? "Please wait…" : "Finish signup"}
         </button>
       </div>
     </div>
@@ -7310,7 +7741,7 @@ function relativeTimeFrom(iso) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function AdminListPage({ goBack, navigate, title, table, columns, showDriverActions, deletable, addFields, statusToggle, approvalActions, moderationToggle, resolveToggle, companyActions, passengerActions }) {
+function AdminListPage({ goBack, navigate, title, table, columns, showDriverActions, deletable, addFields, statusToggle, approvalActions, resolveToggle, companyActions, passengerActions }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -7417,14 +7848,6 @@ function AdminListPage({ goBack, navigate, title, table, columns, showDriverActi
 
   async function toggleSold(row) {
     await supabase.from(table).update({ status: row.status === "sold" ? "active" : "sold" }).eq("id", row.id);
-    loadRows();
-  }
-
-  async function toggleModeration(row) {
-    const liveStatus = table === "rental_listings" ? "active" : "visible";
-    const nowHidden = row.status !== "hidden";
-    await supabase.from(table).update({ status: nowHidden ? "hidden" : liveStatus }).eq("id", row.id);
-    logAction(nowHidden ? "Hidden listing" : "Unhidden listing", table, columns.map((c) => row[c.key]).filter(Boolean)[0] || row.id);
     loadRows();
   }
 
@@ -7636,11 +8059,6 @@ function AdminListPage({ goBack, navigate, title, table, columns, showDriverActi
                 {statusToggle && (
                   <button onClick={() => toggleSold(r)} className="w-full mt-3 rounded-full py-2 text-xs font-semibold" style={{ background: r.status === "sold" ? "rgba(91,143,212,0.15)" : "rgba(192,117,91,0.12)", color: r.status === "sold" ? GREEN : "#C0755B" }}>
                     {r.status === "sold" ? "Mark as available again" : "Mark as sold"}
-                  </button>
-                )}
-                {moderationToggle && (
-                  <button onClick={() => toggleModeration(r)} className="w-full mt-3 rounded-full py-2 text-xs font-semibold" style={{ background: r.status === "hidden" ? "rgba(91,143,212,0.15)" : "rgba(192,117,91,0.12)", color: r.status === "hidden" ? GREEN : "#C0755B" }}>
-                    {r.status === "hidden" ? `Show ${table === "rental_listings" ? "listing" : "review"}` : `Hide ${table === "rental_listings" ? "listing" : "review"}`}
                   </button>
                 )}
                 {resolveToggle && (
@@ -8581,6 +8999,14 @@ export default function SayyaraDriveApp() {
                 if (companyRow) {
                   setCurrentCompany({ email, profile: companyRow });
                   setHistory(["company_dashboard"]);
+                } else {
+                  // A valid auth session exists but no profile row yet — this is a
+                  // brand-new Google sign-in. Send them to finish the short
+                  // (name + mobile, and for drivers, Iqama/vehicle) signup step.
+                  let pendingType = null;
+                  try { pendingType = localStorage.getItem("sayyara_google_signup_type"); } catch (e) {}
+                  if (pendingType === "driver") setHistory(["complete_profile_driver"]);
+                  else if (pendingType === "passenger") setHistory(["complete_profile_passenger"]);
                 }
               }
             }
@@ -8656,10 +9082,13 @@ export default function SayyaraDriveApp() {
     wallet: <WalletTab goBack={goBack} currentDriver={currentDriver} navigate={navigate} />,
     admin: currentAdmin ? <AdminOverview navigate={navigate} goBack={goBack} onLogout={() => { supabase.auth.signOut(); setCurrentAdmin(null); navigate("welcome"); }} /> : <AdminLogin goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAdmin} />,
     register_driver: <PartnerRegister goBack={goBack} type="driver" />,
+    complete_profile_driver: <CompleteProfile type="driver" navigate={navigate} onLoggedIn={setCurrentDriver} />,
+    complete_profile_passenger: <CompleteProfile type="passenger" navigate={navigate} onLoggedIn={setCurrentDriver} />,
     register_rental: <PartnerRegister goBack={goBack} type="rental_owner" />,
     register_seller: <PartnerRegister goBack={goBack} type="seller" />,
     register_food: <PartnerRegister goBack={goBack} type="food_partner" />,
     register_logistics: <PartnerRegister goBack={goBack} type="logistics_partner" />,
+    register_logistics_company: <PartnerRegister goBack={goBack} type="logistics_company" />,
     register_fleet: <PartnerRegister goBack={goBack} type="fleet_owner" />,
     driver_login: <AuthScreen goBack={goBack} type="driver" navigate={navigate} onLoggedIn={setCurrentDriver} />,
     company_login: <CompanyAuthScreen goBack={goBack} navigate={navigate} onLoggedIn={setCurrentCompany} />,
@@ -8670,11 +9099,11 @@ export default function SayyaraDriveApp() {
     admin_drivers: <AdminListPage goBack={goBack} title="Drivers" table="drivers" showDriverActions deletable columns={[{key:"full_name",label:"Name"},{key:"iqama_number",label:"Iqama"},{key:"vehicle_number",label:"Vehicle"},{key:"mobile_number",label:"Mobile"},{key:"city_type",label:"City type"}]} />,
     admin_passengers: <AdminListPage goBack={goBack} title="Passengers" table="passengers" passengerActions columns={[{key:"full_name",label:"Name"},{key:"mobile_number",label:"Mobile"}]} />,
     admin_rides: <AdminListPage goBack={goBack} navigate={navigate} title="Rides" table="rides" deletable columns={[{key:"ride_type",label:"Type"},{key:"pickup_label",label:"Pickup"},{key:"dropoff_label",label:"Dropoff"},{key:"city",label:"City"},{key:"status",label:"Status"}]} />,
-    admin_ratings: <AdminListPage goBack={goBack} title="Ratings & Reviews" table="ratings" deletable moderationToggle columns={[{key:"target_label",label:"About"},{key:"rating_type",label:"Type"},{key:"rating",label:"Stars"},{key:"review",label:"Review"},{key:"reviewer_name",label:"By"}]} />,
+    admin_ratings: <AdminListPage goBack={goBack} title="Ratings & Reviews" table="ratings" deletable columns={[{key:"target_label",label:"About"},{key:"rating_type",label:"Type"},{key:"rating",label:"Stars"},{key:"review",label:"Review"},{key:"reviewer_name",label:"By"}]} />,
     admin_crash_reports: <AdminListPage goBack={goBack} title="Errors" table="crash_reports" deletable columns={[{key:"message",label:"Error"},{key:"url",label:"Page"},{key:"user_agent",label:"Device"}]} />,
     admin_reports: <AdminListPage goBack={goBack} title="Reports" table="reports" deletable resolveToggle columns={[{key:"reference_title",label:"Listing"},{key:"context",label:"Section"},{key:"reason",label:"Reason"}]} />,
     admin_companies: <AdminListPage goBack={goBack} title="Companies" table="companies" deletable companyActions columns={[{key:"name",label:"Name"},{key:"cr_number",label:"CR Number"},{key:"contact_name",label:"Contact"},{key:"mobile_number",label:"Mobile"},{key:"email",label:"Email"}]} />,
-    admin_rental_listings: <AdminListPage goBack={goBack} title="Car Listings" table="rental_listings" deletable moderationToggle columns={[{key:"model",label:"Model"},{key:"owner_name",label:"Owner"},{key:"owner_phone",label:"Phone"},{key:"city",label:"City"},{key:"price_per_day",label:"Price/day"}]} />,
+    admin_rental_listings: <AdminListPage goBack={goBack} title="Car Listings" table="rental_listings" deletable columns={[{key:"model",label:"Model"},{key:"owner_name",label:"Owner"},{key:"owner_phone",label:"Phone"},{key:"city",label:"City"},{key:"price_per_day",label:"Price/day"}]} />,
     admin_audit_logs: <AdminListPage goBack={goBack} title="Audit Logs" table="audit_logs" columns={[{key:"action",label:"Action"},{key:"target_label",label:"Target"},{key:"performed_by",label:"By"},{key:"target_table",label:"Table"}]} />,
     admin_call_logs: <AdminListPage goBack={goBack} title="Calls" table="call_logs" columns={[{key:"caller_name",label:"Caller"},{key:"callee_name",label:"Callee"},{key:"connected",label:"Connected"},{key:"duration_seconds",label:"Duration (s)"}]} />,
     admin_fleet_routes: <AdminListPage goBack={goBack} title="Fleet Routes" table="fleet_routes" deletable columns={[{key:"route_name",label:"Route"},{key:"from_city",label:"From"},{key:"to_city",label:"To"}]} />,
