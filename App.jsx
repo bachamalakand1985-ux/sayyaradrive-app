@@ -4725,9 +4725,38 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [resetSent, setResetSent] = useState(false);
-  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [phase, setPhase] = useState("phone"); // "phone" | "password" | "signup_details" | "email_fallback"
 
   const isDriver = type === "driver";
+
+  async function handlePhoneContinue() {
+    setError("");
+    if (!mobileLogin.trim()) { setError("Please enter your mobile number."); return; }
+    setLoading(true);
+    try {
+      const table = isDriver ? "drivers" : "passengers";
+      const { data: foundEmail } = await supabase.rpc("lookup_login_email", { p_table: table, p_field: "mobile_number", p_value: mobileLogin.trim() });
+      if (foundEmail) {
+        setMode("login");
+        setLoginMethod("mobile");
+        setPhase("password");
+      } else {
+        setMode("signup");
+        setMobile(mobileLogin.trim());
+        setPhase("signup_details");
+      }
+    } catch (e) {
+      setError("Couldn't check that number. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function backToPhone() {
+    setError("");
+    setPassword("");
+    setPhase("phone");
+  }
 
   function rememberEmail(emailToSave) {
     try {
@@ -4737,8 +4766,8 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
   }
 
   function validateSignup() {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      return "Please enter a valid email address.";
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return "That email doesn't look right — check it, or leave it blank.";
     }
     if (password.length < 6) {
       return "Password must be at least 6 characters.";
@@ -4764,25 +4793,6 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
   const [forgotMobile, setForgotMobile] = useState("");
   const [forgotUsername, setForgotUsername] = useState("");
   const [resolvedResetEmail, setResolvedResetEmail] = useState("");
-
-  async function handleGoogleAuth() {
-    setError("");
-    setLoading(true);
-    try {
-      // Remembered so that when the browser comes back from Google, the app
-      // knows whether to finish setting up a driver or passenger profile.
-      try { localStorage.setItem("sayyara_google_signup_type", type); } catch (e) {}
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: window.location.origin },
-      });
-      if (oauthError) throw oauthError;
-      // On success the browser navigates away to Google — nothing more to do here.
-    } catch (e) {
-      setError(e.message || "Couldn't start Google sign-in. Please try again.");
-      setLoading(false);
-    }
-  }
 
   async function handleForgotPassword() {
     setError(""); setLoading(true);
@@ -4866,12 +4876,16 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         setLoading(false);
         return;
       }
+      // Email is optional — if skipped, generate one from the mobile number so
+      // signup still works. This is never shown to the person; they log in with
+      // their mobile number or username instead.
+      const finalEmail = email.trim() || `${mobile.trim().replace(/\D/g, "")}@sayyaradrive.app`;
       // Profile row is created automatically by a database trigger in the same
       // transaction as the auth account — passing the details as signup metadata
       // avoids a race condition where a separate insert can fire before the
       // auth user is fully visible to the database.
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(), password,
+        email: finalEmail, password,
         options: {
           data: isDriver
             ? { role: "driver", full_name: fullName, mobile_number: mobile, iqama_number: iqama, vehicle_number: vehicleNumber, city_type: cityType, username: finalUsername }
@@ -4889,7 +4903,7 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
         if (found) profile = found;
       }
       if (!profile) throw new Error("Account created, but your profile couldn't be set up — this usually means the mobile number, username, or Iqama is already in use on another account. Try logging in instead, or use different details.");
-      if (onLoggedIn) onLoggedIn({ email, type: isDriver ? "driver" : "passenger", profile });
+      if (onLoggedIn) onLoggedIn({ email: finalEmail, type: isDriver ? "driver" : "passenger", profile });
       rememberEmail();
       setSuccess(true);
     } catch (e) {
@@ -5033,127 +5047,174 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
 
   return (
     <div style={{ color: TEXT }}>
-      <Header title={isDriver ? "Driver account" : "Passenger account"} onBack={goBack} />
+      <Header
+        title={phase === "password" ? "Welcome back" : phase === "signup_details" ? "Create your account" : isDriver ? "Driver account" : "Passenger account"}
+        onBack={phase === "phone" ? goBack : backToPhone}
+      />
       <div className="px-5">
-        <div className="flex rounded-full p-1 mb-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <button onClick={() => setMode("login")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: mode === "login" ? GOLD : "transparent", color: mode === "login" ? BG : MUTE }}>Log in</button>
-          <button onClick={() => setMode("signup")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: mode === "signup" ? GOLD : "transparent", color: mode === "signup" ? BG : MUTE }}>Sign up</button>
-        </div>
 
-        <button
-          onClick={handleGoogleAuth}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-2.5 rounded-full py-3 text-sm font-semibold mb-3"
-          style={{ background: "#FFFFFF", color: "#1F1F1F", opacity: loading ? 0.7 : 1 }}
-        >
-          <svg width="17" height="17" viewBox="0 0 48 48">
-            <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.2-.1-2.4-.4-3.5z" />
-            <path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.6 15.6 19 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.3 6.3 14.7z" />
-            <path fill="#4CAF50" d="M24 45c5.5 0 10.4-1.9 14.3-5.1l-6.6-5.6C29.6 36 27 37 24 37c-5.3 0-9.7-3-11.3-7.4l-6.6 5.1C9.6 40.6 16.2 45 24 45z" />
-            <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.7l6.6 5.6C41.8 36 44 30.5 44 24c0-1.2-.1-2.4-.4-3.5z" />
-          </svg>
-          {mode === "signup" ? "Sign up with Google" : "Continue with Google"}
-        </button>
-        <p className="text-[11px] text-center mb-4" style={{ color: FAINT }}>
-          {mode === "signup" ? `We'll detect your email automatically — you'll just add your name and mobile number${isDriver ? " (plus your Iqama and vehicle details)" : ""}.` : "Fastest way in — no password needed."}
-        </p>
-
-        <button onClick={() => setShowEmailForm((v) => !v)} className="w-full flex items-center justify-center gap-1.5 text-[12px] mb-4" style={{ color: MUTE }}>
-          <span style={{ height: 1, width: 20, background: BORDER }} />
-          {showEmailForm ? "Hide email option" : mode === "signup" ? "Sign up with email instead" : "Log in with email instead"}
-          <span style={{ height: 1, width: 20, background: BORDER }} />
-        </button>
-
-        {showEmailForm && (
-        <div className="flex flex-col gap-3 mb-4">
-          {mode === "login" && (
-            <div className="flex rounded-full p-1" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-              <button onClick={() => setLoginMethod("email")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: loginMethod === "email" ? CARD : "transparent", color: loginMethod === "email" ? GOLD : MUTE }}>Email</button>
-              <button onClick={() => setLoginMethod("mobile")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: loginMethod === "mobile" ? CARD : "transparent", color: loginMethod === "mobile" ? GOLD : MUTE }}>Mobile</button>
-              <button onClick={() => setLoginMethod("username")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: loginMethod === "username" ? CARD : "transparent", color: loginMethod === "username" ? GOLD : MUTE }}>Username</button>
-            </div>
-          )}
-          {mode === "login" && loginMethod === "mobile" ? (
-            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+        {phase === "phone" && (
+          <>
+            <p className="text-sm mb-5" style={{ color: MUTE }}>Enter your mobile number to log in or sign up.</p>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <Phone size={14} color={GOLD} />
-              <input value={mobileLogin} onChange={(e) => setMobileLogin(e.target.value)} placeholder="Mobile number (e.g. 05XXXXXXXX)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              <input
+                value={mobileLogin}
+                onChange={(e) => setMobileLogin(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handlePhoneContinue()}
+                placeholder="Mobile number (e.g. 05XXXXXXXX)"
+                className="bg-transparent outline-none text-sm w-full"
+                style={{ color: TEXT }}
+                autoFocus
+              />
             </div>
-          ) : mode === "login" && loginMethod === "username" ? (
-            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <User size={14} color={GOLD} />
-              <input value={usernameLogin} onChange={(e) => setUsernameLogin(e.target.value)} placeholder="Username" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+            <button
+              onClick={handlePhoneContinue}
+              disabled={loading || !mobileLogin.trim()}
+              className="w-full rounded-full py-3 text-sm font-semibold"
+              style={{ background: (loading || !mobileLogin.trim()) ? BORDER : GOLD, color: (loading || !mobileLogin.trim()) ? "#5C736D" : BG }}
+            >
+              {loading ? "Checking…" : "Continue"}
+            </button>
+            <button onClick={() => { setPhase("email_fallback"); setLoginMethod("email"); setError(""); }} className="w-full mt-4 text-[12px]" style={{ color: MUTE }}>
+              Have an account under an email instead?
+            </button>
+          </>
+        )}
+
+        {phase === "password" && (
+          <>
+            <div className="flex items-center justify-between rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <span className="flex items-center gap-3 text-sm"><Phone size={14} color={GOLD} /> {mobileLogin}</span>
+              <button onClick={backToPhone} className="text-[11px]" style={{ color: GOLD }}>Change</button>
             </div>
-          ) : (
-            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <Mail size={14} color={GOLD} />
-              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Key size={14} color={GOLD} />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                placeholder="Password"
+                className="bg-transparent outline-none text-sm w-full"
+                style={{ color: TEXT }}
+                autoFocus
+              />
             </div>
-          )}
-          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <Key size={14} color={GOLD} />
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
-          </div>
-          {mode === "login" && (
-            <div className="flex items-center justify-between -mt-1.5">
+            <div className="flex items-center justify-between mb-4">
               <button onClick={() => setRememberMe((r) => !r)} className="flex items-center gap-2 text-[12px]" style={{ color: MUTE }}>
                 <span className="w-4 h-4 rounded flex items-center justify-center shrink-0" style={{ background: rememberMe ? GOLD : "transparent", border: `1px solid ${rememberMe ? GOLD : BORDER}` }}>
                   {rememberMe && <Check size={11} color={BG} />}
                 </span>
                 Remember me
               </button>
-              <button onClick={() => { setMode("forgot"); setError(""); }} className="text-[12px]" style={{ color: GOLD }}>Forgot password?</button>
+              <button onClick={() => { setForgotMethod("mobile"); setForgotMobile(mobileLogin); setMode("forgot"); setError(""); }} className="text-[12px]" style={{ color: GOLD }}>Forgot password?</button>
             </div>
-          )}
-        </div>
+            {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+            <button
+              onClick={handleLogin}
+              disabled={loading || !password}
+              className="w-full rounded-full py-3 text-sm font-semibold"
+              style={{ background: (loading || !password) ? BORDER : GOLD, color: (loading || !password) ? "#5C736D" : BG }}
+            >
+              {loading ? "Please wait…" : "Log in"}
+            </button>
+          </>
         )}
 
-        {showEmailForm && mode === "signup" && (
-          <div className="flex flex-col gap-3 mb-4">
-            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <User size={14} color={GOLD} />
-              <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+        {phase === "signup_details" && (
+          <>
+            <div className="flex items-center justify-between rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <span className="flex items-center gap-3 text-sm"><Phone size={14} color={GOLD} /> {mobile}</span>
+              <button onClick={backToPhone} className="text-[11px]" style={{ color: GOLD }}>Change</button>
             </div>
-            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <User size={14} color={GOLD} />
-              <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            <div className="flex flex-col gap-3 mb-4">
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <User size={14} color={GOLD} />
+                <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} autoFocus />
+              </div>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <Key size={14} color={GOLD} />
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password (6+ characters)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+              {isDriver && (
+                <>
+                  <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    <User size={14} color={GOLD} />
+                    <input value={iqama} onChange={(e) => setIqama(e.target.value)} placeholder="Iqama number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                  </div>
+                  <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    <Car size={14} color={GOLD} />
+                    <input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} placeholder="Vehicle number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                  </div>
+                  <div className="rounded-xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    <select value={cityType} onChange={(e) => setCityType(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+                      <option value="inside_city" style={{ background: CARD }}>Inside-city driver</option>
+                      <option value="intercity" style={{ background: CARD }}>Outside-city driver</option>
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
-            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <Phone size={14} color={GOLD} />
-              <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+            {(() => {
+              const canSubmit = !!(password && fullName.trim() && mobile.trim()) && (!isDriver || (iqama.trim() && vehicleNumber.trim()));
+              return (
+                <button
+                  onClick={handleSignup}
+                  disabled={loading || !canSubmit}
+                  className="w-full rounded-full py-3 text-sm font-semibold"
+                  style={{ background: (loading || !canSubmit) ? BORDER : GOLD, color: (loading || !canSubmit) ? "#5C736D" : BG }}
+                >
+                  {loading ? "Please wait…" : "Create account"}
+                </button>
+              );
+            })()}
+          </>
+        )}
+
+        {phase === "email_fallback" && (
+          <>
+            <div className="flex rounded-full p-1 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <button onClick={() => setLoginMethod("email")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: loginMethod === "email" ? GOLD : "transparent", color: loginMethod === "email" ? BG : MUTE }}>Email</button>
+              <button onClick={() => setLoginMethod("username")} className="flex-1 rounded-full py-1.5 text-[10px] font-semibold" style={{ background: loginMethod === "username" ? GOLD : "transparent", color: loginMethod === "username" ? BG : MUTE }}>Username</button>
             </div>
-            {isDriver && (
-              <>
-                <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <User size={14} color={GOLD} />
-                  <input value={iqama} onChange={(e) => setIqama(e.target.value)} placeholder="Iqama number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
-                </div>
-                <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <Car size={14} color={GOLD} />
-                  <input value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value)} placeholder="Vehicle number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
-                </div>
-                <div className="rounded-xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <select value={cityType} onChange={(e) => setCityType(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
-                    <option value="inside_city" style={{ background: CARD }}>Inside-city driver</option>
-                    <option value="intercity" style={{ background: CARD }}>Outside-city driver</option>
-                  </select>
-                </div>
-              </>
+            {loginMethod === "username" ? (
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <User size={14} color={GOLD} />
+                <input value={usernameLogin} onChange={(e) => setUsernameLogin(e.target.value)} placeholder="Username" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <Mail size={14} color={GOLD} />
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
             )}
-          </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Key size={14} color={GOLD} />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+            {(() => {
+              const canSubmit = loginMethod === "username" ? !!(usernameLogin && password) : !!(email && password);
+              return (
+                <button
+                  onClick={handleLogin}
+                  disabled={loading || !canSubmit}
+                  className="w-full rounded-full py-3 text-sm font-semibold"
+                  style={{ background: (loading || !canSubmit) ? BORDER : GOLD, color: (loading || !canSubmit) ? "#5C736D" : BG }}
+                >
+                  {loading ? "Please wait…" : "Log in"}
+                </button>
+              );
+            })()}
+            <button onClick={() => { setPhase("phone"); setError(""); }} className="w-full mt-4 text-[12px]" style={{ color: MUTE }}>
+              Use mobile number instead
+            </button>
+          </>
         )}
 
-        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
-
-        {showEmailForm && (
-        <button
-          onClick={mode === "signup" ? handleSignup : handleLogin}
-          disabled={loading || !email || !password}
-          className="w-full rounded-full py-3 text-sm font-semibold"
-          style={{ background: (loading || !email || !password) ? BORDER : GOLD, color: (loading || !email || !password) ? "#5C736D" : BG }}
-        >
-          {loading ? "Please wait…" : mode === "signup" ? "Create account" : "Log in"}
-        </button>
-        )}
       </div>
     </div>
   );
@@ -8999,14 +9060,6 @@ export default function SayyaraDriveApp() {
                 if (companyRow) {
                   setCurrentCompany({ email, profile: companyRow });
                   setHistory(["company_dashboard"]);
-                } else {
-                  // A valid auth session exists but no profile row yet — this is a
-                  // brand-new Google sign-in. Send them to finish the short
-                  // (name + mobile, and for drivers, Iqama/vehicle) signup step.
-                  let pendingType = null;
-                  try { pendingType = localStorage.getItem("sayyara_google_signup_type"); } catch (e) {}
-                  if (pendingType === "driver") setHistory(["complete_profile_driver"]);
-                  else if (pendingType === "passenger") setHistory(["complete_profile_passenger"]);
                 }
               }
             }
@@ -9082,8 +9135,6 @@ export default function SayyaraDriveApp() {
     wallet: <WalletTab goBack={goBack} currentDriver={currentDriver} navigate={navigate} />,
     admin: currentAdmin ? <AdminOverview navigate={navigate} goBack={goBack} onLogout={() => { supabase.auth.signOut(); setCurrentAdmin(null); navigate("welcome"); }} /> : <AdminLogin goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAdmin} />,
     register_driver: <PartnerRegister goBack={goBack} type="driver" />,
-    complete_profile_driver: <CompleteProfile type="driver" navigate={navigate} onLoggedIn={setCurrentDriver} />,
-    complete_profile_passenger: <CompleteProfile type="passenger" navigate={navigate} onLoggedIn={setCurrentDriver} />,
     register_rental: <PartnerRegister goBack={goBack} type="rental_owner" />,
     register_seller: <PartnerRegister goBack={goBack} type="seller" />,
     register_food: <PartnerRegister goBack={goBack} type="food_partner" />,
