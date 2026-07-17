@@ -177,6 +177,33 @@ function LiveDriverMap({ pickupCoords, driverLat, driverLng }) {
   );
 }
 
+/* ---------- CHECKPOINT ALERT SOUND (distinct from ride-offer alert) ---------- */
+function playCheckpointAlertSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    function beep(freq, delay, dur) {
+      setTimeout(() => {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type = "square"; o.frequency.value = freq;
+        o.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+        o.start(); o.stop(ctx.currentTime + dur + 0.02);
+      }, delay);
+    }
+    beep(660, 0, 0.18); beep(660, 240, 0.18); beep(660, 480, 0.25);
+  } catch (e) { /* audio is best-effort */ }
+}
+
+function distanceMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 /* ---------- SOUND ALERT (used for driver-side new ride offer notification, no external file needed) ---------- */
 function playOfferAlertSound() {
   try {
@@ -1684,6 +1711,12 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
   const [todayEarnings, setTodayEarnings] = useState(0);
   const [todayTrips, setTodayTrips] = useState(0);
   const [rating, setRating] = useState(null);
+  const [checkpoints, setCheckpoints] = useState([]);
+  const [checkpointBanner, setCheckpointBanner] = useState(null);
+  const [reportingCheckpoint, setReportingCheckpoint] = useState(false);
+  const [showCheckpoints, setShowCheckpoints] = useState(true);
+  const checkpointMarkersRef = useRef({});
+  const alertedCheckpointIdsRef = useRef(new Set());
 
   useEffect(() => {
     async function loadStats() {
@@ -1698,6 +1731,67 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     loadStats();
   }, [driverRow?.id]);
 
+  // Load active checkpoint alerts, then subscribe so every driver gets a live
+  // push (map marker + sound + banner) the instant anyone reports a new one.
+  useEffect(() => {
+    async function loadCheckpoints() {
+      const { data } = await supabase.from("checkpoint_alerts").select("*").eq("status", "active").order("created_at", { ascending: false });
+      setCheckpoints(data || []);
+    }
+    loadCheckpoints();
+
+    const channel = supabase
+      .channel("checkpoint-alerts-live")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "checkpoint_alerts" }, (payload) => {
+        const row = payload.new;
+        setCheckpoints((prev) => (prev.some((c) => c.id === row.id) ? prev : [row, ...prev]));
+        playCheckpointAlertSound();
+        setCheckpointBanner({ zone: row.zone, label: row.label, reportedBy: row.reported_by_name });
+        setTimeout(() => setCheckpointBanner(null), 8000);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  // Proximity check: if the driver's current location is near an active
+  // checkpoint they haven't already been alerted for, play the sound again
+  // as a local heads-up (in addition to the broadcast alert everyone gets).
+  useEffect(() => {
+    if (!checkpoints.length) return;
+    for (const cp of checkpoints) {
+      if (alertedCheckpointIdsRef.current.has(cp.id)) continue;
+      const dist = distanceMeters(driverLoc.lat, driverLoc.lng, Number(cp.lat), Number(cp.lng));
+      if (dist <= 800) {
+        alertedCheckpointIdsRef.current.add(cp.id);
+        playCheckpointAlertSound();
+        setCheckpointBanner({ zone: cp.zone, label: cp.label || "Checkpoint ahead", nearby: true });
+        setTimeout(() => setCheckpointBanner(null), 8000);
+      }
+    }
+  }, [checkpoints, driverLoc]);
+
+  async function reportCheckpoint() {
+    setReportingCheckpoint(true);
+    try {
+      const zone = driverRow?.city_type === "intercity" ? "outside_city" : "inside_city";
+      const { error } = await supabase.from("checkpoint_alerts").insert({
+        lat: driverLoc.lat,
+        lng: driverLoc.lng,
+        zone,
+        label: locLabel,
+        reported_by_driver_id: driverRow?.id || null,
+        reported_by_name: driverRow?.full_name || "A driver",
+      });
+      if (error) throw error;
+    } catch (e) {
+      alert("Couldn't report the checkpoint — please check your connection and try again.");
+    } finally {
+      setReportingCheckpoint(false);
+    }
+  }
+
+
   useEffect(() => {
     if (driverRow?.id && !online) {
       setOnline(true);
@@ -1711,7 +1805,40 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
       onSuccess: ({ lat, lng, label }) => { setDriverLoc({ lat, lng }); setLocLabel(label); setLocDenied(false); },
       onError: (msg, type) => { setLocError(msg); setLocDenied(type === "denied"); },
     });
-  }, []);
+
+    if (!navigator.geolocation) return;
+    let lastPersist = 0;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setDriverLoc({ lat: latitude, lng: longitude });
+        setLocDenied(false);
+        setLocError("");
+        // Persist to the driver's row + refresh the address label at most
+        // every 20s, not on every GPS tick, so we get real continuous
+        // tracking without hammering the reverse-geocode API or the DB.
+        const now = Date.now();
+        if (now - lastPersist > 20000) {
+          lastPersist = now;
+          if (driverRow?.id) {
+            supabase.from("drivers").update({ last_lat: latitude, last_lng: longitude, last_seen_at: new Date().toISOString() }).eq("id", driverRow.id);
+          }
+          fetch(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${latitude},${longitude}&lang=en-US&apiKey=${HERE_API_KEY}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              const label = data?.items?.[0]?.address?.label;
+              if (label) setLocLabel(label);
+            })
+            .catch(() => {});
+        }
+      },
+      (err) => {
+        if (err.code === 1) { setLocError("Location permission denied — allow location access for this site in your browser settings."); setLocDenied(true); }
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [driverRow?.id]);
 
   useEffect(() => {
     function loadScript(src) {
@@ -1754,7 +1881,47 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     init();
   }, []);
 
+  // Keep the driver's marker (and the map view) following their live GPS
+  // position, now that location is tracked continuously rather than once.
+  useEffect(() => {
+    if (!mapObjRef.current || !driverMarkerObjRef.current) return;
+    driverMarkerObjRef.current.setGeometry(driverLoc);
+    if (!request && tripState === "idle") {
+      mapObjRef.current.setCenter(driverLoc, true);
+    }
+  }, [driverLoc]);
+
   const routeLineRef = useRef(null);
+
+  // Render checkpoint markers on the map — distinct icon color for inside-city
+  // vs outside-city, added/removed as reports come and go or get toggled off.
+  useEffect(() => {
+    if (!mapObjRef.current || !window.H) return;
+    const map = mapObjRef.current;
+    const currentIds = new Set(checkpoints.map((c) => c.id));
+
+    // Remove markers for checkpoints that expired or were toggled off
+    Object.keys(checkpointMarkersRef.current).forEach((id) => {
+      if (!showCheckpoints || !currentIds.has(id)) {
+        map.removeObject(checkpointMarkersRef.current[id]);
+        delete checkpointMarkersRef.current[id];
+      }
+    });
+
+    if (!showCheckpoints) return;
+
+    checkpoints.forEach((cp) => {
+      if (checkpointMarkersRef.current[cp.id]) return;
+      const color = cp.zone === "outside_city" ? "#5B8FD4" : "#D9A653";
+      const icon = new window.H.map.Icon(
+        "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="12" fill="${color}" stroke="#070E1F" stroke-width="2"/><path d="M9 18 V10 L14 8 L19 10 V18" stroke="#070E1F" stroke-width="1.6" fill="none" stroke-linejoin="round"/><rect x="12" y="12" width="4" height="6" fill="#070E1F"/></svg>`),
+        { size: { w: 28, h: 28 }, anchor: { x: 14, y: 14 } }
+      );
+      const marker = new window.H.map.Marker({ lat: Number(cp.lat), lng: Number(cp.lng) }, { icon });
+      map.addObject(marker);
+      checkpointMarkersRef.current[cp.id] = marker;
+    });
+  }, [checkpoints, showCheckpoints, mapStatus]);
 
   // Show pickup marker AND a real driving route on the map when a ride request comes in
   useEffect(() => {
@@ -1975,10 +2142,32 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
           </div>
         </div>
       )}
+      {checkpointBanner && (
+        <div className="mx-5 mb-3 rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: checkpointBanner.zone === "outside_city" ? "rgba(91,143,212,0.16)" : "rgba(217,166,83,0.16)", border: `1px solid ${checkpointBanner.zone === "outside_city" ? GREEN : GOLD}` }}>
+          <Shield size={18} color={checkpointBanner.zone === "outside_city" ? GREEN : GOLD} />
+          <div className="flex-1">
+            <p className="text-xs font-semibold">{checkpointBanner.nearby ? "Checkpoint nearby" : "New checkpoint reported"}</p>
+            <p className="text-[10px]" style={{ color: FAINT }}>
+              {checkpointBanner.zone === "outside_city" ? "Outside city" : "Inside city"}
+              {checkpointBanner.label ? ` · ${checkpointBanner.label}` : ""}
+              {checkpointBanner.reportedBy ? ` · reported by ${checkpointBanner.reportedBy}` : ""}
+            </p>
+          </div>
+          <button onClick={() => setCheckpointBanner(null)} aria-label="Dismiss"><X size={14} color={FAINT} /></button>
+        </div>
+      )}
       <div className="mx-5 rounded-2xl overflow-hidden relative" style={{ height: 220, background: CARD, border: `1px solid ${BORDER}` }}>
         <div ref={mapRef} className="w-full h-full" />
         {mapStatus === "loading" && <div className="absolute inset-0 flex items-center justify-center" style={{ background: CARD }}><Navigation size={20} color={GOLD} /></div>}
         {mapStatus === "error" && <div className="absolute inset-0 flex items-center justify-center px-6 text-center" style={{ background: CARD }}><p className="text-[11px]" style={{ color: FAINT }}>Map blocked in this preview — will work on sayyaradrive.com</p></div>}
+        <button onClick={() => setShowCheckpoints((v) => !v)} className="absolute top-2 right-2 px-2.5 py-1.5 rounded-full text-[10px] font-semibold flex items-center gap-1" style={{ background: showCheckpoints ? "rgba(217,166,83,0.9)" : "rgba(7,14,31,0.75)", color: showCheckpoints ? BG : "#fff" }}>
+          <Shield size={11} /> {showCheckpoints ? "Checkpoints on" : "Checkpoints off"}
+        </button>
+      </div>
+      <div className="px-5 mt-2.5">
+        <button onClick={reportCheckpoint} disabled={reportingCheckpoint} className="w-full flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: reportingCheckpoint ? BORDER : "rgba(217,166,83,0.14)", color: reportingCheckpoint ? "#5C736D" : GOLD }}>
+          <Shield size={14} /> {reportingCheckpoint ? "Reporting…" : "Report checkpoint at my location"}
+        </button>
       </div>
       <p className="px-5 mt-2 text-[11px] flex items-center gap-1" style={{ color: FAINT }}><Navigation size={11} color={GREEN} /> {locLabel}</p>
       {locError && (
@@ -3844,10 +4033,11 @@ function Logistics({ goBack, navigate }) {
   const [pickupAddress, setPickupAddress] = useState(""); const [dropoffAddress, setDropoffAddress] = useState("");
   const [pickupContact, setPickupContact] = useState(""); const [dropoffContact, setDropoffContact] = useState("");
   const [senderName, setSenderName] = useState("");
+  const [notes, setNotes] = useState("");
   const [size, setSize] = useState("small"); const [stage, setStage] = useState("input");
   const [chosenTier, setChosenTier] = useState(null);
   const chosen = PARCEL_SIZES.find((s) => s.id === size);
-  const can = senderName.trim() && pickupAddress.trim() && dropoffAddress.trim() && pickupContact.trim() && dropoffContact.trim();
+  const can = pickupAddress.trim() && dropoffAddress.trim() && dropoffContact.trim();
   const [bookingRef, setBookingRef] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -3902,14 +4092,22 @@ function Logistics({ goBack, navigate }) {
     });
   }
 
+  function useMyLocationForDropoff() {
+    detectLocation({
+      onStart: () => { setLocating(true); setLocError(""); },
+      onSuccess: ({ label }) => { setDropoffAddress(label); setLocating(false); setActiveField(null); },
+      onError: (msg) => { setLocating(false); setLocError(msg); },
+    });
+  }
+
   async function confirmPickup() {
     const ref = `PARCEL-${Date.now().toString(36).toUpperCase()}`;
     setSaving(true);
     try {
       const { error: insertError } = await supabase.from("logistics_parcels").insert({
         booking_ref: ref,
-        sender_name: senderName.trim(),
-        sender_phone: pickupContact.trim(),
+        sender_name: senderName.trim() || null,
+        sender_phone: pickupContact.trim() || null,
         recipient_phone: dropoffContact.trim(),
         pickup_address: pickupAddress.trim(),
         dropoff_address: dropoffAddress.trim(),
@@ -3918,6 +4116,7 @@ function Logistics({ goBack, navigate }) {
         parcel_size: size,
         courier: openCourier?.name || null,
         price: chosenTier ? chosenTier.price : chosen.price,
+        notes: notes.trim() || null,
         status: "requested",
       });
       if (insertError) throw insertError;
@@ -3952,42 +4151,43 @@ function Logistics({ goBack, navigate }) {
 
   return (
     <div style={{ color: LUX_TEXT, background: LUX_BG, minHeight: "100%" }}>
-      {/* Photo hero with breadcrumb */}
-      <div className="relative" style={{ height: 260 }}>
+      {/* Dark hero + tabs panel (seamless) */}
+      <div className="relative overflow-hidden" style={{ borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }}>
         <img src="https://images.pexels.com/photos/11040957/pexels-photo-11040957.jpeg?auto=compress&cs=tinysrgb&w=1200" alt="Logistics" className="absolute inset-0 w-full h-full object-cover" />
-        <div className="absolute inset-0" style={{ background: `linear-gradient(90deg, rgba(16,36,61,0.82) 0%, rgba(16,36,61,0.45) 60%, rgba(16,36,61,0.1) 100%)` }} />
-        <div className="relative h-full flex flex-col justify-between px-5 pt-6 pb-6">
-          <button onClick={goBack} aria-label="Go back" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.92)" }}>
-            <ArrowLeft size={16} color={LUX_NAVY} />
+        <div className="absolute inset-0" style={{ background: `linear-gradient(100deg, rgba(16,36,61,0.94) 0%, rgba(16,36,61,0.75) 55%, rgba(16,36,61,0.35) 100%)` }} />
+        <div className="relative px-5 pt-6">
+          <button onClick={goBack} aria-label="Go back" className="w-9 h-9 rounded-full flex items-center justify-center mb-5" style={{ background: "rgba(255,255,255,0.12)" }}>
+            <ArrowLeft size={16} color="#fff" />
           </button>
-          <div>
-            <p className="text-[11px] mb-2" style={{ color: "rgba(255,255,255,0.65)" }}>Home <ChevronRight size={10} className="inline" /> Logistics</p>
-            <h1 className="text-[28px] font-bold leading-tight text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Cargo & Parcel Delivery</h1>
-            <p className="text-sm font-semibold mt-1.5" style={{ color: LUX_GOLD }}>Fast. Reliable. Secure.</p>
-            <p className="text-xs mt-1 max-w-xs" style={{ color: "rgba(255,255,255,0.82)" }}>Trusted couriers across Saudi Arabia, door to door.</p>
+          <h1 className="text-[30px] font-bold leading-[1.1] text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            Cargo & Parcel<br /><span style={{ color: LUX_GOLD }}>Delivery</span>
+          </h1>
+          <p className="text-xs font-semibold mt-3" style={{ color: "rgba(255,255,255,0.9)" }}>Fast. Reliable. Secure.</p>
+          <p className="text-xs mt-1 max-w-[220px]" style={{ color: "rgba(255,255,255,0.7)" }}>Trusted couriers across Saudi Arabia, door to door.</p>
+
+          <div className="flex gap-5 mt-6 border-t" style={{ borderColor: "rgba(255,255,255,0.12)" }}>
+            {[
+              { id: "request", label: "Request Pickup", icon: Package },
+              { id: "couriers", label: "Courier Partners", icon: Users },
+              { id: "companies", label: "Cargo Companies", icon: Building2 },
+            ].map((tb) => {
+              const Icon = tb.icon;
+              const active = view === tb.id;
+              return (
+                <button key={tb.id} onClick={() => setView(tb.id)} className="flex flex-col items-center gap-1.5 pt-4 pb-3 text-[11px] font-semibold" style={{ color: active ? LUX_GOLD : "rgba(255,255,255,0.6)", borderTop: active ? `2px solid ${LUX_GOLD}` : "2px solid transparent", marginTop: -1 }}>
+                  <Icon size={16} />
+                  {tb.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* Pill tabs, docked over the hero edge */}
-      <div className="px-5 -mt-6 relative z-10 mb-5">
-        <div className="flex gap-1.5 rounded-2xl p-1.5" style={luxGlass}>
-          <button onClick={() => setView("request")} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all" style={view === "request" ? { background: LUX_NAVY, color: "#fff" } : { color: LUX_MUTE }}>
-            <Package size={13} /> Request Pickup
-          </button>
-          <button onClick={() => setView("couriers")} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all" style={view === "couriers" ? { background: LUX_NAVY, color: "#fff" } : { color: LUX_MUTE }}>
-            <Truck size={13} /> Courier Partners
-          </button>
-          <button onClick={() => setView("companies")} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all" style={view === "companies" ? { background: LUX_NAVY, color: "#fff" } : { color: LUX_MUTE }}>
-            <Building2 size={13} /> Cargo Companies
-          </button>
-        </div>
-      </div>
-
-      {view === "companies" && <CargoCompaniesList navigate={navigate} />}
+      {view === "companies" && <div className="pt-5"><CargoCompaniesList navigate={navigate} /></div>}
 
       {view === "couriers" && (
-        <div className="px-5 flex flex-col gap-2">
+        <div className="px-5 pt-5 flex flex-col gap-2">
           {COURIER_PARTNERS.map((c) => (
             <button key={c.name} onClick={() => { setOpenCourier(c); setChosenTier(c.tiers[0]); setView("request"); }} className="flex items-center justify-between rounded-xl px-4 py-3 text-left" style={luxCardStyle}>
               <div>
@@ -4001,17 +4201,17 @@ function Logistics({ goBack, navigate }) {
       )}
 
       {view === "request" && (
-      <div className="px-5 max-w-5xl mx-auto">
-        <div className="rounded-2xl p-4 mb-5 flex items-center justify-between gap-3" style={{ background: LUX_NAVY, border: `1px solid ${LUX_GOLD}` }}>
+      <div className="px-5 pt-5 max-w-5xl mx-auto">
+        <div className="rounded-2xl p-4 mb-5 flex items-center justify-between gap-3" style={{ background: LUX_NAVY }}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(212,175,55,0.18)" }}><Truck size={17} color={LUX_GOLD} /></div>
+            <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(212,175,55,0.18)" }}><Truck size={18} color={LUX_GOLD} /></div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-white">Become a Delivery Partner</p>
-              <p className="text-[11px] truncate" style={{ color: "rgba(255,255,255,0.65)" }}>Join SayyaraDrive and grow your delivery business.</p>
+              <p className="text-[11px] leading-snug mt-0.5" style={{ color: "rgba(255,255,255,0.65)" }}>Join SayyaraDrive and grow your delivery business with us.</p>
             </div>
           </div>
-          <button onClick={() => navigate("register_logistics")} className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold flex items-center gap-1.5" style={luxGoldBtn}>
-            Apply <ChevronRight size={13} />
+          <button onClick={() => navigate("register_logistics")} className="shrink-0 rounded-full px-4 py-2.5 text-xs font-semibold flex items-center gap-1.5" style={luxGoldBtn}>
+            Apply Now <ChevronRight size={13} />
           </button>
         </div>
 
@@ -4024,91 +4224,106 @@ function Logistics({ goBack, navigate }) {
           </div>
         )}
 
-        <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <div className="flex items-center gap-3 py-3"><User size={14} color={GOLD} /><input value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Your full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold" style={{ color: LUX_NAVY }}>Pickup Details</p>
+          <button onClick={useMyLocationForPickup} disabled={locating} className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: LUX_GOLD_DEEP }}>
+            <Navigation size={13} /> {locating ? "Detecting…" : "Use my current location"}
+          </button>
         </div>
+        {locError && <p className="text-[11px] mb-2" style={{ color: "#C0755B" }}>{locError}</p>}
 
-        <div className="md:grid md:grid-cols-2 md:gap-5 md:items-start">
-          <div>
-            <p className="text-xs font-semibold mb-2" style={{ color: LUX_ACCENT }}>PICKUP</p>
-            <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <div className="relative py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                <div className="flex items-center gap-3">
-                  <MapPin size={14} color={GREEN} />
-                  <input
-                    value={pickupAddress}
-                    onChange={(e) => setPickupAddress(e.target.value)}
-                    onFocus={() => setActiveField("pickup")}
-                    onBlur={() => setTimeout(() => setActiveField(null), 150)}
-                    placeholder="Pickup address"
-                    className="bg-transparent outline-none text-sm w-full"
-                    style={{ color: TEXT }}
-                  />
-                </div>
-                {activeField === "pickup" && pickupAddress.trim() && pickupLive.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-hidden z-20" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                    {pickupLive.map((p) => (
-                      <button key={p.label} onMouseDown={() => { setPickupAddress(p.label); setActiveField(null); }} className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                        <MapPin size={12} color={FAINT} /> {p.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-3 py-3"><Phone size={14} color={GREEN} /><input value={pickupContact} onChange={(e) => setPickupContact(e.target.value)} placeholder="Pickup contact" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
-            </div>
-
-            <p className="text-xs font-semibold mb-2" style={{ color: LUX_GOLD_DEEP }}>DROP-OFF</p>
-            <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <div className="relative py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                <div className="flex items-center gap-3">
-                  <MapPin size={14} color={GOLD} />
-                  <input
-                    value={dropoffAddress}
-                    onChange={(e) => setDropoffAddress(e.target.value)}
-                    onFocus={() => setActiveField("dropoff")}
-                    onBlur={() => setTimeout(() => setActiveField(null), 150)}
-                    placeholder="Drop-off address"
-                    className="bg-transparent outline-none text-sm w-full"
-                    style={{ color: TEXT }}
-                  />
-                </div>
-                {activeField === "dropoff" && dropoffAddress.trim() && dropoffLive.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-hidden z-20" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                    {dropoffLive.map((p) => (
-                      <button key={p.label} onMouseDown={() => { setDropoffAddress(p.label); setActiveField(null); }} className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs" style={{ borderBottom: `1px solid ${BORDER}` }}>
-                        <MapPin size={12} color={FAINT} /> {p.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-3 py-3"><Phone size={14} color={GOLD} /><input value={dropoffContact} onChange={(e) => setDropoffContact(e.target.value)} placeholder="Recipient contact" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
-            </div>
-          </div>
-
-          <div>
-            <PinMapPicker coords={pickupCoords} onMove={onPickupPinMove} height={190} />
-            <button onClick={useMyLocationForPickup} disabled={locating} className="w-full mt-3 mb-4 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(91,143,212,0.14)", color: LUX_ACCENT }}>
-              <Navigation size={13} /> {locating ? "Detecting location…" : "Use my current location"}
-            </button>
-            {locError && <p className="text-[11px] mb-3" style={{ color: "#C0755B" }}>{locError}</p>}
-
-            <p className="text-xs font-semibold mb-2" style={{ color: LUX_ACCENT }}>SELECT VEHICLE SIZE</p>
-            <div className="flex flex-col gap-2 mb-4">
-              {PARCEL_SIZES.map((s) => {
-                const isSel = size === s.id;
-                return (
-                  <button key={s.id} onClick={() => setSize(s.id)} className="flex items-center justify-between rounded-xl px-4 py-3" style={isSel ? { background: LUX_CARD_TINT, border: `1.5px solid ${LUX_GOLD}` } : { background: CARD, border: `1px solid ${BORDER}` }}>
-                    <div className="text-left"><p className="text-sm font-semibold" style={isSel ? { color: LUX_NAVY } : { color: TEXT }}>{s.label}</p><p className="text-[11px]" style={{ color: isSel ? LUX_MUTE : FAINT }}>{s.sub}</p></div>
+        <div className="rounded-2xl mb-5 overflow-hidden" style={luxCardStyle}>
+          <div className="relative flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: `1px solid ${LUX_BORDER_SOFT}` }}>
+            <MapPin size={15} color={LUX_ACCENT} />
+            <input
+              value={pickupAddress}
+              onChange={(e) => setPickupAddress(e.target.value)}
+              onFocus={() => setActiveField("pickup")}
+              onBlur={() => setTimeout(() => setActiveField((f) => (f === "pickup" ? null : f)), 150)}
+              placeholder="Pickup address"
+              className="bg-transparent outline-none text-sm w-full"
+              style={{ color: LUX_TEXT }}
+            />
+            <button onClick={useMyLocationForPickup} aria-label="Use current location for pickup"><Navigation size={14} color={LUX_FAINT} /></button>
+            {activeField === "pickup" && pickupAddress.trim() && pickupLive.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-hidden z-20" style={{ background: LUX_CARD, border: `1px solid ${LUX_BORDER}` }}>
+                {pickupLive.map((p) => (
+                  <button key={p.label} onMouseDown={() => { setPickupAddress(p.label); setActiveField(null); }} className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs" style={{ borderBottom: `1px solid ${LUX_BORDER_SOFT}`, color: LUX_TEXT }}>
+                    <MapPin size={12} color={LUX_FAINT} /> {p.label}
                   </button>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="relative flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: `1px solid ${LUX_BORDER_SOFT}` }}>
+            <MapPin size={15} color={LUX_GOLD_DEEP} />
+            <input
+              value={dropoffAddress}
+              onChange={(e) => setDropoffAddress(e.target.value)}
+              onFocus={() => setActiveField("dropoff")}
+              onBlur={() => setTimeout(() => setActiveField((f) => (f === "dropoff" ? null : f)), 150)}
+              placeholder="Drop-off address"
+              className="bg-transparent outline-none text-sm w-full"
+              style={{ color: LUX_TEXT }}
+            />
+            <button onClick={useMyLocationForDropoff} aria-label="Use current location for drop-off"><Navigation size={14} color={LUX_FAINT} /></button>
+            {activeField === "dropoff" && dropoffAddress.trim() && dropoffLive.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-hidden z-20" style={{ background: LUX_CARD, border: `1px solid ${LUX_BORDER}` }}>
+                {dropoffLive.map((p) => (
+                  <button key={p.label} onMouseDown={() => { setDropoffAddress(p.label); setActiveField(null); }} className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs" style={{ borderBottom: `1px solid ${LUX_BORDER_SOFT}`, color: LUX_TEXT }}>
+                    <MapPin size={12} color={LUX_FAINT} /> {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: `1px solid ${LUX_BORDER_SOFT}` }}>
+            <Phone size={15} color={LUX_MUTE} />
+            <input value={dropoffContact} onChange={(e) => setDropoffContact(e.target.value)} placeholder="Recipient contact" className="bg-transparent outline-none text-sm w-full" style={{ color: LUX_TEXT }} />
+          </div>
+
+          <div className="flex items-center gap-3 px-4 py-3.5">
+            <Send size={14} color={LUX_MUTE} style={{ transform: "rotate(45deg)" }} />
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: LUX_TEXT }} />
           </div>
         </div>
 
-        <button onClick={() => can && !saving && confirmPickup()} disabled={!can || saving} className="w-full rounded-full py-3.5 text-sm font-semibold mb-8" style={can && !saving ? luxGoldBtn : { background: BORDER, color: "#5C736D" }}>{saving ? "Requesting..." : "Request pickup"}</button>
+        <p className="text-sm font-semibold mb-3" style={{ color: LUX_NAVY }}>Select Vehicle Size</p>
+        <div className="grid grid-cols-3 gap-2.5 mb-6">
+          {PARCEL_SIZES.map((s) => {
+            const isSel = size === s.id;
+            return (
+              <button key={s.id} onClick={() => setSize(s.id)} className="flex flex-col items-center gap-1.5 rounded-xl px-2 py-4 text-center" style={isSel ? { background: LUX_CARD_TINT, border: `1.5px solid ${LUX_GOLD}` } : { background: LUX_CARD, border: `1px solid ${LUX_BORDER_SOFT}` }}>
+                <Package size={20} color={isSel ? LUX_GOLD_DEEP : LUX_FAINT} />
+                <p className="text-xs font-semibold" style={{ color: isSel ? LUX_NAVY : LUX_TEXT }}>{s.label}</p>
+                <p className="text-[10px]" style={{ color: LUX_FAINT }}>{s.sub}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        <button onClick={() => can && !saving && confirmPickup()} disabled={!can || saving} className="w-full rounded-full py-3.5 text-sm font-semibold mb-6 flex items-center justify-center gap-2" style={can && !saving ? luxGoldBtn : { background: LUX_BORDER_SOFT, color: LUX_FAINT }}>
+          <Package size={15} /> {saving ? "Requesting..." : "Request Pickup"} {can && !saving && <ChevronRight size={15} />}
+        </button>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8 pb-2">
+          {[
+            { icon: Shield, title: "Safe & Secure", sub: "Your cargo is protected" },
+            { icon: Clock, title: "Fast Delivery", sub: "On-time, every time" },
+            { icon: MapPin, title: "Live Tracking", sub: "Track your shipment" },
+            { icon: HelpCircle, title: "24/7 Support", sub: "We're here for you" },
+          ].map((f) => {
+            const Icon = f.icon;
+            return (
+              <div key={f.title} className="flex items-start gap-2">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(212,175,55,0.14)" }}><Icon size={14} color={LUX_GOLD_DEEP} /></div>
+                <div><p className="text-[11px] font-semibold" style={{ color: LUX_NAVY }}>{f.title}</p><p className="text-[10px]" style={{ color: LUX_FAINT }}>{f.sub}</p></div>
+              </div>
+            );
+          })}
+        </div>
       </div>
       )}
     </div>
