@@ -3270,23 +3270,23 @@ function CarRental({ goBack, navigate }) {
   useEffect(() => { if (stage === "input") setBookingRef(null); }, [stage]);
   return (
     <div style={{ color: TEXT }}>
-      <div className="relative overflow-hidden" style={{ height: 240 }}>
+      <div className="relative overflow-hidden" style={{ height: 280 }}>
         <img src="https://images.pexels.com/photos/3786091/pexels-photo-3786091.jpeg?auto=compress&cs=tinysrgb&w=1200" alt="Car rental" className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0" style={{ background: `linear-gradient(100deg, ${BG} 0%, rgba(7,14,31,0.85) 45%, rgba(7,14,31,0.25) 100%)` }} />
         <div className="relative px-5 pt-6">
-          <button onClick={goBack} aria-label="Go back" className="w-9 h-9 rounded-full flex items-center justify-center mb-5" style={{ background: "rgba(255,255,255,0.12)" }}>
+          <button onClick={goBack} aria-label="Go back" className="w-9 h-9 rounded-full flex items-center justify-center mb-4" style={{ background: "rgba(255,255,255,0.12)" }}>
             <ArrowLeft size={16} color="#fff" />
           </button>
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ background: "rgba(217,166,83,0.14)", border: `1px solid ${GOLD}` }}>
             <Car size={26} color={GOLD} />
           </div>
-          <h1 className="text-[28px] font-bold text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Car rental</h1>
-          <p className="text-xs mt-1.5 max-w-[260px]" style={{ color: "rgba(255,255,255,0.75)" }}>Earn money by renting out your car when you're not using it.</p>
+          <h1 className="text-[26px] font-bold text-white leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Car rental</h1>
+          <p className="text-xs mt-1.5 max-w-[260px] leading-snug" style={{ color: "rgba(255,255,255,0.75)" }}>Earn money by renting out your car when you're not using it.</p>
         </div>
       </div>
 
       {stage === "input" && (
-        <div className="px-5 -mt-6 relative z-10 mb-5">
+        <div className="px-5 mt-4 relative z-10 mb-5">
           <div className="flex gap-1.5 rounded-2xl p-1.5" style={{ background: CARD, border: `1px solid ${BORDER}`, boxShadow: "0 10px 30px rgba(0,0,0,0.35)" }}>
             <button onClick={() => { setView("search"); setCompanyFilter(null); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold" style={{ background: view === "search" ? GOLD : "transparent", color: view === "search" ? BG : MUTE }}>
               <Search size={12} /> Search
