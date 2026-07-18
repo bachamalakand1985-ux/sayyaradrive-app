@@ -2534,9 +2534,9 @@ function PartnerRegister({ goBack, type }) {
       // get a real login for the dashboard.
       if (type === "rental_owner") {
         const { error: listingError } = await supabase.from("rental_listings").insert({
-          owner_name: name,
-          owner_phone: phone,
-          provider: `Private owner — ${name}`,
+          owner_name: name.trim(),
+          owner_phone: phone.trim(),
+          provider: `Private owner — ${name.trim()}`,
           model: details.vehicleModel || "Car for rent",
           price_per_day: parseFloat(details.dailyRate) || null,
           city,
@@ -4089,7 +4089,7 @@ function CargoCompaniesList({ navigate }) {
   );
 }
 
-function Logistics({ goBack, navigate }) {
+function Logistics({ goBack, navigate, currentDriver }) {
   const [view, setView] = useState("request");
   const [openCourier, setOpenCourier] = useState(null);
   const [pickupAddress, setPickupAddress] = useState(""); const [dropoffAddress, setDropoffAddress] = useState("");
@@ -4186,8 +4186,8 @@ function Logistics({ goBack, navigate }) {
     try {
       const { error: insertError } = await supabase.from("logistics_parcels").insert({
         booking_ref: ref,
-        sender_name: senderName.trim() || null,
-        sender_phone: pickupContact.trim() || null,
+        sender_name: senderName.trim() || currentDriver?.profile?.full_name || null,
+        sender_phone: pickupContact.trim() || currentDriver?.profile?.mobile_number || null,
         recipient_phone: dropoffContact.trim(),
         pickup_address: pickupAddress.trim(),
         dropoff_address: dropoffAddress.trim(),
@@ -5213,6 +5213,7 @@ const ACTIVITY_TABS = [
   { id: "rides", label: "Rides" },
   { id: "cargo", label: "Cargo" },
   { id: "rentals", label: "Rentals" },
+  { id: "mycars", label: "My Cars" },
   { id: "food", label: "Food" },
   { id: "marketplace", label: "Marketplace" },
   { id: "jobs", label: "Jobs" },
@@ -5252,6 +5253,12 @@ function MyActivity({ goBack, currentDriver }) {
         supabase.from("logistics_parcels").select("*").eq("sender_phone", phone).then(({ data }) => (data || []).map((r) => ({
           category: "cargo", id: r.id, ref: r.booking_ref, title: `Parcel: ${r.pickup_address} → ${r.dropoff_address}`,
           status: r.status, created_at: r.created_at, assigned: r.courier || null, raw: r, table: "logistics_parcels",
+        })))
+      );
+      queries.push(
+        supabase.from("rental_listings").select("*").eq("owner_phone", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "mycars", id: r.id, ref: null, title: `${r.model} — listed for rent`,
+          status: r.status, created_at: r.created_at, assigned: "Visible to renters", raw: r, table: "rental_listings", editable: true,
         })))
       );
       queries.push(
@@ -5395,8 +5402,9 @@ function MyActivity({ goBack, currentDriver }) {
 
 function EditActivityItemModal({ item, onClose, onSaved }) {
   const isJob = item.table === "jobs";
-  const [title, setTitle] = useState(item.raw.title || "");
-  const [price, setPrice] = useState(item.raw.price != null ? String(item.raw.price) : "");
+  const isCarListing = item.table === "rental_listings";
+  const [title, setTitle] = useState(isCarListing ? (item.raw.model || "") : (item.raw.title || ""));
+  const [price, setPrice] = useState(isCarListing ? (item.raw.price_per_day != null ? String(item.raw.price_per_day) : "") : (item.raw.price != null ? String(item.raw.price) : ""));
   const [description, setDescription] = useState(item.raw.description || "");
   const [status, setStatus] = useState(item.raw.status || "active");
   const [saving, setSaving] = useState(false);
@@ -5405,6 +5413,8 @@ function EditActivityItemModal({ item, onClose, onSaved }) {
     setSaving(true);
     const payload = isJob
       ? { title: title.trim(), description: description.trim() || null, status }
+      : isCarListing
+      ? { model: title.trim(), price_per_day: price ? Number(price) : null, status }
       : { title: title.trim(), price: price ? Number(price) : null, description: description.trim() || null, status };
     const { error } = await supabase.from(item.table).update(payload).eq("id", item.id);
     setSaving(false);
@@ -5415,19 +5425,21 @@ function EditActivityItemModal({ item, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
       <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
-        <p className="text-sm font-semibold mb-4">Edit {isJob ? "job posting" : "listing"}</p>
+        <p className="text-sm font-semibold mb-4">Edit {isJob ? "job posting" : isCarListing ? "car listing" : "listing"}</p>
         <div className="flex flex-col gap-3 mb-4">
           <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={isCarListing ? "Car model" : "Title"} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
           </div>
-          {!isJob && (
+          {(!isJob) && (
             <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-              <input value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Price (SAR)" inputMode="numeric" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              <input value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} placeholder={isCarListing ? "Price per day (SAR)" : "Price (SAR)"} inputMode="numeric" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
             </div>
           )}
-          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" rows={3} className="bg-transparent outline-none text-sm w-full resize-y" style={{ color: TEXT }} />
-          </div>
+          {!isCarListing && (
+            <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" rows={3} className="bg-transparent outline-none text-sm w-full resize-y" style={{ color: TEXT }} />
+            </div>
+          )}
           <div className="rounded-xl px-4 py-2" style={{ background: BG, border: `1px solid ${BORDER}` }}>
             <select value={status} onChange={(e) => setStatus(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
               <option value="active" style={{ background: CARD }}>Active</option>
@@ -10175,7 +10187,7 @@ export default function SayyaraDriveApp() {
     rentals: <CarRental goBack={goBack} navigate={navigate} />,
     market: <Marketplace goBack={goBack} navigate={navigate} />,
     food: <FoodDelivery goBack={goBack} navigate={navigate} />,
-    logistics: <Logistics goBack={goBack} navigate={navigate} />,
+    logistics: <Logistics goBack={goBack} navigate={navigate} currentDriver={currentDriver} />,
     jobs: <JobsPortal goBack={goBack} navigate={navigate} />,
     fleet: <FleetManagement goBack={goBack} navigate={navigate} />,
     profile: <Profile goBack={goBack} navigate={navigate} currentDriver={currentDriver} driverLogout={driverLogout} />,
