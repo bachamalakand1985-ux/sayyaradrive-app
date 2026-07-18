@@ -253,11 +253,15 @@ const SAUDI_CITY_COORDS = {
 };
 
 /* ---------- reusable draggable pickup pin map ---------- */
-function PinMapPicker({ coords, onMove, height = 150 }) {
+function PinMapPicker({ coords, onMove, height = 150, destination = null, routeRequestId = 0 }) {
   const mapDivRef = useRef(null);
   const mapObjRef = useRef(null);
   const markerRef = useRef(null);
+  const destMarkerRef = useRef(null);
+  const routeLineRef = useRef(null);
   const [status, setStatus] = useState("loading");
+  const [routeInfo, setRouteInfo] = useState(null);
+  const [routing, setRouting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -312,12 +316,63 @@ function PinMapPicker({ coords, onMove, height = 150 }) {
     }
   }, [coords.lat, coords.lng]);
 
+  // Draw/update the destination pin whenever it's provided
+  useEffect(() => {
+    if (!mapObjRef.current || status !== "ready" || !window.H) return;
+    if (destMarkerRef.current) {
+      mapObjRef.current.removeObject(destMarkerRef.current);
+      destMarkerRef.current = null;
+    }
+    if (destination) {
+      const destIcon = new window.H.map.Icon(
+        "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><circle cx="14" cy="14" r="9" fill="#5B8FD4" stroke="#0F211E" stroke-width="3"/></svg>`),
+        { size: { w: 28, h: 28 }, anchor: { x: 14, y: 14 } }
+      );
+      const destMarker = new window.H.map.Marker(destination, { icon: destIcon });
+      mapObjRef.current.addObject(destMarker);
+      destMarkerRef.current = destMarker;
+    }
+  }, [destination?.lat, destination?.lng, status]);
+
+  // Find route — only runs when the person taps the "Find route" button
+  // (routeRequestId increments), not automatically on every pin move.
+  useEffect(() => {
+    if (!routeRequestId || !mapObjRef.current || !destination || status !== "ready" || !window.H) return;
+    let cancelled = false;
+    async function findRoute() {
+      setRouting(true);
+      setRouteInfo(null);
+      if (routeLineRef.current) { mapObjRef.current.removeObject(routeLineRef.current); routeLineRef.current = null; }
+      try {
+        const res = await fetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${coords.lat},${coords.lng}&destination=${destination.lat},${destination.lng}&return=summary,polyline&apiKey=${HERE_API_KEY}`);
+        const data = await res.json();
+        const route = data?.routes?.[0];
+        if (cancelled) return;
+        if (route?.sections?.[0]?.polyline) {
+          const lineString = window.H.geo.LineString.fromFlexiblePolyline(route.sections[0].polyline);
+          const routeLine = new window.H.map.Polyline(lineString, { style: { lineWidth: 4, strokeColor: "#D9A653" } });
+          mapObjRef.current.addObject(routeLine);
+          routeLineRef.current = routeLine;
+          mapObjRef.current.getViewModel().setLookAtData({ bounds: routeLine.getBoundingBox() });
+          const summary = route.sections[0].summary;
+          if (summary) setRouteInfo({ km: (summary.length / 1000).toFixed(1), mins: Math.round(summary.duration / 60) });
+        }
+      } catch (e) { /* best-effort */ }
+      if (!cancelled) setRouting(false);
+    }
+    findRoute();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeRequestId]);
+
   return (
     <div className="rounded-2xl overflow-hidden relative mb-4" style={{ height, background: CARD, border: `1px solid ${BORDER}` }}>
       <div ref={mapDivRef} className="w-full h-full" />
       {status === "loading" && <div className="absolute inset-0 flex items-center justify-center" style={{ background: CARD }}><Navigation size={18} color={GOLD} /></div>}
       {status === "error" && <div className="absolute inset-0 flex items-center justify-center px-6 text-center" style={{ background: CARD }}><p className="text-[11px]" style={{ color: FAINT }}>Map couldn't load — check connection.</p></div>}
-      {status === "ready" && <p className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full text-[10px]" style={{ background: "rgba(15,33,30,0.85)", color: FAINT }}>Drag the pin to set pickup point</p>}
+      {status === "ready" && !destination && <p className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full text-[10px]" style={{ background: "rgba(15,33,30,0.85)", color: FAINT }}>Drag the pin to set pickup point</p>}
+      {routing && <p className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full text-[10px]" style={{ background: "rgba(15,33,30,0.85)", color: GOLD }}>Finding route…</p>}
+      {routeInfo && !routing && <p className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full text-[10px] font-semibold" style={{ background: "rgba(15,33,30,0.85)", color: GOLD }}>{routeInfo.km} km · {routeInfo.mins} min</p>}
     </div>
   );
 }
@@ -2110,8 +2165,8 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     <div style={{ color: TEXT }}>
       <Header title={t ? t("driverHeader") : "Driver"} onBack={goBack} right={
         <div className="flex items-center gap-2">
-          <button onClick={reportCheckpoint} disabled={reportingCheckpoint} aria-label="Report checkpoint at my location" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: reportingCheckpoint ? BORDER : "rgba(217,166,83,0.14)", color: reportingCheckpoint ? "#5C736D" : GOLD }}>
-            <Shield size={15} />
+          <button onClick={reportCheckpoint} disabled={reportingCheckpoint} aria-label="Report checkpoint at my location" className="h-9 px-3 rounded-full flex items-center gap-1.5 text-xs font-semibold" style={{ background: reportingCheckpoint ? BORDER : "rgba(217,166,83,0.14)", color: reportingCheckpoint ? "#5C736D" : GOLD }}>
+            <Shield size={14} /> {reportingCheckpoint ? "Reporting…" : "Checkpoint"}
           </button>
           <button onClick={online ? goOffline : goOnline} className="flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold" style={{ background: online ? GREEN : BORDER, color: online ? BG : MUTE }}>
             <Power size={13} /> {online ? (t ? t("onlineLabel") : "Online") : (t ? t("goOnline") : "Go online")}
@@ -4049,12 +4104,30 @@ function Logistics({ goBack, navigate }) {
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState("");
   const [pickupCoords, setPickupCoords] = useState(SAUDI_CITY_COORDS.Riyadh);
+  const [dropoffCoords, setDropoffCoords] = useState(null);
+  const [routeRequestId, setRouteRequestId] = useState(0);
+  const [findingRoute, setFindingRoute] = useState(false);
   useEffect(() => { if (stage === "input") setBookingRef(null); }, [stage]);
 
   async function onPickupPinMove(coords) {
     setPickupCoords(coords);
     const label = await reverseGeocodeCoords(coords.lat, coords.lng);
     setPickupAddress(label);
+  }
+
+  async function findRoute() {
+    if (!pickupAddress.trim() || !dropoffAddress.trim()) return;
+    setFindingRoute(true);
+    try {
+      const res = await fetch(`https://geocode.search.hereapi.com/v1/geocode?q=${encodeURIComponent(dropoffAddress + ", Saudi Arabia")}&apiKey=${HERE_API_KEY}`);
+      const data = await res.json();
+      const pos = data?.items?.[0]?.position;
+      if (pos) {
+        setDropoffCoords({ lat: pos.lat, lng: pos.lng });
+        setRouteRequestId((n) => n + 1);
+      }
+    } catch (e) { /* best-effort */ }
+    setFindingRoute(false);
   }
 
   // live autosuggest — same as ride booking
@@ -4217,8 +4290,6 @@ function Logistics({ goBack, navigate }) {
           </button>
         </div>
 
-        <CargoCompaniesStrip navigate={navigate} setView={setView} />
-
         {chosenTier && (
           <div className="rounded-xl px-4 py-3 mb-4 flex items-center justify-between" style={{ background: LUX_CARD_TINT, border: `1px solid ${LUX_BORDER}` }}>
             <p className="text-xs" style={{ color: LUX_MUTE }}>Selected: <span style={{ color: LUX_GOLD_DEEP, fontWeight: 600 }}>{openCourier?.name || chosenTier.label}</span></p>
@@ -4296,9 +4367,19 @@ function Logistics({ goBack, navigate }) {
           <p className="text-sm font-semibold" style={{ color: LUX_NAVY }}>Pickup Location on Map</p>
           <span className="text-[10px]" style={{ color: LUX_FAINT }}>Drag pin to fine-tune</span>
         </div>
-        <div className="rounded-2xl overflow-hidden mb-6" style={{ border: `1px solid ${LUX_BORDER}` }}>
-          <PinMapPicker coords={pickupCoords} onMove={onPickupPinMove} height={190} />
+        <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${LUX_BORDER}` }}>
+          <PinMapPicker coords={pickupCoords} onMove={onPickupPinMove} height={190} destination={dropoffCoords} routeRequestId={routeRequestId} />
         </div>
+        <button
+          onClick={findRoute}
+          disabled={findingRoute || !pickupAddress.trim() || !dropoffAddress.trim()}
+          className="w-full mt-2 mb-6 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold"
+          style={(!pickupAddress.trim() || !dropoffAddress.trim()) ? { background: LUX_BORDER_SOFT, color: LUX_FAINT } : luxGoldBtn}
+        >
+          <Route size={13} /> {findingRoute ? "Finding route…" : "Find route to drop-off"}
+        </button>
+
+        <CargoCompaniesStrip navigate={navigate} setView={setView} />
 
         <p className="text-sm font-semibold mb-3" style={{ color: LUX_NAVY }}>Select Vehicle Size</p>
         <div className="grid grid-cols-3 gap-2.5 mb-6">
