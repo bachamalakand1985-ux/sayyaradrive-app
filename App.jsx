@@ -3029,6 +3029,7 @@ const RENTAL_COMPANIES = Array.from(new Set(CARS.map((c) => c.provider))).map((n
 function FleetCompaniesList({ navigate }) {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -3052,31 +3053,53 @@ function FleetCompaniesList({ navigate }) {
         <EmptyState icon={Users} title="No transport companies yet" subtitle="Registered transport companies will appear here." />
       ) : (
         <div className="flex flex-col gap-2 pb-6">
-          {companies.map((c) => (
-            <div key={c.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
-                  {c.logo_url ? <img src={c.logo_url} alt={c.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <Users size={16} color={FAINT} />}
+          {companies.map((c) => {
+            const isOpen = expandedId === c.id;
+            return (
+              <button key={c.id} onClick={() => setExpandedId(isOpen ? null : c.id)} className="w-full text-left rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${isOpen ? GOLD : BORDER}` }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
+                    {c.logo_url ? <img src={c.logo_url} alt={c.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <Users size={16} color={FAINT} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{c.name}</p>
+                    <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{c.fleet_size || 0} vehicles · Contact: {c.contact_name}</p>
+                  </div>
+                  <ChevronRight size={14} color={FAINT} style={{ transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate">{c.name}</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{c.fleet_size || 0} vehicles · Contact: {c.contact_name}</p>
-                </div>
-              </div>
-              {Array.isArray(c.photo_urls) && c.photo_urls.length > 0 && (
-                <div className="flex gap-1.5 mt-2.5 overflow-x-auto">
-                  {c.photo_urls.slice(0, 6).map((url, i) => (
-                    <img key={i} src={url} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0" style={{ border: `1px solid ${BORDER}` }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                  ))}
-                </div>
-              )}
-              {c.mobile_number && (
-                <a href={`tel:${c.mobile_number}`} className="mt-2.5 flex items-center gap-2 text-[12px]" style={{ color: GOLD }}>
-                  <Phone size={12} /> {c.mobile_number}
-                </a>
-              )}
-            </div>
-          ))}
+                {Array.isArray(c.photo_urls) && c.photo_urls.length > 0 && (
+                  <div className="flex gap-1.5 mt-2.5 overflow-x-auto">
+                    {c.photo_urls.slice(0, 6).map((url, i) => (
+                      <img key={i} src={url} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0" style={{ border: `1px solid ${BORDER}` }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                    ))}
+                  </div>
+                )}
+                {isOpen && (
+                  <div className="mt-3 pt-3 flex flex-col gap-2" style={{ borderTop: `1px solid ${BORDER}` }}>
+                    {c.email && <p className="text-[11px]" style={{ color: FAINT }}>Email: <span style={{ color: TEXT }}>{c.email}</span></p>}
+                    <div className="flex gap-2 mt-1">
+                      {c.mobile_number && (
+                        <a href={`tel:${c.mobile_number}`} onClick={(e) => e.stopPropagation()} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+                          <Phone size={12} /> Call
+                        </a>
+                      )}
+                      {c.mobile_number && (
+                        <a
+                          href={`https://wa.me/${c.mobile_number.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I found ${c.name} on SayyaraDrive and I'd like to know more about your fleet.`)}`}
+                          target="_blank" rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2 text-[11px] font-semibold"
+                          style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
+                        >
+                          <Bot size={12} /> WhatsApp
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
