@@ -1126,7 +1126,7 @@ const AIRPORT_CITY = { [AIRPORTS[0]]: "Riyadh", [AIRPORTS[1]]: "Jeddah", [AIRPOR
 const CITIES = SAUDI_CITY_LIST;
 const INTERCITY_OPTIONS = [{ id: "shared", label: "Shared seat", sub: "Share with others", price: 120 }, { id: "private", label: "Private car", sub: "Full car", price: 480 }, { id: "private_suv", label: "Private SUV", sub: "Full SUV", price: 650 }];
 
-function BookRide({ goBack, lang, t }) {
+function BookRide({ goBack, lang, t, currentDriver }) {
   const [mode, setMode] = useState("city"); // city | airport | intercity
   const [stage, setStage] = useState("input");
   const [bookingRef, setBookingRef] = useState(null);
@@ -1160,10 +1160,10 @@ function BookRide({ goBack, lang, t }) {
       const ref = `RIDE-${Date.now().toString(36).toUpperCase()}`;
       setBookingRef(ref);
       const rideData = mode === "city"
-        ? { booking_ref: ref, ride_type: "city", pickup_label: pickup, dropoff_label: dropoff, pickup_lat: pickupCoords.lat, pickup_lng: pickupCoords.lng, city: pickupCity, status: "requested", distance_km: routeInfo?.distanceKm || null, duration_min: routeInfo?.durationMin || null, fare_estimate: fareFor(chosenRide), surge_multiplier: surge }
+        ? { booking_ref: ref, ride_type: "city", pickup_label: pickup, dropoff_label: dropoff, pickup_lat: pickupCoords.lat, pickup_lng: pickupCoords.lng, city: pickupCity, status: "requested", distance_km: routeInfo?.distanceKm || null, duration_min: routeInfo?.durationMin || null, fare_estimate: fareFor(chosenRide), surge_multiplier: surge, passenger_id: currentDriver?.type === "passenger" ? currentDriver.profile?.id : null, passenger_phone: currentDriver?.profile?.mobile_number || null }
         : mode === "airport"
-        ? { booking_ref: ref, ride_type: "airport", pickup_label: direction === "to" ? address : `${AIRPORTS.find(a => a === airport) || airport} (pickup)`, dropoff_label: direction === "to" ? airport : address, pickup_lat: aptCoords.lat, pickup_lng: aptCoords.lng, city: cityForAirport, scheduled_date: aptDate, scheduled_time: aptTime, status: "requested" }
-        : { booking_ref: ref, ride_type: "intercity", pickup_label: icPickupLabel || icFrom, dropoff_label: icTo, pickup_lat: icPickupCoords.lat, pickup_lng: icPickupCoords.lng, city: icFrom, scheduled_date: icDate, scheduled_time: icTime, status: "requested" };
+        ? { booking_ref: ref, ride_type: "airport", pickup_label: direction === "to" ? address : `${AIRPORTS.find(a => a === airport) || airport} (pickup)`, dropoff_label: direction === "to" ? airport : address, pickup_lat: aptCoords.lat, pickup_lng: aptCoords.lng, city: cityForAirport, scheduled_date: aptDate, scheduled_time: aptTime, status: "requested", passenger_id: currentDriver?.type === "passenger" ? currentDriver.profile?.id : null, passenger_phone: currentDriver?.profile?.mobile_number || null }
+        : { booking_ref: ref, ride_type: "intercity", pickup_label: icPickupLabel || icFrom, dropoff_label: icTo, pickup_lat: icPickupCoords.lat, pickup_lng: icPickupCoords.lng, city: icFrom, scheduled_date: icDate, scheduled_time: icTime, status: "requested", passenger_id: currentDriver?.type === "passenger" ? currentDriver.profile?.id : null, passenger_phone: currentDriver?.profile?.mobile_number || null };
       supabase.from("rides").insert(rideData).then(() => {
         try {
           const saved = JSON.parse(localStorage.getItem("sayyara_my_rides") || "[]");
@@ -3745,7 +3745,7 @@ function FoodDelivery({ goBack, navigate }) {
     const ref = `ORDER-${Date.now().toString(36).toUpperCase()}`;
     setSaving(true);
     try {
-      await supabase.from("food_orders").insert({
+      const { error: orderError } = await supabase.from("food_orders").insert({
         booking_ref: ref,
         restaurant_name: openRestaurant?.name || null,
         customer_name: customerName.trim(),
@@ -3755,7 +3755,12 @@ function FoodDelivery({ goBack, navigate }) {
         total: cartTotal,
         status: "placed",
       });
-    } catch (e) { /* best-effort; still show confirmation locally */ }
+      if (orderError) throw orderError;
+    } catch (e) {
+      setSaving(false);
+      alert("Couldn't place your order — please check your connection and try again.");
+      return;
+    }
     setSaving(false);
     setBookingRef(ref);
     setStage("confirmed");
@@ -4297,6 +4302,24 @@ function Logistics({ goBack, navigate }) {
           </div>
         )}
 
+        <CargoCompaniesStrip navigate={navigate} setView={setView} />
+
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-semibold" style={{ color: LUX_NAVY }}>Pickup Location on Map</p>
+          <span className="text-[10px]" style={{ color: LUX_FAINT }}>Drag pin to fine-tune</span>
+        </div>
+        <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${LUX_BORDER}` }}>
+          <PinMapPicker coords={pickupCoords} onMove={onPickupPinMove} height={190} destination={dropoffCoords} routeRequestId={routeRequestId} />
+        </div>
+        <button
+          onClick={findRoute}
+          disabled={findingRoute || !pickupAddress.trim() || !dropoffAddress.trim()}
+          className="w-full mt-2 mb-6 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold"
+          style={(!pickupAddress.trim() || !dropoffAddress.trim()) ? { background: LUX_BORDER_SOFT, color: LUX_FAINT } : luxGoldBtn}
+        >
+          <Route size={13} /> {findingRoute ? "Finding route…" : "Find route to drop-off"}
+        </button>
+
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-semibold" style={{ color: LUX_NAVY }}>Pickup Details</p>
           <button onClick={useMyLocationForPickup} disabled={locating} className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: LUX_GOLD_DEEP }}>
@@ -4305,7 +4328,7 @@ function Logistics({ goBack, navigate }) {
         </div>
         {locError && <p className="text-[11px] mb-2" style={{ color: "#C0755B" }}>{locError}</p>}
 
-        <div className="rounded-2xl mb-5 overflow-hidden" style={luxCardStyle}>
+        <div className="rounded-2xl mb-6 overflow-hidden" style={luxCardStyle}>
           <div className="relative flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: `1px solid ${LUX_BORDER_SOFT}` }}>
             <MapPin size={15} color={LUX_ACCENT} />
             <input
@@ -4362,24 +4385,6 @@ function Logistics({ goBack, navigate }) {
             <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: LUX_TEXT }} />
           </div>
         </div>
-
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-sm font-semibold" style={{ color: LUX_NAVY }}>Pickup Location on Map</p>
-          <span className="text-[10px]" style={{ color: LUX_FAINT }}>Drag pin to fine-tune</span>
-        </div>
-        <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${LUX_BORDER}` }}>
-          <PinMapPicker coords={pickupCoords} onMove={onPickupPinMove} height={190} destination={dropoffCoords} routeRequestId={routeRequestId} />
-        </div>
-        <button
-          onClick={findRoute}
-          disabled={findingRoute || !pickupAddress.trim() || !dropoffAddress.trim()}
-          className="w-full mt-2 mb-6 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold"
-          style={(!pickupAddress.trim() || !dropoffAddress.trim()) ? { background: LUX_BORDER_SOFT, color: LUX_FAINT } : luxGoldBtn}
-        >
-          <Route size={13} /> {findingRoute ? "Finding route…" : "Find route to drop-off"}
-        </button>
-
-        <CargoCompaniesStrip navigate={navigate} setView={setView} />
 
         <p className="text-sm font-semibold mb-3" style={{ color: LUX_NAVY }}>Select Vehicle Size</p>
         <div className="grid grid-cols-3 gap-2.5 mb-6">
@@ -5180,6 +5185,265 @@ const TRIPS = [
   { id: 3, type: "ride", date: "Jul 3, 2026", from: "Al Malaz", to: "Panorama Mall", fare: 19 },
   { id: 4, type: "airport", date: "Jun 29, 2026", from: "JED Airport", to: "Al Hamra", fare: 62 },
 ];
+/* ---------- STATUS → PROGRESS HELPER (shared across My Activity) ---------- */
+function statusProgress(status) {
+  const s = (status || "").toLowerCase();
+  if (["cancelled", "canceled", "rejected", "hidden"].includes(s)) return { percent: 0, label: "Cancelled", color: "#C0755B" };
+  if (["completed", "delivered", "done", "active", "confirmed"].includes(s)) return { percent: 100, label: s === "active" ? "Live" : "Completed", color: GREEN };
+  if (["in_progress", "in_transit", "out_for_delivery", "arrived", "picked_up"].includes(s)) return { percent: 75, label: "In progress", color: GOLD };
+  if (["accepted", "preparing", "assigned", "offered"].includes(s)) return { percent: 50, label: "Accepted", color: GOLD };
+  if (["pending", "new"].includes(s)) return { percent: 35, label: "Pending review", color: GOLD };
+  return { percent: 15, label: "Requested", color: FAINT };
+}
+function timeAgo(dateStr) {
+  if (!dateStr) return "";
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+const ACTIVITY_TABS = [
+  { id: "all", label: "All" },
+  { id: "rides", label: "Rides" },
+  { id: "cargo", label: "Cargo" },
+  { id: "rentals", label: "Rentals" },
+  { id: "food", label: "Food" },
+  { id: "marketplace", label: "Marketplace" },
+  { id: "jobs", label: "Jobs" },
+];
+
+function MyActivity({ goBack, currentDriver }) {
+  const [tab, setTab] = useState("all");
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const phone = currentDriver?.profile?.mobile_number;
+
+  useEffect(() => { loadAll(); }, [phone]);
+
+  async function loadAll() {
+    setLoading(true);
+    let rideRefs = [];
+    try { rideRefs = JSON.parse(localStorage.getItem("sayyara_my_rides") || "[]"); } catch (e) {}
+
+    const queries = [];
+    // Rides — by account if logged in, otherwise fall back to this device's history
+    queries.push(
+      (phone
+        ? supabase.from("rides").select("*").eq("passenger_phone", phone)
+        : rideRefs.length
+        ? supabase.from("rides").select("*").in("booking_ref", rideRefs)
+        : Promise.resolve({ data: [] })
+      ).then(({ data }) => (data || []).map((r) => ({
+        category: "rides", id: r.id, ref: r.booking_ref, title: `${TYPE_META[r.ride_type]?.label || "Ride"}: ${r.pickup_label} → ${r.dropoff_label}`,
+        status: r.status, created_at: r.created_at, assigned: r.driver_id ? "Driver assigned" : null, driver_id: r.driver_id,
+        raw: r, table: "rides",
+      })))
+    );
+    if (phone) {
+      queries.push(
+        supabase.from("logistics_parcels").select("*").eq("sender_phone", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "cargo", id: r.id, ref: r.booking_ref, title: `Parcel: ${r.pickup_address} → ${r.dropoff_address}`,
+          status: r.status, created_at: r.created_at, assigned: r.courier || null, raw: r, table: "logistics_parcels",
+        })))
+      );
+      queries.push(
+        supabase.from("rental_bookings").select("*").eq("renter_phone", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "rentals", id: r.id, ref: r.booking_ref, title: `${r.car_model || "Car rental"} — ${r.provider || ""}`,
+          status: r.status, created_at: r.created_at, assigned: r.provider || null, raw: r, table: "rental_bookings",
+        })))
+      );
+      queries.push(
+        supabase.from("food_orders").select("*").eq("customer_phone", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "food", id: r.id, ref: r.booking_ref, title: `Order from ${r.restaurant_name || "restaurant"}`,
+          status: r.status, created_at: r.created_at, assigned: r.restaurant_name || null, raw: r, table: "food_orders",
+        })))
+      );
+      queries.push(
+        supabase.from("marketplace_listings").select("*").eq("seller_phone", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "marketplace", id: r.id, ref: null, title: r.title, status: r.status, created_at: r.created_at,
+          assigned: "Visible to buyers", raw: r, table: "marketplace_listings", editable: true,
+        })))
+      );
+      queries.push(
+        supabase.from("jobs").select("*").eq("phone", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "jobs", id: r.id, ref: null, title: r.title, status: r.status, created_at: r.created_at,
+          assigned: "Visible to applicants", raw: r, table: "jobs", editable: true,
+        })))
+      );
+    }
+    const results = (await Promise.all(queries)).flat();
+
+    // Resolve assigned driver names for rides that have one
+    const driverIds = [...new Set(results.filter((r) => r.category === "rides" && r.driver_id).map((r) => r.driver_id))];
+    if (driverIds.length) {
+      const { data: driverRows } = await supabase.from("drivers").select("id, full_name").in("id", driverIds);
+      const nameById = Object.fromEntries((driverRows || []).map((d) => [d.id, d.full_name]));
+      results.forEach((r) => { if (r.category === "rides" && r.driver_id) r.assigned = nameById[r.driver_id] || "Driver assigned"; });
+    }
+
+    results.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    setItems(results);
+    setLoading(false);
+  }
+
+  async function cancelItem(item) {
+    if (!confirm("Cancel this request?")) return;
+    const { error } = await supabase.from(item.table).update({ status: "cancelled" }).eq("id", item.id);
+    if (error) { alert("Couldn't cancel — please try again."); return; }
+    loadAll();
+  }
+
+  async function deleteListing(item) {
+    if (!confirm("Delete this listing permanently?")) return;
+    const { error } = await supabase.from(item.table).delete().eq("id", item.id);
+    if (error) { alert("Couldn't delete — please try again."); return; }
+    loadAll();
+  }
+
+  const filtered = tab === "all" ? items : items.filter((i) => i.category === tab);
+  const cancellableTables = ["rides", "logistics_parcels", "rental_bookings", "food_orders"];
+  const cancellableStatuses = ["requested", "pending", "placed", "confirmed", "new"];
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="My Activity" onBack={goBack} />
+      {!phone && (
+        <div className="mx-5 mb-4 rounded-xl px-4 py-3" style={{ background: "rgba(217,166,83,0.1)", border: `1px solid ${BORDER}` }}>
+          <p className="text-xs" style={{ color: MUTE }}>Log in to see every request tied to your account — cargo, rentals, food, marketplace, and jobs, not just rides on this device.</p>
+        </div>
+      )}
+      <div className="flex gap-2 px-5 mb-4 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+        {ACTIVITY_TABS.map((tb) => (
+          <button key={tb.id} onClick={() => setTab(tb.id)} className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold" style={{ background: tab === tb.id ? GOLD : CARD, color: tab === tb.id ? BG : MUTE, border: tab === tb.id ? "none" : `1px solid ${BORDER}` }}>
+            {tb.label}
+          </button>
+        ))}
+      </div>
+
+      {loading && <div className="px-5 flex flex-col gap-2">{[1, 2, 3].map((i) => <SkeletonRow key={i} />)}</div>}
+      {!loading && filtered.length === 0 && (
+        <EmptyState icon={Route} title="Nothing here yet" subtitle="Requests and posts you make will show up here." />
+      )}
+
+      <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2.5 pb-6">
+        {!loading && filtered.map((item) => {
+          const prog = statusProgress(item.status);
+          const isExpanded = expandedId === item.id;
+          const canCancel = cancellableTables.includes(item.table) && cancellableStatuses.includes((item.status || "").toLowerCase());
+          return (
+            <div key={`${item.table}-${item.id}`} className="rounded-2xl px-4 py-3.5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[9px] uppercase tracking-wide font-semibold" style={{ color: GREEN }}>{ACTIVITY_TABS.find((t) => t.id === item.category)?.label}</p>
+                  <p className="text-sm font-semibold mt-0.5 leading-snug">{item.title}</p>
+                </div>
+                <span className="shrink-0 px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${prog.color}22`, color: prog.color }}>{prog.label}</span>
+              </div>
+
+              <div className="mt-2.5 h-1.5 rounded-full overflow-hidden" style={{ background: BORDER }}>
+                <div className="h-full rounded-full transition-all" style={{ width: `${prog.percent}%`, background: prog.color }} />
+              </div>
+
+              <div className="flex items-center justify-between mt-2">
+                <p className="text-[10px]" style={{ color: FAINT }}>
+                  {item.assigned ? <span style={{ color: MUTE }}>{item.assigned} · </span> : null}
+                  {timeAgo(item.created_at)}
+                </p>
+                <button onClick={() => setExpandedId(isExpanded ? null : item.id)} className="text-[10px] font-semibold" style={{ color: GOLD }}>{isExpanded ? "Hide details" : "View details"}</button>
+              </div>
+
+              {isExpanded && (
+                <div className="mt-3 pt-3 flex flex-col gap-1.5" style={{ borderTop: `1px solid ${BORDER}` }}>
+                  {item.ref && <p className="text-[11px]" style={{ color: MUTE }}>Reference: <span style={{ color: TEXT }}>{item.ref}</span></p>}
+                  <p className="text-[11px]" style={{ color: MUTE }}>Status: <span style={{ color: TEXT }}>{item.status}</span></p>
+                  <p className="text-[11px]" style={{ color: MUTE }}>Posted: <span style={{ color: TEXT }}>{new Date(item.created_at).toLocaleString()}</span></p>
+                  {item.raw?.total != null && <p className="text-[11px]" style={{ color: MUTE }}>Total: <span style={{ color: TEXT }}>{item.raw.total} SAR</span></p>}
+                  {item.raw?.price != null && <p className="text-[11px]" style={{ color: MUTE }}>Price: <span style={{ color: TEXT }}>{item.raw.price} SAR</span></p>}
+                  {item.raw?.fare_estimate != null && <p className="text-[11px]" style={{ color: MUTE }}>Fare estimate: <span style={{ color: TEXT }}>{item.raw.fare_estimate} SAR</span></p>}
+                  {item.raw?.total_price != null && <p className="text-[11px]" style={{ color: MUTE }}>Total: <span style={{ color: TEXT }}>{item.raw.total_price} SAR</span></p>}
+
+                  <div className="flex gap-2 mt-2">
+                    {canCancel && (
+                      <button onClick={() => cancelItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Cancel request</button>
+                    )}
+                    {item.editable && (
+                      <>
+                        <button onClick={() => setEditItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
+                        <button onClick={() => deleteListing(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Delete</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {editItem && <EditActivityItemModal item={editItem} onClose={() => setEditItem(null)} onSaved={() => { setEditItem(null); loadAll(); }} />}
+    </div>
+  );
+}
+
+function EditActivityItemModal({ item, onClose, onSaved }) {
+  const isJob = item.table === "jobs";
+  const [title, setTitle] = useState(item.raw.title || "");
+  const [price, setPrice] = useState(item.raw.price != null ? String(item.raw.price) : "");
+  const [description, setDescription] = useState(item.raw.description || "");
+  const [status, setStatus] = useState(item.raw.status || "active");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    const payload = isJob
+      ? { title: title.trim(), description: description.trim() || null, status }
+      : { title: title.trim(), price: price ? Number(price) : null, description: description.trim() || null, status };
+    const { error } = await supabase.from(item.table).update(payload).eq("id", item.id);
+    setSaving(false);
+    if (!error) onSaved();
+    else alert("Couldn't save changes — please try again.");
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+        <p className="text-sm font-semibold mb-4">Edit {isJob ? "job posting" : "listing"}</p>
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          {!isJob && (
+            <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+              <input value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Price (SAR)" inputMode="numeric" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+          )}
+          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" rows={3} className="bg-transparent outline-none text-sm w-full resize-y" style={{ color: TEXT }} />
+          </div>
+          <div className="rounded-xl px-4 py-2" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+              <option value="active" style={{ background: CARD }}>Active</option>
+              <option value="hidden" style={{ background: CARD }}>Hidden</option>
+            </select>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>{saving ? "Saving…" : "Save changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TripHistory({ goBack }) {
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -9895,7 +10159,7 @@ export default function SayyaraDriveApp() {
     auth_choice: <AuthChoiceScreen goBack={goBack} navigate={navigate} />,
     register_choice: <RegisterChoiceScreen goBack={goBack} navigate={navigate} />,
     home: <Home navigate={navigate} lang={lang} setLang={setLang} t={t} currentDriver={currentDriver} driverLogout={driverLogout} />,
-    ride: <BookRide goBack={goBack} lang={lang} t={t} />,
+    ride: <BookRide goBack={goBack} lang={lang} t={t} currentDriver={currentDriver} />,
     driver: <DriverApp goBack={goBack} navigate={navigate} currentDriver={currentDriver} lang={lang} t={t} />,
     driver_profile: <DriverProfile goBack={goBack} navigate={navigate} currentDriver={currentDriver} onLogout={driverLogout} />,
     driver_edit_profile: <DriverEditProfile goBack={goBack} currentDriver={currentDriver} setCurrentDriver={setCurrentDriver} />,
@@ -9906,8 +10170,8 @@ export default function SayyaraDriveApp() {
     friend_chat: <FriendChatScreen goBack={goBack} activeFriendChat={activeFriendChat} />,
     driver_messages: <DriverMessages goBack={goBack} currentDriver={currentDriver} />,
     push_settings: <PushSettings goBack={goBack} currentDriver={currentDriver} />,
-    airport: <BookRide goBack={goBack} lang={lang} t={t} />,
-    intercity: <BookRide goBack={goBack} lang={lang} t={t} />,
+    airport: <BookRide goBack={goBack} lang={lang} t={t} currentDriver={currentDriver} />,
+    intercity: <BookRide goBack={goBack} lang={lang} t={t} currentDriver={currentDriver} />,
     rentals: <CarRental goBack={goBack} navigate={navigate} />,
     market: <Marketplace goBack={goBack} navigate={navigate} />,
     food: <FoodDelivery goBack={goBack} navigate={navigate} />,
@@ -9916,7 +10180,7 @@ export default function SayyaraDriveApp() {
     fleet: <FleetManagement goBack={goBack} navigate={navigate} />,
     profile: <Profile goBack={goBack} navigate={navigate} currentDriver={currentDriver} driverLogout={driverLogout} />,
     safety_center: <SafetyCenter goBack={goBack} navigate={navigate} />,
-    activity: <TripHistory goBack={goBack} />,
+    activity: <MyActivity goBack={goBack} currentDriver={currentDriver} />,
     wallet: <WalletTab goBack={goBack} currentDriver={currentDriver} navigate={navigate} />,
     admin: currentAdmin ? <AdminOverview navigate={navigate} goBack={goBack} onLogout={() => { supabase.auth.signOut(); setCurrentAdmin(null); navigate("welcome"); }} /> : <AdminLogin goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAdmin} />,
     register_driver: <PartnerRegister goBack={goBack} type="driver" />,
