@@ -2404,7 +2404,9 @@ const REGISTER_CONFIGS = {
     detailFields: [
       { key: "vehicleModel", label: "Car model", placeholder: "e.g. Hyundai Elantra 2022" },
       { key: "plateNumber", label: "Plate number", placeholder: "e.g. JED 1122" },
-      { key: "dailyRate", label: "Preferred daily rate (SAR)", placeholder: "e.g. 120" },
+      { key: "dailyRate", label: "Daily rate (SAR)", placeholder: "e.g. 120" },
+      { key: "weeklyRate", label: "Weekly rate (SAR) — optional", placeholder: "e.g. 750", optional: true },
+      { key: "monthlyRate", label: "Monthly rate (SAR) — optional", placeholder: "e.g. 2600", optional: true },
     ],
     documents: ["National ID / Iqama", "Vehicle registration (Istimara)", "Insurance document"],
   },
@@ -2500,7 +2502,7 @@ function PartnerRegister({ goBack, type }) {
   }
 
   const step1Valid = name.trim() && phone.trim();
-  const step2Valid = cfg.detailFields.every((f) => (details[f.key] || "").trim());
+  const step2Valid = cfg.detailFields.filter((f) => !f.optional).every((f) => (details[f.key] || "").trim());
   const step3Valid = cfg.documents.every((d) => checkedDocs[d]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -2549,6 +2551,8 @@ function PartnerRegister({ goBack, type }) {
           provider: `Private owner — ${name.trim()}`,
           model: details.vehicleModel || "Car for rent",
           price_per_day: parseFloat(details.dailyRate) || null,
+          weekly_price: parseFloat(details.weeklyRate) || null,
+          monthly_price: parseFloat(details.monthlyRate) || null,
           city,
           image_url: galleryUrls[0] || null,
           gallery_urls: galleryUrls,
@@ -3049,6 +3053,8 @@ function CarRental({ goBack, navigate }) {
           fuel: r.fuel || "Petrol",
           img: r.image_url || "https://images.pexels.com/photos/3786091/pexels-photo-3786091.jpeg?auto=compress&cs=tinysrgb&w=600",
           ownerPhone: r.owner_phone || null,
+          weeklyPrice: r.weekly_price || null,
+          monthlyPrice: r.monthly_price || null,
         })));
       }
     }
@@ -3185,11 +3191,38 @@ function CarRental({ goBack, navigate }) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
             {(companyFilter ? allCars.filter((c) => c.provider === companyFilter) : allCars).map((c) => {
               const isSel = carId === c.id;
+              const hasPrice = c.price > 0;
               return (
-                <button key={c.id} onClick={() => setCarId(c.id)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-left" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
-                  <img src={c.img} alt={c.model} loading="lazy" className="w-16 h-14 rounded-lg object-cover shrink-0" style={{ background: BORDER }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                  <div className="flex-1"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{c.label}</p><p className="text-sm font-semibold">{c.price} SAR/day</p></div><p className="text-[11px]" style={{ color: FAINT }}>{c.model}</p><p className="text-[10px] mt-0.5 flex items-center gap-2" style={{ color: FAINT }}><span>⚙ {c.transmission}</span><span>👤 {c.seats}</span><span>⛽ {c.fuel}</span></p><p className="text-[10px] mt-0.5" style={{ color: GOLD }}>{c.provider}</p></div>
-                </button>
+                <div key={c.id} className="rounded-xl px-3 py-3" style={{ background: isSel ? BORDER : CARD, border: isSel ? `1px solid ${GOLD}` : `1px solid ${BORDER}` }}>
+                  <button onClick={() => setCarId(c.id)} className="w-full flex items-center gap-3 text-left">
+                    <img src={c.img} alt={c.model} loading="lazy" className="w-16 h-14 rounded-lg object-cover shrink-0" style={{ background: BORDER }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold">{c.label}</p>
+                        <p className="text-sm font-semibold shrink-0" style={{ color: hasPrice ? TEXT : GOLD }}>{hasPrice ? `${c.price} SAR/day` : "Contact for price"}</p>
+                      </div>
+                      <p className="text-[11px]" style={{ color: FAINT }}>{c.model}</p>
+                      <p className="text-[10px] mt-0.5 flex items-center gap-2" style={{ color: FAINT }}><span>⚙ {c.transmission}</span><span>👤 {c.seats}</span><span>⛽ {c.fuel}</span></p>
+                      {(c.weeklyPrice || c.monthlyPrice) && (
+                        <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>
+                          {c.weeklyPrice ? `${c.weeklyPrice} SAR/week` : ""}{c.weeklyPrice && c.monthlyPrice ? " · " : ""}{c.monthlyPrice ? `${c.monthlyPrice} SAR/month` : ""}
+                        </p>
+                      )}
+                      <p className="text-[10px] mt-0.5" style={{ color: GOLD }}>{c.provider}</p>
+                    </div>
+                  </button>
+                  {c.ownerPhone && (
+                    <a
+                      href={`https://wa.me/${c.ownerPhone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I'm interested in renting your ${c.model} listed on SayyaraDrive.`)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-2.5 flex items-center justify-center gap-1.5 rounded-full py-2 text-[11px] font-semibold"
+                      style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
+                    >
+                      <Bot size={12} /> Contact owner on WhatsApp
+                    </a>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -3200,7 +3233,7 @@ function CarRental({ goBack, navigate }) {
                 <div className="flex items-center gap-3 py-3"><Phone size={14} color={GOLD} /><input value={renterPhone} onChange={(e) => setRenterPhone(e.target.value)} placeholder="Your mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
               </div>
               <button onClick={() => canReserve && !saving && confirmReservation()} disabled={!canReserve || saving} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: canReserve && !saving ? GOLD : BORDER, color: canReserve && !saving ? BG : "#5C736D" }}>
-                {saving ? "Reserving..." : days > 0 ? `Reserve — ${chosen.price * days} SAR total` : `Reserve — ${chosen.price} SAR/day`}
+                {saving ? "Reserving..." : chosen.price > 0 ? (days > 0 ? `Reserve — ${chosen.price * days} SAR total` : `Reserve — ${chosen.price} SAR/day`) : "Request reservation"}
               </button>
             </>
           )}
@@ -3213,7 +3246,17 @@ function CarRental({ goBack, navigate }) {
           <div className="w-full">
             <RatingPrompt ratingType="company" targetId={chosen?.provider} targetLabel={chosen?.provider} bookingRef={bookingRef} prompt={`Rate ${chosen?.provider}`} />
           </div>
-          <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this reservation</button>
+          {chosen?.ownerPhone && (
+            <a
+              href={`https://wa.me/${chosen.ownerPhone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I just reserved your ${chosen.model} on SayyaraDrive (${bookingRef}).`)}`}
+              target="_blank" rel="noopener noreferrer"
+              className="w-full mt-3 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold"
+              style={{ background: GOLD, color: BG }}
+            >
+              <Bot size={15} /> Message owner on WhatsApp now
+            </a>
+          )}
+          <button onClick={() => setChatOpen(true)} className="w-full mt-2 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this reservation</button>
           <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
           <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel reservation</button>
         </div>
