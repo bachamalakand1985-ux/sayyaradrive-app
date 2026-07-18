@@ -3496,18 +3496,34 @@ const PARTNER_PLATFORMS = [
 ];
 
 /* ---------- POST MARKETPLACE ITEM (with photos) ---------- */
+const STORE_TYPES = ["Supermarket", "Electronics Store", "Fashion Boutique", "Furniture Store", "Auto Parts Shop", "Restaurant Supply", "Wholesale", "Retail Shop", "Other"];
+
 function PostMarketplaceItem({ goBack, navigate }) {
+  const [phase, setPhase] = useState("check"); // "check" | "no_store" | "form"
+  const [checkPhone, setCheckPhone] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [store, setStore] = useState(null);
+
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState("Electronics");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("Riyadh");
-  const [phone, setPhone] = useState("");
   const [photos, setPhotos] = useState([]); // { file, previewUrl }
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const fileInputRef = useRef(null);
   const MAX_PHOTOS = 6;
+
+  async function checkStore() {
+    if (!checkPhone.trim()) { setError("Please enter your mobile number."); return; }
+    setError("");
+    setChecking(true);
+    const { data } = await supabase.from("stores").select("*").eq("owner_phone", checkPhone.trim()).maybeSingle();
+    setChecking(false);
+    if (data) { setStore(data); setPhase("form"); }
+    else { setPhase("no_store"); }
+  }
 
   function handleFilesSelected(e) {
     const files = Array.from(e.target.files || []);
@@ -3526,7 +3542,6 @@ function PostMarketplaceItem({ goBack, navigate }) {
     setError("");
     if (!title.trim()) { setError("Please enter a title."); return; }
     if (!price || Number(price) <= 0) { setError("Please enter a valid price."); return; }
-    if (!phone.trim()) { setError("Please enter a contact number."); return; }
     setUploading(true);
     try {
       const uploadedUrls = [];
@@ -3544,8 +3559,9 @@ function PostMarketplaceItem({ goBack, navigate }) {
         category,
         description: description.trim() || null,
         location,
-        seller_phone: phone.trim(),
-        seller_name: "Individual seller",
+        seller_phone: store.owner_phone,
+        seller_name: store.store_name,
+        store_id: store.id,
         image_url: uploadedUrls[0] || null,
         image_urls: uploadedUrls,
         status: "active",
@@ -3560,10 +3576,51 @@ function PostMarketplaceItem({ goBack, navigate }) {
     }
   }
 
+  if (phase === "check") {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="Post an item" onBack={goBack} />
+        <div className="px-5">
+          <p className="text-sm mb-4" style={{ color: MUTE }}>Every listing is posted under your store. Enter your mobile number to continue.</p>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Phone size={14} color={GOLD} />
+            <input value={checkPhone} onChange={(e) => setCheckPhone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && checkStore()} placeholder="Your store's mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} autoFocus />
+          </div>
+          {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+          <button onClick={checkStore} disabled={checking} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: checking ? BORDER : GOLD, color: checking ? "#5C736D" : BG }}>
+            {checking ? "Checking…" : "Continue"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "no_store") {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="Post an item" onBack={goBack} />
+        <div className="px-5 flex flex-col items-center text-center py-8">
+          <ShoppingBag size={32} color={GOLD} />
+          <p className="text-sm font-semibold mt-3">You need a store to post items</p>
+          <p className="text-xs mt-1" style={{ color: FAINT }}>Every listing is posted under a registered store — it only takes a minute to set up.</p>
+          <button onClick={() => navigate("register_store")} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Register your store</button>
+          <button onClick={() => setPhase("check")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Try a different number</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ color: TEXT }}>
       <Header title="Post an item" onBack={goBack} />
       <div className="px-5">
+        <div className="rounded-xl px-4 py-3 mb-4 flex items-center gap-3" style={{ background: "rgba(217,166,83,0.1)", border: `1px solid ${BORDER}` }}>
+          <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
+            {store.logo_url ? <img src={store.logo_url} alt="" className="w-full h-full object-cover" /> : <ShoppingBag size={15} color={FAINT} />}
+          </div>
+          <p className="text-xs" style={{ color: MUTE }}>Posting as <span style={{ color: GOLD, fontWeight: 600 }}>{store.store_name}</span></p>
+        </div>
+
         <p className="text-xs mb-2 font-semibold" style={{ color: MUTE }}>Photos ({photos.length}/{MAX_PHOTOS})</p>
         <div className="grid grid-cols-3 gap-2 mb-4">
           {photos.map((p, i) => (
@@ -3605,16 +3662,258 @@ function PostMarketplaceItem({ goBack, navigate }) {
             <MapPin size={14} color={GOLD} />
             <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Location" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
           </div>
-          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <Phone size={14} color={GOLD} />
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Contact number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
-          </div>
         </div>
 
         {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
         <button onClick={submit} disabled={uploading} className="w-full mb-6 rounded-full py-3 text-sm font-semibold" style={{ background: uploading ? BORDER : GOLD, color: uploading ? "#5C736D" : BG }}>
           {uploading ? "Posting…" : "Post listing"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- STORE REGISTRATION (required, logo mandatory) ---------- */
+function StoreRegister({ goBack, navigate }) {
+  const [storeName, setStoreName] = useState("");
+  const [storeType, setStoreType] = useState(STORE_TYPES[0]);
+  const [ownerName, setOwnerName] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
+  const [city, setCity] = useState("Riyadh");
+  const [hours, setHours] = useState("");
+  const [description, setDescription] = useState("");
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
+  const logoInputRef = useRef(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function handleLogoSelected(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+    e.target.value = "";
+  }
+
+  const can = storeName.trim() && ownerName.trim() && ownerPhone.trim() && logoFile;
+
+  async function submit() {
+    setError("");
+    if (!storeName.trim()) { setError("Please enter your store name."); return; }
+    if (!ownerName.trim()) { setError("Please enter your full name."); return; }
+    if (!ownerPhone.trim()) { setError("Please enter your mobile number."); return; }
+    if (!logoFile) { setError("A store logo is required."); return; }
+    setSaving(true);
+    try {
+      const { data: existing } = await supabase.from("stores").select("id").eq("owner_phone", ownerPhone.trim()).maybeSingle();
+      if (existing) { setError("A store is already registered with this mobile number."); setSaving(false); return; }
+
+      const ext = logoFile.name.split(".").pop() || "jpg";
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: logoErr } = await supabase.storage.from("company-logos").upload(fileName, logoFile);
+      if (logoErr) throw logoErr;
+      const { data: pub } = supabase.storage.from("company-logos").getPublicUrl(fileName);
+
+      const { error: insertError } = await supabase.from("stores").insert({
+        owner_name: ownerName.trim(),
+        owner_phone: ownerPhone.trim(),
+        store_name: storeName.trim(),
+        store_type: storeType,
+        logo_url: pub.publicUrl,
+        city,
+        hours: hours.trim() || null,
+        description: description.trim() || null,
+        status: "active",
+      });
+      if (insertError) throw insertError;
+      navigate("market");
+    } catch (e) {
+      setError(e.message || "Couldn't register your store — please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Register your store" onBack={goBack} />
+      <div className="px-5">
+        <p className="text-xs mb-2 font-semibold" style={{ color: GREEN }}>STORE LOGO (REQUIRED)</p>
+        <div className="flex items-center gap-3 mb-5">
+          <button onClick={() => logoInputRef.current?.click()} className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center shrink-0" style={{ background: CARD, border: `1px dashed ${logoPreview ? GOLD : BORDER}` }}>
+            {logoPreview ? <img src={logoPreview} alt="Logo" className="w-full h-full object-cover" /> : <ImageIcon size={22} color={FAINT} />}
+          </button>
+          <div>
+            <button onClick={() => logoInputRef.current?.click()} className="text-xs font-semibold" style={{ color: GOLD }}>{logoPreview ? "Change logo" : "Upload logo"}</button>
+            <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>Square image works best</p>
+          </div>
+          <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoSelected} />
+        </div>
+
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <ShoppingBag size={14} color={GOLD} />
+            <input value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="Store name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="rounded-xl px-4 py-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <select value={storeType} onChange={(e) => setStoreType(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+              {STORE_TYPES.map((t) => <option key={t} value={t} style={{ background: CARD }}>{t}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <User size={14} color={GOLD} />
+            <input value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="Your full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Phone size={14} color={GOLD} />
+            <input value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="Mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <MapPin size={14} color={GOLD} />
+            <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Clock size={14} color={GOLD} />
+            <input value={hours} onChange={(e) => setHours(e.target.value)} placeholder="Opening hours (e.g. 9 AM – 11 PM)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="About your store (optional)" rows={3} className="bg-transparent outline-none text-sm w-full resize-y" style={{ color: TEXT }} />
+          </div>
+        </div>
+
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <button onClick={submit} disabled={!can || saving} className="w-full mb-6 rounded-full py-3 text-sm font-semibold" style={{ background: can && !saving ? GOLD : BORDER, color: can && !saving ? BG : "#5C736D" }}>
+          {saving ? "Registering…" : "Register store"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- REGISTERED STORES DIRECTORY ---------- */
+function RegisteredStoresList({ navigate }) {
+  const [stores, setStores] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [openStore, setOpenStore] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data } = await supabase.from("stores").select("*").eq("status", "active").order("created_at", { ascending: false });
+      if (!cancelled) { setStores(data || []); setLoading(false); }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div className="px-5">
+      <button onClick={() => navigate("register_store")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+        <span className="flex items-center gap-2 text-sm font-semibold"><ShoppingBag size={15} color={GOLD} /> Register your store</span>
+        <ChevronRight size={14} color={GOLD} />
+      </button>
+      {loading ? (
+        <div className="flex justify-center py-10"><SearchingAnimation /></div>
+      ) : stores.length === 0 ? (
+        <EmptyState icon={ShoppingBag} title="No stores yet" subtitle="Registered stores will appear here." />
+      ) : (
+        <div className="flex flex-col gap-2 pb-6">
+          {stores.map((s) => (
+            <button key={s.id} onClick={() => setOpenStore(s)} className="w-full text-left flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
+                {s.logo_url ? <img src={s.logo_url} alt={s.store_name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <ShoppingBag size={16} color={FAINT} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate">{s.store_name}</p>
+                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{s.store_type} · {s.city}</p>
+              </div>
+              <ChevronRight size={14} color={FAINT} />
+            </button>
+          ))}
+        </div>
+      )}
+      {openStore && <StoreProfileModal store={openStore} onClose={() => setOpenStore(null)} />}
+    </div>
+  );
+}
+
+function StoreProfileModal({ store, onClose }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data } = await supabase.from("marketplace_listings").select("*").eq("store_id", store.id).eq("status", "active").order("created_at", { ascending: false });
+      if (!cancelled) { setItems(data || []); setLoading(false); }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [store.id]);
+
+  const byCategory = items.reduce((acc, i) => {
+    const cat = i.category || "Other";
+    (acc[cat] = acc[cat] || []).push(i);
+    return acc;
+  }, {});
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto" style={{ background: BG }}>
+      <Header title={store.store_name} onBack={onClose} />
+      <div className="px-5 pb-8">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            {store.logo_url ? <img src={store.logo_url} alt={store.store_name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <ShoppingBag size={22} color={FAINT} />}
+          </div>
+          <div>
+            <p className="text-base font-semibold">{store.store_name}</p>
+            <p className="text-xs mt-0.5" style={{ color: GOLD }}>{store.store_type}</p>
+            <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{store.city}{store.hours ? ` · ${store.hours}` : ""}</p>
+          </div>
+        </div>
+        {store.description && <p className="text-xs mb-4" style={{ color: MUTE }}>{store.description}</p>}
+        <div className="flex gap-2 mb-6">
+          {store.owner_phone && (
+            <a href={`tel:${store.owner_phone}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+              <Phone size={13} /> Call
+            </a>
+          )}
+          {store.owner_phone && (
+            <a
+              href={`https://wa.me/${store.owner_phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I found ${store.store_name} on SayyaraDrive.`)}`}
+              target="_blank" rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold"
+              style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
+            >
+              <Bot size={13} /> WhatsApp
+            </a>
+          )}
+        </div>
+
+        <p className="text-sm font-semibold mb-3" style={{ color: GREEN }}>LISTINGS — {items.length} ITEM{items.length !== 1 ? "S" : ""}</p>
+        {loading ? (
+          <div className="flex justify-center py-10"><SearchingAnimation /></div>
+        ) : items.length === 0 ? (
+          <EmptyState icon={ShoppingBag} title="No items listed yet" subtitle="This store hasn't posted anything yet." />
+        ) : (
+          Object.entries(byCategory).map(([cat, catItems]) => (
+            <div key={cat} className="mb-5">
+              <p className="text-xs font-semibold mb-2" style={{ color: GOLD }}>{cat.toUpperCase()} ({catItems.length})</p>
+              <div className="grid grid-cols-2 gap-2.5">
+                {catItems.map((item) => (
+                  <div key={item.id} className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    <img src={item.image_url || "https://images.pexels.com/photos/5957/pexels-photo-5957.jpeg?auto=compress&cs=tinysrgb&w=600"} alt={item.title} className="w-full h-24 object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                    <div className="p-2.5">
+                      <p className="text-xs font-semibold truncate">{item.title}</p>
+                      <p className="text-xs mt-0.5" style={{ color: GOLD }}>{item.price} SAR</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
@@ -3670,8 +3969,8 @@ function Marketplace({ goBack, navigate }) {
       </div>
 
       <div className="px-5 mb-4 flex gap-2">
-        <button onClick={() => setView("browse")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "browse" ? GOLD : CARD, color: view === "browse" ? BG : MUTE, border: view === "browse" ? "none" : `1px solid ${BORDER}` }}>
-          <Search size={12} /> Browse
+        <button onClick={() => setView("stores")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "stores" ? GOLD : CARD, color: view === "stores" ? BG : MUTE, border: view === "stores" ? "none" : `1px solid ${BORDER}` }}>
+          <ShoppingBag size={12} /> Registered Stores
         </button>
         <button onClick={() => setView("platforms")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "platforms" ? GOLD : CARD, color: view === "platforms" ? BG : MUTE, border: view === "platforms" ? "none" : `1px solid ${BORDER}` }}>
           <Globe size={12} /> Partner Platforms
@@ -3686,11 +3985,13 @@ function Marketplace({ goBack, navigate }) {
         </div>
       )}
 
+      {view === "stores" && <RegisteredStoresList navigate={navigate} />}
+
       {view === "browse" && (
         <>
           <div className="px-5 mb-3">
-            <button onClick={() => navigate("register_seller")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
-              <span className="flex items-center gap-2 text-sm font-semibold"><ShoppingBag size={15} color={GOLD} /> Become a seller</span>
+            <button onClick={() => navigate("register_store")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+              <span className="flex items-center gap-2 text-sm font-semibold"><ShoppingBag size={15} color={GOLD} /> Register your store</span>
               <ChevronRight size={14} color={GOLD} />
             </button>
           </div>
@@ -10547,6 +10848,7 @@ export default function SayyaraDriveApp() {
     register_driver: <PartnerRegister goBack={goBack} type="driver" />,
     register_rental: <PartnerRegister goBack={goBack} type="rental_owner" />,
     register_seller: <PartnerRegister goBack={goBack} type="seller" />,
+    register_store: <StoreRegister goBack={goBack} navigate={navigate} />,
     post_marketplace_item: <PostMarketplaceItem goBack={goBack} navigate={navigate} />,
     register_food: <PartnerRegister goBack={goBack} type="food_partner" />,
     register_logistics: <PartnerRegister goBack={goBack} type="logistics_partner" />,
