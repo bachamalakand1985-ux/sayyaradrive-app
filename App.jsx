@@ -3515,6 +3515,17 @@ function PostMarketplaceItem({ goBack, navigate }) {
   const fileInputRef = useRef(null);
   const MAX_PHOTOS = 6;
 
+  useEffect(() => {
+    let saved = null;
+    try { saved = localStorage.getItem("sayyara_store_phone"); } catch (e) {}
+    if (saved) {
+      setCheckPhone(saved);
+      supabase.from("stores").select("*").eq("owner_phone", saved).maybeSingle().then(({ data }) => {
+        if (data) { setStore(data); setPhase("form"); }
+      });
+    }
+  }, []);
+
   async function checkStore() {
     if (!checkPhone.trim()) { setError("Please enter your mobile number."); return; }
     setError("");
@@ -3727,7 +3738,8 @@ function StoreRegister({ goBack, navigate }) {
         status: "active",
       });
       if (insertError) throw insertError;
-      navigate("market");
+      try { localStorage.setItem("sayyara_store_phone", ownerPhone.trim()); } catch (e) {}
+      navigate("post_marketplace_item");
     } catch (e) {
       setError(e.message || "Couldn't register your store — please try again.");
     } finally {
@@ -3841,6 +3853,14 @@ function RegisteredStoresList({ navigate }) {
 function StoreProfileModal({ store, onClose }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [cart, setCart] = useState({}); // itemId -> qty
+  const [stage, setStage] = useState("browse"); // "browse" | "checkout" | "confirmed"
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [placing, setPlacing] = useState(false);
+  const [orderError, setOrderError] = useState("");
+  const [bookingRef, setBookingRef] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -3858,10 +3878,118 @@ function StoreProfileModal({ store, onClose }) {
     return acc;
   }, {});
 
+  function changeQty(itemId, delta) {
+    setCart((prev) => {
+      const next = Math.max(0, (prev[itemId] || 0) + delta);
+      const updated = { ...prev };
+      if (next === 0) delete updated[itemId];
+      else updated[itemId] = next;
+      return updated;
+    });
+  }
+
+  const cartItems = Object.entries(cart).map(([id, qty]) => ({ item: items.find((i) => i.id === id), qty })).filter((c) => c.item);
+  const cartTotal = cartItems.reduce((s, c) => s + c.item.price * c.qty, 0);
+  const cartCount = cartItems.reduce((s, c) => s + c.qty, 0);
+
+  async function placeOrder() {
+    setOrderError("");
+    if (!customerName.trim() || !customerPhone.trim()) { setOrderError("Please enter your name and mobile number."); return; }
+    setPlacing(true);
+    const ref = `STORE-${Date.now().toString(36).toUpperCase()}`;
+    try {
+      const { error } = await supabase.from("store_orders").insert({
+        booking_ref: ref,
+        store_id: store.id,
+        store_name: store.store_name,
+        store_phone: store.owner_phone,
+        customer_name: customerName.trim(),
+        customer_phone: customerPhone.trim(),
+        delivery_address: deliveryAddress.trim() || null,
+        items: cartItems.map((c) => ({ id: c.item.id, title: c.item.title, price: c.item.price, qty: c.qty })),
+        total: cartTotal,
+        status: "placed",
+      });
+      if (error) throw error;
+      setBookingRef(ref);
+      setStage("confirmed");
+    } catch (e) {
+      setOrderError("Couldn't place your order — please try again.");
+    } finally {
+      setPlacing(false);
+    }
+  }
+
+  if (stage === "confirmed") {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto" style={{ background: BG }}>
+        <Header title={store.store_name} onBack={onClose} />
+        <div className="px-5 pt-8 flex flex-col items-center text-center">
+          <CheckCircle2 size={44} color={GREEN} />
+          <h2 className="mt-4 text-lg font-semibold">Order placed</h2>
+          <p className="text-sm mt-1" style={{ color: MUTE }}>{store.store_name} will prepare your order and follow up on delivery — same as food delivery, tracked start to finish.</p>
+          <p className="text-xs mt-3" style={{ color: FAINT }}>Order ref: {bookingRef}</p>
+          {store.owner_phone && (
+            <a
+              href={`https://wa.me/${store.owner_phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I just placed an order (${bookingRef}) with ${store.store_name} on SayyaraDrive.`)}`}
+              target="_blank" rel="noopener noreferrer"
+              className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold"
+              style={{ background: GOLD, color: BG }}
+            >
+              <Bot size={15} /> Message store on WhatsApp
+            </a>
+          )}
+          <button onClick={onClose} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Done</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (stage === "checkout") {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto" style={{ background: BG }}>
+        <Header title="Checkout" onBack={() => setStage("browse")} />
+        <div className="px-5">
+          <p className="text-sm font-semibold mb-3" style={{ color: GREEN }}>ORDER SUMMARY</p>
+          <div className="rounded-2xl mb-5 overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            {cartItems.map((c) => (
+              <div key={c.item.id} className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                <p className="text-xs">{c.item.title} <span style={{ color: FAINT }}>× {c.qty}</span></p>
+                <p className="text-xs font-semibold" style={{ color: GOLD }}>{c.item.price * c.qty} SAR</p>
+              </div>
+            ))}
+            <div className="flex items-center justify-between px-4 py-3">
+              <p className="text-sm font-semibold">Total</p>
+              <p className="text-sm font-semibold" style={{ color: GOLD }}>{cartTotal} SAR</p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-3 mb-4">
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <User size={14} color={GOLD} />
+              <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Your full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Phone size={14} color={GOLD} />
+              <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+            <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <MapPin size={14} color={GOLD} />
+              <input value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="Delivery address" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            </div>
+          </div>
+          {orderError && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{orderError}</p>}
+          <button onClick={placeOrder} disabled={placing} className="w-full mb-6 rounded-full py-3 text-sm font-semibold" style={{ background: placing ? BORDER : GOLD, color: placing ? "#5C736D" : BG }}>
+            {placing ? "Placing order…" : `Place order — ${cartTotal} SAR`}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto" style={{ background: BG }}>
       <Header title={store.store_name} onBack={onClose} />
-      <div className="px-5 pb-8">
+      <div className="px-5" style={{ paddingBottom: cartCount > 0 ? 90 : 32 }}>
         <div className="flex items-center gap-3 mb-4">
           <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             {store.logo_url ? <img src={store.logo_url} alt={store.store_name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <ShoppingBag size={22} color={FAINT} />}
@@ -3891,7 +4019,7 @@ function StoreProfileModal({ store, onClose }) {
           )}
         </div>
 
-        <p className="text-sm font-semibold mb-3" style={{ color: GREEN }}>LISTINGS — {items.length} ITEM{items.length !== 1 ? "S" : ""}</p>
+        <p className="text-sm font-semibold mb-3" style={{ color: GREEN }}>ITEMS — {items.length}</p>
         {loading ? (
           <div className="flex justify-center py-10"><SearchingAnimation /></div>
         ) : items.length === 0 ? (
@@ -3901,20 +4029,42 @@ function StoreProfileModal({ store, onClose }) {
             <div key={cat} className="mb-5">
               <p className="text-xs font-semibold mb-2" style={{ color: GOLD }}>{cat.toUpperCase()} ({catItems.length})</p>
               <div className="grid grid-cols-2 gap-2.5">
-                {catItems.map((item) => (
-                  <div key={item.id} className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                    <img src={item.image_url || "https://images.pexels.com/photos/5957/pexels-photo-5957.jpeg?auto=compress&cs=tinysrgb&w=600"} alt={item.title} className="w-full h-24 object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                    <div className="p-2.5">
-                      <p className="text-xs font-semibold truncate">{item.title}</p>
-                      <p className="text-xs mt-0.5" style={{ color: GOLD }}>{item.price} SAR</p>
+                {catItems.map((item) => {
+                  const qty = cart[item.id] || 0;
+                  return (
+                    <div key={item.id} className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                      <img src={item.image_url || "https://images.pexels.com/photos/5957/pexels-photo-5957.jpeg?auto=compress&cs=tinysrgb&w=600"} alt={item.title} className="w-full h-24 object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                      <div className="p-2.5">
+                        <p className="text-xs font-semibold truncate">{item.title}</p>
+                        <p className="text-xs mt-0.5" style={{ color: GOLD }}>{item.price} SAR</p>
+                        {qty === 0 ? (
+                          <button onClick={() => changeQty(item.id, 1)} className="w-full mt-2 rounded-full py-1.5 text-[10px] font-semibold flex items-center justify-center gap-1" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+                            <Plus size={10} /> Add
+                          </button>
+                        ) : (
+                          <div className="flex items-center justify-between mt-2 rounded-full" style={{ background: GOLD }}>
+                            <button onClick={() => changeQty(item.id, -1)} className="w-7 h-7 flex items-center justify-center"><Minus size={12} color={BG} /></button>
+                            <span className="text-xs font-semibold" style={{ color: BG }}>{qty}</span>
+                            <button onClick={() => changeQty(item.id, 1)} className="w-7 h-7 flex items-center justify-center"><Plus size={12} color={BG} /></button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))
         )}
       </div>
+      {cartCount > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 px-5 py-4" style={{ background: CARD, borderTop: `1px solid ${BORDER}` }}>
+          <button onClick={() => setStage("checkout")} className="w-full flex items-center justify-between rounded-full px-5 py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+            <span>{cartCount} item{cartCount > 1 ? "s" : ""} in cart</span>
+            <span>{cartTotal} SAR — Checkout</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -3925,6 +4075,15 @@ function Marketplace({ goBack, navigate }) {
   const [dbListings, setDbListings] = useState([]);
   const [contactListing, setContactListing] = useState(null);
   const [reportListing, setReportListing] = useState(null);
+  const [openStoreOf, setOpenStoreOf] = useState(null);
+  const [storeLoading, setStoreLoading] = useState(false);
+
+  async function openStore(storeId) {
+    setStoreLoading(true);
+    const { data } = await supabase.from("stores").select("*").eq("id", storeId).maybeSingle();
+    setStoreLoading(false);
+    if (data) setOpenStoreOf(data);
+  }
 
   useEffect(() => {
     async function loadListings() {
@@ -3947,6 +4106,7 @@ function Marketplace({ goBack, navigate }) {
           phone: r.seller_phone || null,
           img: r.image_url || "https://images.pexels.com/photos/5957/pexels-photo-5957.jpeg?auto=compress&cs=tinysrgb&w=600",
           photoCount: Array.isArray(r.image_urls) ? r.image_urls.length : 0,
+          storeId: r.store_id || null,
         })));
       }
     }
@@ -4001,7 +4161,7 @@ function Marketplace({ goBack, navigate }) {
           </div>
           <div className="px-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((l) => (
-              <div key={l.id} className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div key={l.id} onClick={() => l.storeId && openStore(l.storeId)} className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}`, cursor: l.storeId ? "pointer" : "default" }}>
                 <div className="h-36 relative" style={{ background: BORDER }}>
                   <img src={l.img} alt={l.title} loading="lazy" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                   {l.tag && <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full text-[9px] font-semibold flex items-center gap-1" style={{ background: GOLD, color: BG }}><Star size={9} /> {l.tag}</span>}
@@ -4009,6 +4169,11 @@ function Marketplace({ goBack, navigate }) {
                   {l.photoCount > 1 && (
                     <span className="absolute bottom-2.5 right-2.5 px-2 py-0.5 rounded-full text-[9px] font-semibold flex items-center gap-1" style={{ background: "rgba(7,14,31,0.75)", color: "#fff" }}>
                       <ImageIcon size={9} /> {l.photoCount}
+                    </span>
+                  )}
+                  {l.storeId && (
+                    <span className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-full text-[9px] font-semibold flex items-center gap-1" style={{ background: "rgba(217,166,83,0.9)", color: BG }}>
+                      <ShoppingBag size={9} /> Visit store
                     </span>
                   )}
                 </div>
@@ -4033,14 +4198,14 @@ function Marketplace({ goBack, navigate }) {
 
                   <div className="flex gap-2 mt-3">
                     <button
-                      onClick={() => setContactListing(l)}
+                      onClick={(e) => { e.stopPropagation(); setContactListing(l); }}
                       className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold"
                       style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
                     >
                       <MessageCircle size={13} /> Contact Seller
                     </button>
                     <button
-                      onClick={() => setReportListing(l)}
+                      onClick={(e) => { e.stopPropagation(); setReportListing(l); }}
                       aria-label="Report listing"
                       className="w-10 flex items-center justify-center rounded-full"
                       style={{ background: CARD, border: `1px solid ${BORDER}` }}
@@ -4071,6 +4236,12 @@ function Marketplace({ goBack, navigate }) {
           onClose={() => setReportListing(null)}
         />
       )}
+      {storeLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <SearchingAnimation />
+        </div>
+      )}
+      {openStoreOf && <StoreProfileModal store={openStoreOf} onClose={() => setOpenStoreOf(null)} />}
 
       {view === "platforms" && (
         <div className="px-5">
@@ -5862,6 +6033,12 @@ function MyActivity({ goBack, currentDriver }) {
         })))
       );
       queries.push(
+        supabase.from("store_orders").select("*").eq("customer_phone", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "marketplace", id: r.id, ref: r.booking_ref, title: `Order from ${r.store_name || "store"}`,
+          status: r.status, created_at: r.created_at, assigned: r.store_name || null, raw: r, table: "store_orders",
+        })))
+      );
+      queries.push(
         supabase.from("marketplace_listings").select("*").eq("seller_phone", phone).then(({ data }) => (data || []).map((r) => ({
           category: "marketplace", id: r.id, ref: null, title: r.title, status: r.status, created_at: r.created_at,
           assigned: "Visible to buyers", raw: r, table: "marketplace_listings", editable: true,
@@ -5904,7 +6081,7 @@ function MyActivity({ goBack, currentDriver }) {
   }
 
   const filtered = tab === "all" ? items : items.filter((i) => i.category === tab);
-  const cancellableTables = ["rides", "logistics_parcels", "rental_bookings", "food_orders"];
+  const cancellableTables = ["rides", "logistics_parcels", "rental_bookings", "food_orders", "store_orders"];
   const cancellableStatuses = ["requested", "pending", "placed", "confirmed", "new"];
 
   return (
