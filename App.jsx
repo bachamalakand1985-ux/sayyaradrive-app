@@ -836,10 +836,10 @@ function AppMenu({ onClose, navigate, currentDriver, driverLogout, identity }) {
 /* ---------- DASHBOARD SERVICE SLIDESHOW ---------- */
 const SERVICE_SLIDES = [
   { id: "rentals", icon: Car, eyebrow: "TRANSPORT", title: "Wherever you're headed, we're already on the way", sub: "City rides, airport transfers, and car rentals — one tap away.", img: "https://images.pexels.com/photos/19832474/pexels-photo-19832474.jpeg?auto=compress&cs=tinysrgb&w=900" },
-  { id: "market", icon: ShoppingBag, eyebrow: "MARKETPLACE", title: "Buy it, sell it, find it nearby", sub: "From cars to electronics — your city's marketplace, in your pocket.", img: "https://images.pexels.com/photos/5957/pexels-photo-5957.jpeg?auto=compress&cs=tinysrgb&w=900" },
+  { id: "market", icon: ShoppingBag, eyebrow: "MARKETPLACE", title: "Buy it, sell it, find it nearby", sub: "From cars to electronics — your city's marketplace, in your pocket.", img: "https://images.pexels.com/photos/5632379/pexels-photo-5632379.jpeg?auto=compress&cs=tinysrgb&w=900" },
   { id: "food", icon: UtensilsCrossed, eyebrow: "FOOD", title: "Cravings, met in minutes", sub: "Your favorite restaurants, delivered hot to your door.", img: "https://images.pexels.com/photos/9461653/pexels-photo-9461653.jpeg?auto=compress&cs=tinysrgb&w=900" },
   { id: "logistics", icon: Truck, eyebrow: "CARGO DELIVERY", title: "Send it and forget it", sub: "Parcels picked up and delivered across the Kingdom, same day.", img: "https://images.pexels.com/photos/11040957/pexels-photo-11040957.jpeg?auto=compress&cs=tinysrgb&w=900" },
-  { id: "jobs", icon: Briefcase, eyebrow: "JOBS", title: "Turn your car into your career", sub: "Flexible hours, real income — start driving with SayyaraDrive.", img: "https://images.pexels.com/photos/5834978/pexels-photo-5834978.jpeg?auto=compress&cs=tinysrgb&w=900" },
+  { id: "jobs", icon: Briefcase, eyebrow: "JOBS", title: "Find your next opportunity", sub: "Browse open positions and apply in minutes, across Saudi Arabia.", img: "https://images.pexels.com/photos/5439379/pexels-photo-5439379.jpeg?auto=compress&cs=tinysrgb&w=900" },
   { id: "register_driver", icon: Navigation, eyebrow: "BECOME A DRIVER", title: "Your car, your schedule, your income", sub: "Join SayyaraDrive as a driver and start earning on your own time.", img: "https://images.pexels.com/photos/5835344/pexels-photo-5835344.jpeg?auto=compress&cs=tinysrgb&w=900" },
 ];
 
