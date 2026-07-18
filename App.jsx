@@ -3025,6 +3025,71 @@ const RENTAL_COMPANIES = Array.from(new Set(CARS.map((c) => c.provider))).map((n
   ...RENTAL_COMPANY_INFO[name],
 }));
 
+/* ---------- FLEET COMPANIES DIRECTORY ---------- */
+function FleetCompaniesList({ navigate }) {
+  const [companies, setCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data } = await supabase.from("companies").select("*").order("created_at", { ascending: false });
+      if (!cancelled) { setCompanies(data || []); setLoading(false); }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div className="px-5">
+      <button onClick={() => navigate("register_fleet")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+        <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GOLD} /> Own a fleet? Register your company</span>
+        <ChevronRight size={14} color={GOLD} />
+      </button>
+      {loading ? (
+        <div className="flex justify-center py-10"><SearchingAnimation /></div>
+      ) : companies.length === 0 ? (
+        <EmptyState icon={Users} title="No fleet companies yet" subtitle="Registered fleet companies will appear here." />
+      ) : (
+        <div className="flex flex-col gap-2 pb-6">
+          {companies.map((c) => (
+            <div key={c.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
+                  {c.logo_url ? <img src={c.logo_url} alt={c.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <Users size={16} color={FAINT} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold truncate">{c.name}</p>
+                    {c.verified ? (
+                      <span className="text-[9px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}>VERIFIED</span>
+                    ) : (
+                      <span className="text-[9px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>PENDING VERIFICATION</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{c.fleet_size || 0} vehicles · Contact: {c.contact_name}</p>
+                </div>
+              </div>
+              {Array.isArray(c.photo_urls) && c.photo_urls.length > 0 && (
+                <div className="flex gap-1.5 mt-2.5 overflow-x-auto">
+                  {c.photo_urls.slice(0, 6).map((url, i) => (
+                    <img key={i} src={url} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0" style={{ border: `1px solid ${BORDER}` }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                  ))}
+                </div>
+              )}
+              {c.mobile_number && (
+                <a href={`tel:${c.mobile_number}`} className="mt-2.5 flex items-center gap-2 text-[12px]" style={{ color: GOLD }}>
+                  <Phone size={12} /> {c.mobile_number}
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CarRental({ goBack, navigate }) {
   const [view, setView] = useState("search");
   const [companyFilter, setCompanyFilter] = useState(null);
@@ -3109,8 +3174,13 @@ function CarRental({ goBack, navigate }) {
           <button onClick={() => setView("companies")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "companies" ? GOLD : CARD, color: view === "companies" ? BG : MUTE, border: view === "companies" ? "none" : `1px solid ${BORDER}` }}>
             <Briefcase size={12} /> By Company
           </button>
+          <button onClick={() => setView("fleets")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "fleets" ? GOLD : CARD, color: view === "fleets" ? BG : MUTE, border: view === "fleets" ? "none" : `1px solid ${BORDER}` }}>
+            <Users size={12} /> Fleet Companies
+          </button>
         </div>
       )}
+
+      {stage === "input" && view === "fleets" && <FleetCompaniesList navigate={navigate} />}
 
       {stage === "input" && view === "companies" && (
         <div className="px-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
