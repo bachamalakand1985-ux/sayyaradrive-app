@@ -2451,7 +2451,7 @@ const REGISTER_CONFIGS = {
     documents: ["Commercial registration", "National ID / Iqama of owner"],
   },
   fleet_owner: {
-    title: "Fleet company registration",
+    title: "Transport company registration",
     icon: Users,
     intro: "Register your company's fleet. This creates your company listing pending verification. To log in and manage vehicles/drivers, also create a login via Company Sign Up using the same details.",
     detailFields: [
@@ -2626,8 +2626,8 @@ function PartnerRegister({ goBack, type }) {
           fleet_size: parseInt(details.fleetSize, 10) || 0,
           logo_url: logoUrl,
           photo_urls: photoUrls,
-          status: "pending",
-          verified: false,
+          status: "active",
+          verified: true,
         });
         if (companyError) throw companyError;
       } else if (type === "logistics_company") {
@@ -3043,13 +3043,13 @@ function FleetCompaniesList({ navigate }) {
   return (
     <div className="px-5">
       <button onClick={() => navigate("register_fleet")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
-        <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GOLD} /> Own a fleet? Register your company</span>
+        <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GOLD} /> Own a transport company? Register it</span>
         <ChevronRight size={14} color={GOLD} />
       </button>
       {loading ? (
         <div className="flex justify-center py-10"><SearchingAnimation /></div>
       ) : companies.length === 0 ? (
-        <EmptyState icon={Users} title="No fleet companies yet" subtitle="Registered fleet companies will appear here." />
+        <EmptyState icon={Users} title="No transport companies yet" subtitle="Registered transport companies will appear here." />
       ) : (
         <div className="flex flex-col gap-2 pb-6">
           {companies.map((c) => (
@@ -3059,14 +3059,7 @@ function FleetCompaniesList({ navigate }) {
                   {c.logo_url ? <img src={c.logo_url} alt={c.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <Users size={16} color={FAINT} />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold truncate">{c.name}</p>
-                    {c.verified ? (
-                      <span className="text-[9px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}>VERIFIED</span>
-                    ) : (
-                      <span className="text-[9px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>PENDING VERIFICATION</span>
-                    )}
-                  </div>
+                  <p className="text-sm font-semibold truncate">{c.name}</p>
                   <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{c.fleet_size || 0} vehicles · Contact: {c.contact_name}</p>
                 </div>
               </div>
@@ -3175,7 +3168,7 @@ function CarRental({ goBack, navigate }) {
             <Briefcase size={12} /> By Company
           </button>
           <button onClick={() => setView("fleets")} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-semibold" style={{ background: view === "fleets" ? GOLD : CARD, color: view === "fleets" ? BG : MUTE, border: view === "fleets" ? "none" : `1px solid ${BORDER}` }}>
-            <Users size={12} /> Fleet Companies
+            <Users size={12} /> Transport Companies
           </button>
         </div>
       )}
@@ -3214,7 +3207,7 @@ function CarRental({ goBack, navigate }) {
             <ChevronRight size={14} color={GOLD} />
           </button>
           <button onClick={() => navigate("register_fleet")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GREEN}` }}>
-            <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GREEN} /> Own a fleet? Apply to register your company</span>
+            <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GREEN} /> Own a transport company? Apply to register it</span>
             <ChevronRight size={14} color={GREEN} />
           </button>
           <button onClick={() => navigate("company_login")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -5149,7 +5142,7 @@ function FleetManagement({ goBack, navigate }) {
   function cycleStatus(id) { const order = ["idle", "active", "maintenance"]; setFleet((f) => f.map((c) => c.id === id ? { ...c, status: order[(order.indexOf(c.status) + 1) % order.length] } : c)); }
   return (
     <div style={{ color: TEXT }}>
-      <Header title="Fleet" onBack={goBack} />
+      <Header title="Transport" onBack={goBack} />
       <div className="px-5 mb-4">
         <button onClick={() => navigate("register_fleet")} className="w-full flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
           <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GOLD} /> Apply to register a fleet company</span>
