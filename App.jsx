@@ -3027,7 +3027,7 @@ function CarRental({ goBack, navigate }) {
   const [city, setCity] = useState("Riyadh");
   const [district, setDistrict] = useState(SAUDI_CITIES["Riyadh"][0]);
   const [pickupDate, setPickupDate] = useState(""); const [returnDate, setReturnDate] = useState("");
-  const [stage, setStage] = useState("input"); const [carId, setCarId] = useState("sedan");
+  const [stage, setStage] = useState("input"); const [carId, setCarId] = useState(null);
   const [bookingRef, setBookingRef] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [renterName, setRenterName] = useState(""); const [renterPhone, setRenterPhone] = useState("");
@@ -3059,10 +3059,13 @@ function CarRental({ goBack, navigate }) {
   const realCompanies = Array.from(new Set(allCars.map((c) => c.provider))).map((name) => ({
     name, count: allCars.filter((c) => c.provider === name).length,
   }));
+  useEffect(() => {
+    if (!carId && allCars.length > 0) setCarId(allCars[0].id);
+  }, [allCars.length]);
   const chosen = allCars.find((c) => c.id === carId);
   const can = pickupDate && returnDate && returnDate >= pickupDate;
   const days = can ? Math.max(1, Math.round((new Date(returnDate) - new Date(pickupDate)) / 86400000) || 1) : 0;
-  const canReserve = renterName.trim() && renterPhone.trim();
+  const canReserve = !!chosen && renterName.trim() && renterPhone.trim();
 
   async function confirmReservation() {
     const ref = `RENTAL-${Date.now().toString(36).toUpperCase()}`;
@@ -3079,7 +3082,7 @@ function CarRental({ goBack, navigate }) {
         return_date: returnDate || null,
         days: days || 1,
         price_per_day: chosen?.price || null,
-        total_price: days > 0 ? chosen.price * days : chosen?.price || null,
+        total_price: days > 0 ? (chosen?.price || 0) * days : chosen?.price || null,
         status: "requested",
       });
     } catch (e) { /* best-effort; still show confirmation locally */ }
@@ -3190,13 +3193,17 @@ function CarRental({ goBack, navigate }) {
               );
             })}
           </div>
-          <div className="rounded-2xl px-4 py-2 mt-4 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><User size={14} color={GREEN} /><input value={renterName} onChange={(e) => setRenterName(e.target.value)} placeholder="Your full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
-            <div className="flex items-center gap-3 py-3"><Phone size={14} color={GOLD} /><input value={renterPhone} onChange={(e) => setRenterPhone(e.target.value)} placeholder="Your mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
-          </div>
-          <button onClick={() => canReserve && !saving && confirmReservation()} disabled={!canReserve || saving} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: canReserve && !saving ? GOLD : BORDER, color: canReserve && !saving ? BG : "#5C736D" }}>
-            {saving ? "Reserving..." : days > 0 ? `Reserve — ${chosen.price * days} SAR total` : `Reserve — ${chosen.price} SAR/day`}
-          </button>
+          {chosen && (
+            <>
+              <div className="rounded-2xl px-4 py-2 mt-4 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><User size={14} color={GREEN} /><input value={renterName} onChange={(e) => setRenterName(e.target.value)} placeholder="Your full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+                <div className="flex items-center gap-3 py-3"><Phone size={14} color={GOLD} /><input value={renterPhone} onChange={(e) => setRenterPhone(e.target.value)} placeholder="Your mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
+              </div>
+              <button onClick={() => canReserve && !saving && confirmReservation()} disabled={!canReserve || saving} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: canReserve && !saving ? GOLD : BORDER, color: canReserve && !saving ? BG : "#5C736D" }}>
+                {saving ? "Reserving..." : days > 0 ? `Reserve — ${chosen.price * days} SAR total` : `Reserve — ${chosen.price} SAR/day`}
+              </button>
+            </>
+          )}
         </div>
       )}
       {stage === "confirmed" && (
