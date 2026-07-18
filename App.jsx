@@ -912,8 +912,8 @@ function ServiceSlideshow({ navigate }) {
               />
               <div className="absolute inset-0" style={{ background: `linear-gradient(180deg, rgba(16,36,61,0.1) 0%, rgba(16,36,61,0.5) 55%, rgba(16,36,61,0.9) 100%)` }} />
               <div className="relative h-full flex flex-col justify-between p-5">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "rgba(212,175,55,0.9)" }}>
-                  <Icon size={17} color="#FFFFFF" />
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(212,175,55,0.9)" }}>
+                  <Icon size={13} color="#FFFFFF" />
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: LUX_GOLD }}>{s.eyebrow}</p>
@@ -1038,13 +1038,13 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
             <h2 className="text-sm font-semibold">{t("services")}</h2>
             <span className="text-xs" style={{ color: GREEN }}>{SERVICES.length} {t("available")}</span>
           </div>
-          <div className="grid grid-cols-3 lg:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-3 lg:grid-cols-5 gap-3">
             {SERVICES.map((s) => {
               const Icon = s.icon;
               return (
-                <button key={s.id} onClick={() => navigate(s.id)} className="flex flex-col items-start gap-2.5 rounded-2xl p-3.5 text-left active:scale-95 transition-transform" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(217,166,83,0.12)" }}><Icon size={19} color={GOLD} /></div>
-                  <div><p className="text-xs font-semibold leading-tight">{t(s.id === "market" ? "marketplace" : s.id)}</p><p className="text-[10px] mt-1" style={{ color: FAINT }}>{t(s.subKey)}</p></div>
+                <button key={s.id} onClick={() => navigate(s.id)} className="flex flex-col items-start gap-2 rounded-xl p-3 text-left active:scale-95 transition-transform" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(217,166,83,0.12)" }}><Icon size={15} color={GOLD} /></div>
+                  <div><p className="text-xs font-semibold leading-tight">{t(s.id === "market" ? "marketplace" : s.id)}</p><p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{t(s.subKey)}</p></div>
                 </button>
               );
             })}
