@@ -2109,9 +2109,14 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
   return (
     <div style={{ color: TEXT }}>
       <Header title={t ? t("driverHeader") : "Driver"} onBack={goBack} right={
-        <button onClick={online ? goOffline : goOnline} className="flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold" style={{ background: online ? GREEN : BORDER, color: online ? BG : MUTE }}>
-          <Power size={13} /> {online ? (t ? t("onlineLabel") : "Online") : (t ? t("goOnline") : "Go online")}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={reportCheckpoint} disabled={reportingCheckpoint} aria-label="Report checkpoint at my location" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: reportingCheckpoint ? BORDER : "rgba(217,166,83,0.14)", color: reportingCheckpoint ? "#5C736D" : GOLD }}>
+            <Shield size={15} />
+          </button>
+          <button onClick={online ? goOffline : goOnline} className="flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold" style={{ background: online ? GREEN : BORDER, color: online ? BG : MUTE }}>
+            <Power size={13} /> {online ? (t ? t("onlineLabel") : "Online") : (t ? t("goOnline") : "Go online")}
+          </button>
+        </div>
       } />
       {currentDriver?.profile && (
         <div className="px-5 mb-3">
@@ -2134,12 +2139,10 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
             <p className="text-base font-bold" style={{ color: TEXT }}>{todayTrips}</p>
             <p className="text-[9px] mt-0.5" style={{ color: FAINT }}>Trips today</p>
           </div>
-          <div className="rounded-2xl px-3 py-3 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <p className="text-base font-bold flex items-center justify-center gap-1" style={{ color: TEXT }}>
-              {rating ? <><Star size={13} color={GOLD} /> {rating}</> : "—"}
-            </p>
-            <p className="text-[9px] mt-0.5" style={{ color: FAINT }}>Rating</p>
-          </div>
+          <button onClick={() => navigate("notifications")} className="rounded-2xl px-3 py-3 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <p className="text-base font-bold flex items-center justify-center gap-1" style={{ color: TEXT }}><Bell size={15} color={GOLD} /></p>
+            <p className="text-[9px] mt-0.5" style={{ color: FAINT }}>Notifications</p>
+          </button>
         </div>
       )}
       {checkpointBanner && (
@@ -2164,12 +2167,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
           <Shield size={11} /> {showCheckpoints ? "Checkpoints on" : "Checkpoints off"}
         </button>
       </div>
-      <div className="px-5 mt-2.5">
-        <button onClick={reportCheckpoint} disabled={reportingCheckpoint} className="w-full flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold" style={{ background: reportingCheckpoint ? BORDER : "rgba(217,166,83,0.14)", color: reportingCheckpoint ? "#5C736D" : GOLD }}>
-          <Shield size={14} /> {reportingCheckpoint ? "Reporting…" : "Report checkpoint at my location"}
-        </button>
-      </div>
-      <p className="px-5 mt-2 text-[11px] flex items-center gap-1" style={{ color: FAINT }}><Navigation size={11} color={GREEN} /> {locLabel}</p>
+      <p className="px-5 mt-3 text-[11px] flex items-center gap-1" style={{ color: FAINT }}><Navigation size={11} color={GREEN} /> {locLabel}</p>
       {locError && (
         <div className="px-5 mt-1">
           <p className="text-[11px]" style={{ color: "#C0755B" }}>{locError}</p>
@@ -2188,6 +2186,10 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
             <button onClick={() => navigate("driver_trips")} className="rounded-2xl px-4 py-3.5 flex flex-col items-start gap-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <Route size={17} color={GOLD} />
               <span className="text-xs font-semibold text-left">Trip history & earnings</span>
+            </button>
+            <button onClick={() => navigate("driver_trips")} className="rounded-2xl px-4 py-3.5 flex flex-col items-start gap-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <Star size={17} color={GOLD} />
+              <span className="text-xs font-semibold text-left">Rating {rating ? `· ${rating}` : ""}</span>
             </button>
             <button onClick={() => navigate("driver_edit_profile")} className="rounded-2xl px-4 py-3.5 flex flex-col items-start gap-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <User size={17} color={GOLD} />
@@ -4288,6 +4290,14 @@ function Logistics({ goBack, navigate }) {
             <Send size={14} color={LUX_MUTE} style={{ transform: "rotate(45deg)" }} />
             <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: LUX_TEXT }} />
           </div>
+        </div>
+
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-semibold" style={{ color: LUX_NAVY }}>Pickup Location on Map</p>
+          <span className="text-[10px]" style={{ color: LUX_FAINT }}>Drag pin to fine-tune</span>
+        </div>
+        <div className="rounded-2xl overflow-hidden mb-6" style={{ border: `1px solid ${LUX_BORDER}` }}>
+          <PinMapPicker coords={pickupCoords} onMove={onPickupPinMove} height={190} />
         </div>
 
         <p className="text-sm font-semibold mb-3" style={{ color: LUX_NAVY }}>Select Vehicle Size</p>
