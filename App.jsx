@@ -2478,6 +2478,7 @@ function PartnerRegister({ goBack, type }) {
   const galleryInputRef = useRef(null);
   const MAX_GALLERY = 20;
   const showsCompanyPhotos = type === "logistics_company" || type === "fleet_owner" || type === "food_partner";
+  const showsCarPhotos = type === "rental_owner";
 
   function handleLogoSelected(e) {
     const file = e.target.files?.[0];
@@ -2533,6 +2534,15 @@ function PartnerRegister({ goBack, type }) {
       // companies get a pending listing now, but still need Company Sign Up to
       // get a real login for the dashboard.
       if (type === "rental_owner") {
+        const galleryUrls = [];
+        for (const g of galleryFiles) {
+          const ext = g.file.name.split(".").pop() || "jpg";
+          const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+          const { error: galErr } = await supabase.storage.from("company-photos").upload(fileName, g.file);
+          if (galErr) continue;
+          const { data: pub } = supabase.storage.from("company-photos").getPublicUrl(fileName);
+          galleryUrls.push(pub.publicUrl);
+        }
         const { error: listingError } = await supabase.from("rental_listings").insert({
           owner_name: name.trim(),
           owner_phone: phone.trim(),
@@ -2540,6 +2550,8 @@ function PartnerRegister({ goBack, type }) {
           model: details.vehicleModel || "Car for rent",
           price_per_day: parseFloat(details.dailyRate) || null,
           city,
+          image_url: galleryUrls[0] || null,
+          gallery_urls: galleryUrls,
           status: "active",
         });
         if (listingError) throw listingError;
@@ -2770,6 +2782,31 @@ function PartnerRegister({ goBack, type }) {
                     <button onClick={() => removeGalleryPhoto(i)} className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "rgba(7,14,31,0.75)" }}>
                       <X size={11} color="#fff" />
                     </button>
+                  </div>
+                ))}
+                {galleryFiles.length < MAX_GALLERY && (
+                  <button onClick={() => galleryInputRef.current?.click()} className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1" style={{ background: CARD, border: `1px dashed ${BORDER}` }}>
+                    <Plus size={16} color={FAINT} />
+                    <span className="text-[9px]" style={{ color: FAINT }}>Add photos</span>
+                  </button>
+                )}
+              </div>
+              <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleGallerySelected} />
+            </>
+          )}
+
+          {showsCarPhotos && (
+            <>
+              <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>CAR PHOTOS ({galleryFiles.length}/{MAX_GALLERY})</p>
+              <p className="text-[10px] mb-2.5" style={{ color: FAINT }}>Exterior, interior, mileage — the more photos, the more trust.</p>
+              <div className="grid grid-cols-3 gap-2 mb-6">
+                {galleryFiles.map((g, i) => (
+                  <div key={i} className="relative aspect-square rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
+                    <img src={g.previewUrl} alt="" className="w-full h-full object-cover" />
+                    <button onClick={() => removeGalleryPhoto(i)} className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "rgba(7,14,31,0.75)" }}>
+                      <X size={11} color="#fff" />
+                    </button>
+                    {i === 0 && <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-full text-[8px] font-semibold" style={{ background: GOLD, color: BG }}>Cover</span>}
                   </div>
                 ))}
                 {galleryFiles.length < MAX_GALLERY && (
@@ -3018,7 +3055,10 @@ function CarRental({ goBack, navigate }) {
     loadRentalListings();
   }, []);
 
-  const allCars = [...dbCars, ...CARS];
+  const allCars = dbCars;
+  const realCompanies = Array.from(new Set(allCars.map((c) => c.provider))).map((name) => ({
+    name, count: allCars.filter((c) => c.provider === name).length,
+  }));
   const chosen = allCars.find((c) => c.id === carId);
   const can = pickupDate && returnDate && returnDate >= pickupDate;
   const days = can ? Math.max(1, Math.round((new Date(returnDate) - new Date(pickupDate)) / 86400000) || 1) : 0;
@@ -3065,7 +3105,10 @@ function CarRental({ goBack, navigate }) {
 
       {stage === "input" && view === "companies" && (
         <div className="px-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {RENTAL_COMPANIES.map((co) => (
+          {realCompanies.length === 0 && (
+            <div className="sm:col-span-2"><EmptyState icon={Building2} title="No companies yet" subtitle="Providers with multiple cars listed will show up here." /></div>
+          )}
+          {realCompanies.map((co) => (
             <button
               key={co.name}
               onClick={() => { setCompanyFilter(co.name); setStage("choose"); }}
@@ -3077,8 +3120,7 @@ function CarRental({ goBack, navigate }) {
               </div>
               <div className="flex-1">
                 <p className="text-sm font-semibold">{co.name}</p>
-                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{co.count} vehicle{co.count > 1 ? "s" : ""} available{co.rating ? ` · ★ ${co.rating}` : ""}</p>
-                {co.branches && <p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: FAINT }}><MapPin size={9} /> {co.branches}</p>}
+                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{co.count} vehicle{co.count > 1 ? "s" : ""} available</p>
               </div>
               <ChevronRight size={14} color={FAINT} />
             </button>
@@ -3114,11 +3156,12 @@ function CarRental({ goBack, navigate }) {
               </select>
             </div>
           </div>
-          <div className="rounded-2xl px-4 py-2 mb-6" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="rounded-2xl px-4 py-2 mb-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><Calendar size={14} color={GREEN} /><input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
             <div className="flex items-center gap-3 py-3"><Calendar size={14} color={GOLD} /><input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
           </div>
-          <button onClick={() => can && setStage("choose")} disabled={!can} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: can ? GOLD : BORDER, color: can ? BG : "#5C736D" }}>See available cars</button>
+          <p className="text-[11px] mb-4" style={{ color: FAINT }}>Dates are optional — browse first, add dates when you're ready to reserve.</p>
+          <button onClick={() => setStage("choose")} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>See available cars</button>
         </div>
       )}
       {stage === "choose" && (
@@ -3133,6 +3176,9 @@ function CarRental({ goBack, navigate }) {
             <p className="text-[11px] mb-3 flex items-center gap-1" style={{ color: FAINT }}><MapPin size={11} color={GOLD} /> {RENTAL_COMPANY_INFO[companyFilter].branches} · ★ {RENTAL_COMPANY_INFO[companyFilter].rating}</p>
           )}
           {!companyFilter && <div className="mb-3" />}
+          {(companyFilter ? allCars.filter((c) => c.provider === companyFilter) : allCars).length === 0 && (
+            <EmptyState icon={Key} title="No cars listed yet" subtitle="Be the first to list your car for rent, or check back soon." />
+          )}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
             {(companyFilter ? allCars.filter((c) => c.provider === companyFilter) : allCars).map((c) => {
               const isSel = carId === c.id;
