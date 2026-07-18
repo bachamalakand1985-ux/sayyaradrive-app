@@ -3029,7 +3029,7 @@ const RENTAL_COMPANIES = Array.from(new Set(CARS.map((c) => c.provider))).map((n
 function FleetCompaniesList({ navigate }) {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState(null);
+  const [openCompany, setOpenCompany] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -3053,55 +3053,145 @@ function FleetCompaniesList({ navigate }) {
         <EmptyState icon={Users} title="No transport companies yet" subtitle="Registered transport companies will appear here." />
       ) : (
         <div className="flex flex-col gap-2 pb-6">
-          {companies.map((c) => {
-            const isOpen = expandedId === c.id;
-            return (
-              <button key={c.id} onClick={() => setExpandedId(isOpen ? null : c.id)} className="w-full text-left rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${isOpen ? GOLD : BORDER}` }}>
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
-                    {c.logo_url ? <img src={c.logo_url} alt={c.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <Users size={16} color={FAINT} />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate">{c.name}</p>
-                    <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{c.fleet_size || 0} vehicles · Contact: {c.contact_name}</p>
-                  </div>
-                  <ChevronRight size={14} color={FAINT} style={{ transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+          {companies.map((c) => (
+            <button key={c.id} onClick={() => setOpenCompany(c)} className="w-full text-left rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
+                  {c.logo_url ? <img src={c.logo_url} alt={c.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <Users size={16} color={FAINT} />}
                 </div>
-                {Array.isArray(c.photo_urls) && c.photo_urls.length > 0 && (
-                  <div className="flex gap-1.5 mt-2.5 overflow-x-auto">
-                    {c.photo_urls.slice(0, 6).map((url, i) => (
-                      <img key={i} src={url} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0" style={{ border: `1px solid ${BORDER}` }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                    ))}
-                  </div>
-                )}
-                {isOpen && (
-                  <div className="mt-3 pt-3 flex flex-col gap-2" style={{ borderTop: `1px solid ${BORDER}` }}>
-                    {c.email && <p className="text-[11px]" style={{ color: FAINT }}>Email: <span style={{ color: TEXT }}>{c.email}</span></p>}
-                    <div className="flex gap-2 mt-1">
-                      {c.mobile_number && (
-                        <a href={`tel:${c.mobile_number}`} onClick={(e) => e.stopPropagation()} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
-                          <Phone size={12} /> Call
-                        </a>
-                      )}
-                      {c.mobile_number && (
-                        <a
-                          href={`https://wa.me/${c.mobile_number.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I found ${c.name} on SayyaraDrive and I'd like to know more about your fleet.`)}`}
-                          target="_blank" rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2 text-[11px] font-semibold"
-                          style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
-                        >
-                          <Bot size={12} /> WhatsApp
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </button>
-            );
-          })}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{c.name}</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{c.fleet_size || 0} vehicles · Contact: {c.contact_name}</p>
+                </div>
+                <ChevronRight size={14} color={FAINT} />
+              </div>
+              {Array.isArray(c.photo_urls) && c.photo_urls.length > 0 && (
+                <div className="flex gap-1.5 mt-2.5 overflow-x-auto">
+                  {c.photo_urls.slice(0, 6).map((url, i) => (
+                    <img key={i} src={url} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0" style={{ border: `1px solid ${BORDER}` }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                  ))}
+                </div>
+              )}
+            </button>
+          ))}
         </div>
       )}
+      {openCompany && <CompanyProfileModal company={openCompany} onClose={() => setOpenCompany(null)} />}
+    </div>
+  );
+}
+
+/* ---------- COMPANY PROFILE (public view) ---------- */
+function CompanyProfileModal({ company, onClose }) {
+  const [vehicles, setVehicles] = useState([]);
+  const [routes, setRoutes] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const [{ data: v }, { data: r }] = await Promise.all([
+        supabase.from("fleet_vehicles").select("*").eq("company_id", company.id).order("created_at", { ascending: false }),
+        supabase.from("fleet_routes").select("*").eq("company_id", company.id).order("created_at", { ascending: false }),
+      ]);
+      if (!cancelled) { setVehicles(v || []); setRoutes(r || []); setLoading(false); }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [company.id]);
+
+  const categoryCounts = vehicles.reduce((acc, v) => {
+    const cat = v.category || "Other";
+    acc[cat] = (acc[cat] || 0) + 1;
+    return acc;
+  }, {});
+  const allPhotos = [
+    ...(Array.isArray(company.photo_urls) ? company.photo_urls : []),
+    ...vehicles.flatMap((v) => (Array.isArray(v.photo_urls) ? v.photo_urls : [])),
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto" style={{ background: BG }}>
+      <Header title={company.name} onBack={onClose} />
+      <div className="px-5 pb-8">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            {company.logo_url ? <img src={company.logo_url} alt={company.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <Users size={22} color={FAINT} />}
+          </div>
+          <div>
+            <p className="text-base font-semibold">{company.name}</p>
+            <p className="text-xs mt-0.5" style={{ color: FAINT }}>Contact: {company.contact_name}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mb-6">
+          {company.mobile_number && (
+            <a href={`tel:${company.mobile_number}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+              <Phone size={13} /> Call
+            </a>
+          )}
+          {company.mobile_number && (
+            <a
+              href={`https://wa.me/${company.mobile_number.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I found ${company.name} on SayyaraDrive and I'd like to know more.`)}`}
+              target="_blank" rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold"
+              style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
+            >
+              <Bot size={13} /> WhatsApp
+            </a>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-10"><SearchingAnimation /></div>
+        ) : (
+          <>
+            <p className="text-sm font-semibold mb-3" style={{ color: GREEN }}>FLEET — {vehicles.length} VEHICLE{vehicles.length !== 1 ? "S" : ""}</p>
+            {Object.keys(categoryCounts).length === 0 ? (
+              <p className="text-xs mb-6" style={{ color: FAINT }}>This company hasn't listed vehicle categories yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+                {Object.entries(categoryCounts).map(([cat, count]) => (
+                  <div key={cat} className="rounded-xl px-3 py-3 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    <p className="text-lg font-bold" style={{ color: GOLD }}>{count}</p>
+                    <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{cat}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {allPhotos.length > 0 && (
+              <>
+                <p className="text-sm font-semibold mb-3" style={{ color: GREEN }}>PHOTOS</p>
+                <div className="grid grid-cols-3 gap-2 mb-6">
+                  {allPhotos.map((url, i) => (
+                    <img key={i} src={url} alt="" className="aspect-square rounded-lg object-cover" style={{ border: `1px solid ${BORDER}` }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            <p className="text-sm font-semibold mb-3" style={{ color: GREEN }}>ROUTES & SCHEDULE</p>
+            {routes.length === 0 ? (
+              <EmptyState icon={Route} title="No routes listed" subtitle="This company hasn't published a schedule yet." />
+            ) : (
+              <div className="flex flex-col gap-2">
+                {routes.map((r) => (
+                  <div key={r.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    <p className="text-sm font-semibold flex items-center gap-2"><MapPin size={13} color={GOLD} /> {r.from_city} <ChevronRight size={12} color={FAINT} /> {r.to_city}</p>
+                    {(r.departure_time || r.return_time) && (
+                      <p className="text-[11px] mt-1.5 flex items-center gap-3" style={{ color: FAINT }}>
+                        {r.departure_time && <span className="flex items-center gap-1"><Clock size={11} color={GREEN} /> Departs {r.departure_time}</span>}
+                        {r.return_time && <span className="flex items-center gap-1"><Clock size={11} color={GOLD} /> Returns {r.return_time}</span>}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -8544,8 +8634,21 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
   const [localProfile, setLocalProfile] = useState(profile);
   const [showAddVehicle, setShowAddVehicle] = useState(false);
   const [vModel, setVModel] = useState(""); const [vPlate, setVPlate] = useState(""); const [vDriver, setVDriver] = useState("");
+  const [vCategory, setVCategory] = useState("Sedan");
+  const [vPhotoFiles, setVPhotoFiles] = useState([]); // { file, previewUrl }
+  const vPhotoInputRef = useRef(null);
   const [addingVehicle, setAddingVehicle] = useState(false);
   const [vehicleError, setVehicleError] = useState("");
+
+  function handleVPhotosSelected(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setVPhotoFiles((prev) => [...prev, ...files.map((file) => ({ file, previewUrl: URL.createObjectURL(file) }))]);
+    e.target.value = "";
+  }
+  function removeVPhoto(idx) {
+    setVPhotoFiles((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   async function loadFleet() {
     if (!profile?.id) return;
@@ -8558,12 +8661,21 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
     if (!vModel.trim() || !vPlate.trim()) { setVehicleError("Enter at least a model and plate number."); return; }
     setAddingVehicle(true);
     setVehicleError("");
+    const photoUrls = [];
+    for (const p of vPhotoFiles) {
+      const ext = p.file.name.split(".").pop() || "jpg";
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("vehicle-photos").upload(fileName, p.file);
+      if (upErr) continue;
+      const { data: pub } = supabase.storage.from("vehicle-photos").getPublicUrl(fileName);
+      photoUrls.push(pub.publicUrl);
+    }
     const { error } = await supabase.from("fleet_vehicles").insert({
       company_id: profile.id, model: vModel.trim(), plate_number: vPlate.trim(),
-      driver_name: vDriver.trim() || null, status: "idle",
+      driver_name: vDriver.trim() || null, category: vCategory, photo_urls: photoUrls, status: "idle",
     });
     if (error) { setVehicleError("Couldn't add vehicle. Please try again."); setAddingVehicle(false); return; }
-    setVModel(""); setVPlate(""); setVDriver(""); setShowAddVehicle(false);
+    setVModel(""); setVPlate(""); setVDriver(""); setVCategory("Sedan"); setVPhotoFiles([]); setShowAddVehicle(false);
     setAddingVehicle(false);
     loadFleet();
   }
@@ -8582,6 +8694,7 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
   const [routes, setRoutes] = useState([]);
   const [showAddRoute, setShowAddRoute] = useState(false);
   const [routeFrom, setRouteFrom] = useState(""); const [routeTo, setRouteTo] = useState("");
+  const [routeDeparture, setRouteDeparture] = useState(""); const [routeReturn, setRouteReturn] = useState("");
   const [addingRoute, setAddingRoute] = useState(false);
 
   async function loadRoutes() {
@@ -8596,9 +8709,10 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
     setAddingRoute(true);
     await supabase.from("fleet_routes").insert({
       company_id: profile.id, route_name: `${routeFrom.trim()} → ${routeTo.trim()}`,
-      from_city: routeFrom.trim(), to_city: routeTo.trim(), status: "active",
+      from_city: routeFrom.trim(), to_city: routeTo.trim(),
+      departure_time: routeDeparture || null, return_time: routeReturn || null, status: "active",
     });
-    setRouteFrom(""); setRouteTo(""); setShowAddRoute(false); setAddingRoute(false);
+    setRouteFrom(""); setRouteTo(""); setRouteDeparture(""); setRouteReturn(""); setShowAddRoute(false); setAddingRoute(false);
     loadRoutes();
   }
 
@@ -8758,8 +8872,8 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
           {fleet.map((v) => (
             <div key={v.id} className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <button onClick={() => cycleVehicleStatus(v)} className="text-left flex-1">
-                <p className="text-sm font-semibold">{v.model || "Vehicle"}</p>
-                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{v.plate_number} · {v.driver_name || "Unassigned"}</p>
+                <p className="text-sm font-semibold">{v.model || "Vehicle"} {v.category ? `· ${v.category}` : ""}</p>
+                <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{v.plate_number} · {v.driver_name || "Unassigned"}{v.photo_urls?.length ? ` · ${v.photo_urls.length} photo${v.photo_urls.length > 1 ? "s" : ""}` : ""}</p>
                 <span
                   className="inline-block mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-semibold"
                   style={{
@@ -8787,7 +8901,14 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
         <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2">
           {routes.map((r) => (
             <div key={r.id} className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <p className="text-sm font-semibold">{r.route_name}</p>
+              <div>
+                <p className="text-sm font-semibold">{r.route_name}</p>
+                {(r.departure_time || r.return_time) && (
+                  <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>
+                    {r.departure_time ? `Departs ${r.departure_time}` : ""}{r.departure_time && r.return_time ? " · " : ""}{r.return_time ? `Returns ${r.return_time}` : ""}
+                  </p>
+                )}
+              </div>
               <button onClick={() => removeRoute(r.id)} aria-label="Remove route"><X size={14} color={FAINT} /></button>
             </div>
           ))}
@@ -8809,6 +8930,14 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
               <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
                 <MapPin size={14} color={GOLD} />
                 <input value={routeTo} onChange={(e) => setRouteTo(e.target.value)} placeholder="To city" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <Clock size={14} color={GREEN} />
+                <input type="time" value={routeDeparture} onChange={(e) => setRouteDeparture(e.target.value)} placeholder="Departure time" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              </div>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <Clock size={14} color={GOLD} />
+                <input type="time" value={routeReturn} onChange={(e) => setRouteReturn(e.target.value)} placeholder="Return time" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
               </div>
             </div>
             <button onClick={addRoute} disabled={addingRoute} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>{addingRoute ? "Adding…" : "Add route"}</button>
@@ -8835,7 +8964,30 @@ function CompanyDashboard({ goBack, navigate, currentCompany, onLogout }) {
                 <User size={14} color={GOLD} />
                 <input value={vDriver} onChange={(e) => setVDriver(e.target.value)} placeholder="Assigned driver (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
               </div>
+              <div className="rounded-xl px-4 py-2" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+                <select value={vCategory} onChange={(e) => setVCategory(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+                  {["Sedan", "SUV", "Van", "Minivan", "Pickup", "Bus", "Luxury", "Economy"].map((cat) => (
+                    <option key={cat} value={cat} style={{ background: CARD }}>{cat}</option>
+                  ))}
+                </select>
+              </div>
             </div>
+            <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>VEHICLE PHOTOS ({vPhotoFiles.length})</p>
+            <p className="text-[10px] mb-2.5" style={{ color: FAINT }}>Add as many as you like — no limit.</p>
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {vPhotoFiles.map((p, i) => (
+                <div key={i} className="relative aspect-square rounded-lg overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
+                  <img src={p.previewUrl} alt="" className="w-full h-full object-cover" />
+                  <button onClick={() => removeVPhoto(i)} className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center" style={{ background: "rgba(7,14,31,0.75)" }}>
+                    <X size={9} color="#fff" />
+                  </button>
+                </div>
+              ))}
+              <button onClick={() => vPhotoInputRef.current?.click()} className="aspect-square rounded-lg flex flex-col items-center justify-center" style={{ background: BG, border: `1px dashed ${BORDER}` }}>
+                <Plus size={14} color={FAINT} />
+              </button>
+            </div>
+            <input ref={vPhotoInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleVPhotosSelected} />
             {vehicleError && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{vehicleError}</p>}
             <button onClick={addVehicle} disabled={addingVehicle} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>{addingVehicle ? "Adding…" : "Add vehicle"}</button>
           </div>
