@@ -4399,9 +4399,23 @@ function Marketplace({ goBack, navigate }) {
   const filtered = allListings.filter((l) => (category === "All" || l.category === category) && l.title.toLowerCase().includes(query.toLowerCase()));
   return (
     <div style={{ color: TEXT }}>
-      <Header title="Marketplace" onBack={goBack} right={<button onClick={() => navigate("post_marketplace_item")} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: GOLD }}><Plus size={18} color={BG} /></button>} />
+      <div className="relative overflow-hidden" style={{ height: 280 }}>
+        <img src="https://images.pexels.com/photos/3786091/pexels-photo-3786091.jpeg?auto=compress&cs=tinysrgb&w=1200" alt="Marketplace" className="absolute inset-0 w-full h-full object-cover" />
+        <div className="absolute inset-0" style={{ background: `linear-gradient(100deg, ${BG} 0%, rgba(7,14,31,0.85) 45%, rgba(7,14,31,0.25) 100%)` }} />
+        <div className="relative px-5 pt-6">
+          <div className="flex items-center justify-between mb-5">
+            <button onClick={goBack} aria-label="Go back" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.12)" }}>
+              <ArrowLeft size={16} color="#fff" />
+            </button>
+          </div>
+          <h1 className="text-[26px] font-bold text-white leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            Buy. <span style={{ color: GOLD }}>Sell.</span> Discover.
+          </h1>
+          <p className="text-xs mt-1.5 max-w-[260px] leading-snug" style={{ color: "rgba(255,255,255,0.75)" }}>Find great deals on cars, electronics, furniture and more.</p>
+        </div>
+      </div>
 
-      <div className="px-5 mb-3 flex gap-2">
+      <div className="px-5 mt-4 mb-3 flex gap-2">
         <button onClick={() => navigate("post_marketplace_item")} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: GOLD, color: BG }}>
           <Plus size={13} /> Post New Listing
         </button>
