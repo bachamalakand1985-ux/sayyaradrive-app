@@ -196,6 +196,25 @@ function playCheckpointAlertSound() {
   } catch (e) { /* audio is best-effort */ }
 }
 
+/* ---------- LIGHTWEIGHT ANALYTICS (page views, no external service) ---------- */
+function getAnalyticsSessionId() {
+  try {
+    let id = localStorage.getItem("sayyara_session_id");
+    if (!id) {
+      id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem("sayyara_session_id", id);
+    }
+    return id;
+  } catch (e) {
+    return "anon-" + Date.now();
+  }
+}
+function logPageView(page) {
+  try {
+    supabase.from("analytics_events").insert({ page, session_id: getAnalyticsSessionId() }).then(() => {});
+  } catch (e) { /* best-effort */ }
+}
+
 function distanceMeters(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const toRad = (d) => (d * Math.PI) / 180;
@@ -11104,6 +11123,8 @@ const ADMIN_SECTIONS = [
 function AdminOverview({ navigate, goBack, onLogout }) {
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
+  const [traffic, setTraffic] = useState(null);
+  const [trafficLoading, setTrafficLoading] = useState(true);
 
   useEffect(() => {
     async function loadCounts() {
@@ -11116,6 +11137,28 @@ function AdminOverview({ navigate, goBack, onLogout }) {
       setLoading(false);
     }
     loadCounts();
+  }, []);
+
+  useEffect(() => {
+    async function loadTraffic() {
+      const since7 = new Date(Date.now() - 7 * 86400000).toISOString();
+      const { data } = await supabase.from("analytics_events").select("page, session_id, created_at").gte("created_at", since7);
+      const rows = data || [];
+      const totalVisits = rows.length;
+      const uniqueVisitors = new Set(rows.map((r) => r.session_id)).size;
+      const days = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(Date.now() - (6 - i) * 86400000);
+        return d.toISOString().slice(0, 10);
+      });
+      const dailyCounts = days.map((day) => rows.filter((r) => r.created_at.slice(0, 10) === day).length);
+      const dayLabels = days.map((day) => new Date(day).toLocaleDateString("en-US", { weekday: "short" }).slice(0, 2));
+      const pageCounts = {};
+      rows.forEach((r) => { pageCounts[r.page] = (pageCounts[r.page] || 0) + 1; });
+      const topPages = Object.entries(pageCounts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+      setTraffic({ totalVisits, uniqueVisitors, dailyCounts, dayLabels, topPages });
+      setTrafficLoading(false);
+    }
+    loadTraffic();
   }, []);
 
   return (
@@ -11176,6 +11219,59 @@ function AdminOverview({ navigate, goBack, onLogout }) {
           );
         })}
       </div>
+
+      <div className="px-5 sm:px-8 mt-8 mb-3">
+        <p className="text-sm font-semibold mb-1">Analytics</p>
+        <p className="text-[11px]" style={{ color: FAINT }}>App traffic, last 7 days</p>
+      </div>
+
+      {trafficLoading ? (
+        <div className="px-5 sm:px-8 flex justify-center py-8"><SearchingAnimation /></div>
+      ) : (
+        <div className="px-5 sm:px-8">
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="rounded-2xl px-4 py-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <p className="text-xs" style={{ color: FAINT }}>Total Visits</p>
+              <p className="text-2xl font-semibold mt-1" style={{ color: GOLD }}>{traffic.totalVisits}</p>
+            </div>
+            <div className="rounded-2xl px-4 py-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <p className="text-xs" style={{ color: FAINT }}>Unique Visitors</p>
+              <p className="text-2xl font-semibold mt-1" style={{ color: GOLD }}>{traffic.uniqueVisitors}</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl px-4 py-4 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <p className="text-xs mb-3" style={{ color: FAINT }}>Visits per day</p>
+            <div className="flex items-end gap-2" style={{ height: 90 }}>
+              {traffic.dailyCounts.map((v, i) => {
+                const max = Math.max(...traffic.dailyCounts, 1);
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="w-full rounded-t-md" style={{ height: `${Math.max((v / max) * 70, 3)}px`, background: GOLD }} />
+                    <p className="text-[9px]" style={{ color: FAINT }}>{traffic.dayLabels[i]}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl px-4 py-4 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <p className="text-xs mb-3" style={{ color: FAINT }}>Page Traffic</p>
+            {traffic.topPages.length === 0 ? (
+              <p className="text-xs" style={{ color: FAINT }}>No visits recorded yet.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {traffic.topPages.map(([page, count]) => (
+                  <div key={page} className="flex items-center justify-between">
+                    <p className="text-xs" style={{ color: TEXT }}>{page}</p>
+                    <p className="text-xs font-semibold" style={{ color: GOLD }}>{count}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="h-10" />
     </div>
@@ -11327,6 +11423,7 @@ export default function SayyaraDriveApp() {
   function navigate(next) {
     if (TAB_SCREENS.includes(next)) setHistory([next]);
     else setHistory((h) => [...h, next]);
+    logPageView(next);
   }
   function goBack() {
     setHistory((h) => {
@@ -11334,6 +11431,7 @@ export default function SayyaraDriveApp() {
       return ["home"];
     });
   }
+  useEffect(() => { logPageView(history[0]); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isTab = TAB_SCREENS.includes(screen);
 
