@@ -3693,11 +3693,29 @@ function StoreRegister({ goBack, navigate }) {
   const [city, setCity] = useState("Riyadh");
   const [hours, setHours] = useState("");
   const [description, setDescription] = useState("");
+  const [address, setAddress] = useState("");
+  const [coords, setCoords] = useState(SAUDI_CITY_COORDS.Riyadh);
+  const [locating, setLocating] = useState(false);
+  const [locError, setLocError] = useState("");
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
   const logoInputRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  async function onStorePinMove(newCoords) {
+    setCoords(newCoords);
+    const label = await reverseGeocodeCoords(newCoords.lat, newCoords.lng);
+    setAddress(label);
+  }
+
+  function useMyLocationForStore() {
+    detectLocation({
+      onStart: () => { setLocating(true); setLocError(""); },
+      onSuccess: ({ label, lat, lng }) => { setAddress(label); setCoords({ lat, lng }); setLocating(false); },
+      onError: (msg) => { setLocating(false); setLocError(msg); },
+    });
+  }
 
   function handleLogoSelected(e) {
     const file = e.target.files?.[0];
@@ -3734,6 +3752,9 @@ function StoreRegister({ goBack, navigate }) {
         logo_url: pub.publicUrl,
         city,
         hours: hours.trim() || null,
+        address: address.trim() || null,
+        lat: coords.lat,
+        lng: coords.lng,
         description: description.trim() || null,
         status: "active",
       });
@@ -3784,6 +3805,20 @@ function StoreRegister({ goBack, navigate }) {
           <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <MapPin size={14} color={GOLD} />
             <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <MapPin size={14} color={GREEN} />
+            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Exact address / building" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center justify-between -mt-1">
+            <p className="text-[10px]" style={{ color: FAINT }}>Drag the pin to your exact location</p>
+            <button onClick={useMyLocationForStore} disabled={locating} className="flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: GOLD }}>
+              <Navigation size={12} /> {locating ? "Detecting…" : "Use my current location"}
+            </button>
+          </div>
+          {locError && <p className="text-[11px]" style={{ color: "#C0755B" }}>{locError}</p>}
+          <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
+            <PinMapPicker coords={coords} onMove={onStorePinMove} height={170} />
           </div>
           <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <Clock size={14} color={GOLD} />
@@ -4001,6 +4036,25 @@ function StoreProfileModal({ store, onClose }) {
           </div>
         </div>
         {store.description && <p className="text-xs mb-4" style={{ color: MUTE }}>{store.description}</p>}
+
+        {store.lat && store.lng && (
+          <>
+            <p className="text-sm font-semibold mb-2" style={{ color: GREEN }}>LOCATION</p>
+            {store.address && <p className="text-xs mb-2 flex items-center gap-1.5" style={{ color: MUTE }}><MapPin size={12} color={GOLD} /> {store.address}</p>}
+            <div className="rounded-2xl overflow-hidden mb-2.5" style={{ border: `1px solid ${BORDER}` }}>
+              <PinMapPicker coords={{ lat: store.lat, lng: store.lng }} onMove={() => {}} height={160} />
+            </div>
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${store.lat},${store.lng}`}
+              target="_blank" rel="noopener noreferrer"
+              className="w-full mb-6 flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold"
+              style={{ background: GOLD, color: BG }}
+            >
+              <Navigation size={13} /> Get directions
+            </a>
+          </>
+        )}
+
         <div className="flex gap-2 mb-6">
           {store.owner_phone && (
             <a href={`tel:${store.owner_phone}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
