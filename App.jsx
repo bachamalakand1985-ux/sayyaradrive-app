@@ -6215,6 +6215,20 @@ function MyActivity({ goBack, currentDriver }) {
                 <button onClick={() => setExpandedId(isExpanded ? null : item.id)} className="text-[10px] font-semibold" style={{ color: GOLD }}>{isExpanded ? "Hide details" : "View details"}</button>
               </div>
 
+              {(canCancel || item.editable) && (
+                <div className="flex gap-2 mt-2.5">
+                  {canCancel && (
+                    <button onClick={() => cancelItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Cancel request</button>
+                  )}
+                  {item.editable && (
+                    <>
+                      <button onClick={() => setEditItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
+                      <button onClick={() => deleteListing(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Delete</button>
+                    </>
+                  )}
+                </div>
+              )}
+
               {isExpanded && (
                 <div className="mt-3 pt-3 flex flex-col gap-1.5" style={{ borderTop: `1px solid ${BORDER}` }}>
                   {item.ref && <p className="text-[11px]" style={{ color: MUTE }}>Reference: <span style={{ color: TEXT }}>{item.ref}</span></p>}
@@ -6224,18 +6238,6 @@ function MyActivity({ goBack, currentDriver }) {
                   {item.raw?.price != null && <p className="text-[11px]" style={{ color: MUTE }}>Price: <span style={{ color: TEXT }}>{item.raw.price} SAR</span></p>}
                   {item.raw?.fare_estimate != null && <p className="text-[11px]" style={{ color: MUTE }}>Fare estimate: <span style={{ color: TEXT }}>{item.raw.fare_estimate} SAR</span></p>}
                   {item.raw?.total_price != null && <p className="text-[11px]" style={{ color: MUTE }}>Total: <span style={{ color: TEXT }}>{item.raw.total_price} SAR</span></p>}
-
-                  <div className="flex gap-2 mt-2">
-                    {canCancel && (
-                      <button onClick={() => cancelItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Cancel request</button>
-                    )}
-                    {item.editable && (
-                      <>
-                        <button onClick={() => setEditItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
-                        <button onClick={() => deleteListing(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Delete</button>
-                      </>
-                    )}
-                  </div>
                 </div>
               )}
             </div>
