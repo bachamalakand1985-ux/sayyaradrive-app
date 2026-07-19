@@ -3499,7 +3499,7 @@ const PARTNER_PLATFORMS = [
 /* ---------- POST MARKETPLACE ITEM (with photos) ---------- */
 const STORE_TYPES = ["Supermarket", "Electronics Store", "Fashion Boutique", "Furniture Store", "Auto Parts Shop", "Restaurant Supply", "Wholesale", "Retail Shop", "Other"];
 
-function PostMarketplaceItem({ goBack, navigate }) {
+function PostMarketplaceItem({ goBack, navigate, onLoggedIn }) {
   const [phase, setPhase] = useState("checking"); // "checking" | "no_session" | "form"
   const [store, setStore] = useState(null);
 
@@ -3519,7 +3519,7 @@ function PostMarketplaceItem({ goBack, navigate }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setPhase("no_session"); return; }
       const { data } = await supabase.from("stores").select("id, owner_name, owner_phone, store_name, store_type, logo_url, city, hours, description, status, lat, lng, address").eq("auth_user_id", user.id).maybeSingle();
-      if (data) { setStore(data); setPhase("form"); }
+      if (data) { setStore(data); setPhase("form"); if (onLoggedIn) onLoggedIn({ profile: data }); }
       else { setPhase("no_session"); }
     }
     checkSession();
@@ -3608,7 +3608,8 @@ function PostMarketplaceItem({ goBack, navigate }) {
           <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
             {store.logo_url ? <img src={store.logo_url} alt="" className="w-full h-full object-cover" /> : <ShoppingBag size={15} color={FAINT} />}
           </div>
-          <p className="text-xs" style={{ color: MUTE }}>Posting as <span style={{ color: GOLD, fontWeight: 600 }}>{store.store_name}</span></p>
+          <p className="text-xs flex-1" style={{ color: MUTE }}>Posting as <span style={{ color: GOLD, fontWeight: 600 }}>{store.store_name}</span></p>
+          <button onClick={() => navigate("store_dashboard")} className="text-[10px] font-semibold shrink-0" style={{ color: GOLD }}>Dashboard →</button>
         </div>
 
         <p className="text-xs mb-2 font-semibold" style={{ color: MUTE }}>Photos ({photos.length}/{MAX_PHOTOS})</p>
@@ -3664,7 +3665,7 @@ function PostMarketplaceItem({ goBack, navigate }) {
 }
 
 /* ---------- STORE REGISTRATION (required, logo mandatory) ---------- */
-function StoreRegister({ goBack, navigate }) {
+function StoreRegister({ goBack, navigate, onLoggedIn }) {
   const [storeName, setStoreName] = useState("");
   const [storeType, setStoreType] = useState(STORE_TYPES[0]);
   const [ownerName, setOwnerName] = useState("");
@@ -3761,6 +3762,8 @@ function StoreRegister({ goBack, navigate }) {
         });
         if (insertError) throw insertError;
       }
+      const { data: fullProfile } = await supabase.from("stores").select("id, owner_name, owner_phone, store_name, store_type, logo_url, city, hours, description, status, lat, lng, address").eq(claimedId ? "id" : "auth_user_id", claimedId ? claimedId : authUserId).maybeSingle();
+      if (onLoggedIn && fullProfile) onLoggedIn({ email: email.trim(), profile: fullProfile });
       navigate("post_marketplace_item");
     } catch (e) {
       setError(e.message || "Couldn't register your store — please try again.");
@@ -3850,7 +3853,168 @@ function StoreRegister({ goBack, navigate }) {
 
 /* ---------- REGISTERED STORES DIRECTORY ---------- */
 /* ---------- STORE LOGIN (returning owners) ---------- */
-function StoreLoginScreen({ goBack, navigate }) {
+/* ---------- STORE DASHBOARD (real login required) ---------- */
+function StoreDashboard({ goBack, navigate, currentStore, onLogout }) {
+  const store = currentStore?.profile;
+  const [items, setItems] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [loadingItems, setLoadingItems] = useState(true);
+  const [loadingOrders, setLoadingOrders] = useState(true);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [tab, setTab] = useState("items"); // "items" | "orders"
+
+  async function loadItems() {
+    if (!store?.id) return;
+    const { data } = await supabase.from("marketplace_listings").select("*").eq("store_id", store.id).order("created_at", { ascending: false });
+    setItems(data || []);
+    setLoadingItems(false);
+  }
+  async function loadOrders() {
+    if (!store?.id) return;
+    const { data } = await supabase.from("store_orders").select("*").eq("store_id", store.id).order("created_at", { ascending: false });
+    setOrders(data || []);
+    setLoadingOrders(false);
+  }
+  useEffect(() => { loadItems(); loadOrders(); }, [store?.id]);
+
+  async function deleteItem(id) {
+    if (!confirm("Delete this listing permanently?")) return;
+    await supabase.from("marketplace_listings").delete().eq("id", id);
+    loadItems();
+  }
+
+  const ORDER_STAGES = ["placed", "preparing", "out_for_delivery", "delivered"];
+  async function advanceOrder(order) {
+    const idx = ORDER_STAGES.indexOf(order.status);
+    const next = ORDER_STAGES[Math.min(idx + 1, ORDER_STAGES.length - 1)];
+    await supabase.from("store_orders").update({ status: next }).eq("id", order.id);
+    loadOrders();
+  }
+  async function cancelOrder(id) {
+    if (!confirm("Cancel this order?")) return;
+    await supabase.from("store_orders").update({ status: "cancelled" }).eq("id", id);
+    loadOrders();
+  }
+
+  if (!store) {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="Store dashboard" onBack={goBack} />
+        <div className="px-5 flex flex-col items-center text-center py-10">
+          <ShoppingBag size={32} color={FAINT} />
+          <p className="text-sm font-semibold mt-3">Not logged in</p>
+          <button onClick={() => navigate("store_login")} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Log in to my store</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title={store.store_name} onBack={goBack} right={
+        <button onClick={onLogout} className="text-xs font-semibold" style={{ color: "#C0755B" }}>Log out</button>
+      } />
+      <div className="px-5">
+        <div className="rounded-2xl px-4 py-4 mb-5 flex items-center gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="w-14 h-14 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
+            {store.logo_url ? <img src={store.logo_url} alt={store.store_name} className="w-full h-full object-cover" /> : <ShoppingBag size={20} color={FAINT} />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold truncate">{store.store_name}</p>
+            <p className="text-[11px] mt-0.5" style={{ color: GOLD }}>{store.store_type}</p>
+            <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{store.city}{store.hours ? ` · ${store.hours}` : ""}</p>
+          </div>
+          <button onClick={() => setEditingProfile(true)} className="shrink-0 px-3 py-2 rounded-full text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
+        </div>
+
+        <div className="flex gap-2 mb-5">
+          <button onClick={() => setTab("items")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: tab === "items" ? GOLD : CARD, color: tab === "items" ? BG : MUTE, border: tab === "items" ? "none" : `1px solid ${BORDER}` }}>Items ({items.length})</button>
+          <button onClick={() => setTab("orders")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: tab === "orders" ? GOLD : CARD, color: tab === "orders" ? BG : MUTE, border: tab === "orders" ? "none" : `1px solid ${BORDER}` }}>Orders ({orders.filter((o) => o.status !== "delivered" && o.status !== "cancelled").length})</button>
+        </div>
+
+        {tab === "items" && (
+          <>
+            <button onClick={() => navigate("post_marketplace_item")} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+              <Plus size={14} /> Add item
+            </button>
+            {loadingItems ? (
+              <div className="flex justify-center py-10"><SearchingAnimation /></div>
+            ) : items.length === 0 ? (
+              <EmptyState icon={ShoppingBag} title="No items yet" subtitle="Items you post will show up here." />
+            ) : (
+              <div className="flex flex-col gap-2 pb-6">
+                {items.map((it) => (
+                  <div key={it.id} className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    <img src={it.image_url || "https://images.pexels.com/photos/5957/pexels-photo-5957.jpeg?auto=compress&cs=tinysrgb&w=600"} alt={it.title} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{it.title}</p>
+                      <p className="text-[11px]" style={{ color: GOLD }}>{it.price} SAR · <span style={{ color: FAINT }}>{it.status}</span></p>
+                    </div>
+                    <button onClick={() => setEditItem({ id: it.id, table: "marketplace_listings", raw: it })} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold shrink-0" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
+                    <button onClick={() => deleteItem(it.id)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold shrink-0" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Delete</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "orders" && (
+          loadingOrders ? (
+            <div className="flex justify-center py-10"><SearchingAnimation /></div>
+          ) : orders.length === 0 ? (
+            <EmptyState icon={Route} title="No orders yet" subtitle="Orders customers place will show up here." />
+          ) : (
+            <div className="flex flex-col gap-2 pb-6">
+              {orders.map((o) => {
+                const prog = statusProgress(o.status);
+                const isDone = o.status === "delivered" || o.status === "cancelled";
+                return (
+                  <div key={o.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold">{o.customer_name}</p>
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${prog.color}22`, color: prog.color }}>{prog.label}</span>
+                    </div>
+                    <a href={`tel:${o.customer_phone}`} className="text-[11px] flex items-center gap-1.5 mt-1" style={{ color: GREEN }}><Phone size={10} /> {o.customer_phone}</a>
+                    {o.delivery_address && <p className="text-[11px] mt-1 flex items-center gap-1.5" style={{ color: FAINT }}><MapPin size={10} /> {o.delivery_address}</p>}
+                    <div className="mt-2 pt-2" style={{ borderTop: `1px solid ${BORDER}` }}>
+                      {(o.items || []).map((it, i) => (
+                        <p key={i} className="text-[11px]" style={{ color: MUTE }}>{it.title} × {it.qty} — {it.price * it.qty} SAR</p>
+                      ))}
+                      <p className="text-xs font-semibold mt-1" style={{ color: GOLD }}>Total: {o.total} SAR</p>
+                    </div>
+                    {!isDone && (
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => advanceOrder(o)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+                          Mark as {ORDER_STAGES[Math.min(ORDER_STAGES.indexOf(o.status) + 1, 3)].replace(/_/g, " ")}
+                        </button>
+                        <button onClick={() => cancelOrder(o.id)} className="px-4 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Cancel</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+      </div>
+
+      {editingProfile && (
+        <EditActivityItemModal
+          item={{ id: store.id, table: "stores", raw: store }}
+          onClose={() => setEditingProfile(false)}
+          onSaved={() => { setEditingProfile(false); window.location.reload(); }}
+        />
+      )}
+      {editItem && (
+        <EditActivityItemModal item={editItem} onClose={() => setEditItem(null)} onSaved={() => { setEditItem(null); loadItems(); }} />
+      )}
+    </div>
+  );
+}
+
+function StoreLoginScreen({ goBack, navigate, onLoggedIn }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -3864,9 +4028,10 @@ function StoreLoginScreen({ goBack, navigate }) {
       const { error: loginError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (loginError) throw loginError;
       const { data: { user } } = await supabase.auth.getUser();
-      const { data: store } = await supabase.from("stores").select("id").eq("auth_user_id", user.id).maybeSingle();
+      const { data: store } = await supabase.from("stores").select("id, owner_name, owner_phone, store_name, store_type, logo_url, city, hours, description, status, lat, lng, address").eq("auth_user_id", user.id).maybeSingle();
       if (!store) throw new Error("No store is linked to this account yet.");
-      navigate("post_marketplace_item");
+      if (onLoggedIn) onLoggedIn({ email: email.trim(), profile: store });
+      navigate("store_dashboard");
     } catch (e) {
       setError(e.message || "Invalid email or password.");
     } finally {
@@ -11012,6 +11177,7 @@ export default function SayyaraDriveApp() {
   const [currentDriver, setCurrentDriver] = useState(null);
   const [activeFriendChat, setActiveFriendChat] = useState(null);
   const [currentCompany, setCurrentCompany] = useState(null);
+  const [currentStore, setCurrentStore] = useState(null);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   useEffect(() => {
     function handleOnline() { setIsOffline(false); }
@@ -11138,6 +11304,12 @@ export default function SayyaraDriveApp() {
     setHistory(["welcome"]);
   }
 
+  function storeLogout() {
+    supabase.auth.signOut();
+    setCurrentStore(null);
+    setHistory(["welcome"]);
+  }
+
   function navigate(next) {
     if (TAB_SCREENS.includes(next)) setHistory([next]);
     else setHistory((h) => [...h, next]);
@@ -11183,9 +11355,10 @@ export default function SayyaraDriveApp() {
     register_driver: <PartnerRegister goBack={goBack} type="driver" />,
     register_rental: <PartnerRegister goBack={goBack} type="rental_owner" />,
     register_seller: <PartnerRegister goBack={goBack} type="seller" />,
-    register_store: <StoreRegister goBack={goBack} navigate={navigate} />,
-    store_login: <StoreLoginScreen goBack={goBack} navigate={navigate} />,
-    post_marketplace_item: <PostMarketplaceItem goBack={goBack} navigate={navigate} />,
+    register_store: <StoreRegister goBack={goBack} navigate={navigate} onLoggedIn={setCurrentStore} />,
+    store_login: <StoreLoginScreen goBack={goBack} navigate={navigate} onLoggedIn={setCurrentStore} />,
+    store_dashboard: <StoreDashboard goBack={goBack} navigate={navigate} currentStore={currentStore} onLogout={storeLogout} />,
+    post_marketplace_item: <PostMarketplaceItem goBack={goBack} navigate={navigate} onLoggedIn={setCurrentStore} />,
     register_food: <PartnerRegister goBack={goBack} type="food_partner" />,
     register_logistics: <PartnerRegister goBack={goBack} type="logistics_partner" />,
     register_logistics_company: <PartnerRegister goBack={goBack} type="logistics_company" />,
