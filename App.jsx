@@ -2522,7 +2522,7 @@ function PartnerRegister({ goBack, type }) {
   }
 
   const step1Valid = name.trim() && phone.trim();
-  const needsRealAuth = type === "food_partner" || type === "logistics_company";
+  const needsRealAuth = type === "food_partner" || type === "logistics_company" || type === "rental_owner";
   const step2Valid = cfg.detailFields.filter((f) => !f.optional).every((f) => (details[f.key] || "").trim())
     && (!needsRealAuth || (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && password.length >= 6));
   const step3Valid = cfg.documents.every((d) => checkedDocs[d]);
@@ -2558,6 +2558,18 @@ function PartnerRegister({ goBack, type }) {
       // companies get a pending listing now, but still need Company Sign Up to
       // get a real login for the dashboard.
       if (type === "rental_owner") {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw new Error("Please enter a valid email — this is how you'll log in to manage your car listing.");
+        if (password.length < 6) throw new Error("Password must be at least 6 characters.");
+        let authUserId = null;
+        const { data: { user: existingUser } } = await supabase.auth.getUser();
+        if (existingUser) {
+          authUserId = existingUser.id;
+        } else {
+          const { data: authData, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { role: "car_owner" } } });
+          if (signUpError) throw signUpError;
+          authUserId = authData.user?.id;
+          await supabase.rpc("claim_legacy_listings_bulk", { p_table: "rental_listings", p_phone_column: "owner_phone", p_phone: phone.trim() });
+        }
         const galleryUrls = [];
         for (const g of galleryFiles) {
           const ext = g.file.name.split(".").pop() || "jpg";
@@ -2570,6 +2582,7 @@ function PartnerRegister({ goBack, type }) {
         const { error: listingError } = await supabase.from("rental_listings").insert({
           owner_name: name.trim(),
           owner_phone: phone.trim(),
+          auth_user_id: authUserId,
           provider: `Private owner — ${name.trim()}`,
           model: details.vehicleModel || "Car for rent",
           price_per_day: parseFloat(details.dailyRate) || null,
@@ -2820,7 +2833,7 @@ function PartnerRegister({ goBack, type }) {
             ))}
           </div>
 
-          {(type === "food_partner" || type === "logistics_company") && (
+          {(type === "food_partner" || type === "logistics_company" || type === "rental_owner") && (
             <>
               <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>YOUR LOGIN</p>
               <div className="flex flex-col gap-3 mb-6">
@@ -3412,9 +3425,13 @@ function CarRental({ goBack, navigate }) {
             <span className="flex items-center gap-2 text-sm font-semibold"><Users size={15} color={GREEN} /> Own a transport company? Apply to register it</span>
             <ChevronRight size={14} color={GREEN} />
           </button>
-          <button onClick={() => navigate("company_login")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <button onClick={() => navigate("company_login")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <span className="flex items-center gap-2 text-sm font-semibold"><Briefcase size={15} color={GOLD} /> Already approved? Company log in / Sign up</span>
             <ChevronRight size={14} color={GOLD} />
+          </button>
+          <button onClick={() => navigate("car_owner_login")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "transparent", border: `1px solid ${BORDER}` }}>
+            <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: MUTE }}><Key size={15} color={MUTE} /> Manage my car listing</span>
+            <ChevronRight size={14} color={MUTE} />
           </button>
           <div className="rounded-2xl px-4 py-2 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
@@ -4089,10 +4106,14 @@ function StoreDashboard({ goBack, navigate, currentStore, onLogout }) {
 
 /* ---------- BUSINESS LOGIN (restaurants & cargo companies) ---------- */
 function BusinessLoginScreen({ goBack, navigate, businessType, onLoggedIn }) {
-  const isRestaurant = businessType === "restaurant";
-  const table = isRestaurant ? "restaurants" : "logistics_companies";
-  const nameField = isRestaurant ? "name" : "company_name";
-  const label = isRestaurant ? "restaurant" : "cargo company";
+  const config = {
+    restaurant: { table: "restaurants", nameField: "name", label: "restaurant", registerRoute: "register_food", dashboard: "restaurant_dashboard" },
+    logistics_company: { table: "logistics_companies", nameField: "company_name", label: "cargo company", registerRoute: "register_logistics_company", dashboard: "cargo_company_dashboard" },
+    car_owner: { table: "rental_listings", nameField: "model", label: "car listing", registerRoute: "register_rental", dashboard: "my_listings" },
+    employer: { table: "jobs", nameField: "title", label: "job posting", registerRoute: "jobs", dashboard: "my_listings" },
+  }[businessType];
+  const { table, nameField, label, registerRoute, dashboard } = config;
+  const isProfileType = businessType === "restaurant" || businessType === "logistics_company";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -4107,10 +4128,16 @@ function BusinessLoginScreen({ goBack, navigate, businessType, onLoggedIn }) {
       const { error: loginError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (loginError) throw loginError;
       const { data: { user } } = await supabase.auth.getUser();
-      const { data: business } = await supabase.from(table).select("*").eq("auth_user_id", user.id).maybeSingle();
-      if (!business) throw new Error(`No ${label} is linked to this account yet.`);
-      if (onLoggedIn) onLoggedIn({ email: email.trim(), profile: business, table, nameField });
-      navigate(isRestaurant ? "restaurant_dashboard" : "cargo_company_dashboard");
+      if (isProfileType) {
+        const { data: business } = await supabase.from(table).select("*").eq("auth_user_id", user.id).maybeSingle();
+        if (!business) throw new Error(`No ${label} is linked to this account yet.`);
+        if (onLoggedIn) onLoggedIn({ email: email.trim(), profile: business, table, nameField });
+      } else {
+        const { data: rows } = await supabase.from(table).select("*").eq("auth_user_id", user.id);
+        if (!rows || rows.length === 0) throw new Error(`No ${label} is linked to this account yet.`);
+        if (onLoggedIn) onLoggedIn({ email: email.trim(), rows, table, nameField });
+      }
+      navigate(dashboard);
     } catch (e) {
       setError(e.message || "Invalid email or password.");
     } finally {
@@ -4120,7 +4147,7 @@ function BusinessLoginScreen({ goBack, navigate, businessType, onLoggedIn }) {
 
   return (
     <div style={{ color: TEXT }}>
-      <Header title={`${isRestaurant ? "Restaurant" : "Cargo company"} login`} onBack={goBack} />
+      <Header title={`${label.charAt(0).toUpperCase() + label.slice(1)} login`} onBack={goBack} />
       <div className="px-5">
         <div className="flex flex-col gap-3 mb-4">
           <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -4136,7 +4163,7 @@ function BusinessLoginScreen({ goBack, navigate, businessType, onLoggedIn }) {
         <button onClick={login} disabled={loading} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: loading ? BORDER : GOLD, color: loading ? "#5C736D" : BG }}>
           {loading ? "Logging in…" : "Log in"}
         </button>
-        <button onClick={() => navigate(isRestaurant ? "register_food" : "register_logistics")} className="w-full mt-3 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: MUTE }}>Don't have one yet? Register</button>
+        <button onClick={() => navigate(registerRoute)} className="w-full mt-3 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: MUTE }}>Don't have one yet?</button>
       </div>
     </div>
   );
@@ -4184,6 +4211,50 @@ function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
           onSaved={() => { setEditing(false); window.location.reload(); }}
         />
       )}
+    </div>
+  );
+}
+
+/* ---------- MY LISTINGS (car owners & employers, real login) ---------- */
+function MyListingsScreen({ goBack, currentListings }) {
+  const [rows, setRows] = useState(currentListings?.rows || []);
+  const [editItem, setEditItem] = useState(null);
+  if (!currentListings) {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="My Listings" onBack={goBack} />
+        <div className="px-5 flex flex-col items-center text-center py-10">
+          <Route size={32} color={FAINT} />
+          <p className="text-sm font-semibold mt-3">Not logged in</p>
+        </div>
+      </div>
+    );
+  }
+  const { table, nameField } = currentListings;
+
+  async function deleteRow(id) {
+    if (!confirm("Delete this permanently?")) return;
+    const { error } = await supabase.from(table).delete().eq("id", id);
+    if (!error) setRows((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="My Listings" onBack={goBack} />
+      <div className="px-5 flex flex-col gap-2 pb-6">
+        {rows.length === 0 ? (
+          <EmptyState icon={Route} title="Nothing here" subtitle="Your listings will show up here." />
+        ) : rows.map((r) => (
+          <div key={r.id} className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <p className="text-sm font-semibold">{r[nameField]}</p>
+            <div className="flex gap-2">
+              <button onClick={() => setEditItem({ id: r.id, table, raw: r })} className="px-3 py-1.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
+              <button onClick={() => deleteRow(r.id)} className="px-3 py-1.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {editItem && <EditActivityItemModal item={editItem} onClose={() => setEditItem(null)} onSaved={() => setEditItem(null)} />}
     </div>
   );
 }
@@ -5689,7 +5760,7 @@ const JOB_TABS = [
   { id: "platforms", label: "Job Platforms", icon: Circle },
 ];
 
-function JobsPortal({ goBack }) {
+function JobsPortal({ goBack, navigate }) {
   const [tab, setTab] = useState("openings");
   const [category, setCategory] = useState("All");
   const [query, setQuery] = useState("");
@@ -5767,11 +5838,11 @@ function JobsPortal({ goBack }) {
     }
   }
 
-  const [postForm, setPostForm] = useState({ title: "", company: "", city: "", jobType: "", employment: "", minSalary: "", maxSalary: "", description: "", requirements: "", phone: "", email: "" });
+  const [postForm, setPostForm] = useState({ title: "", company: "", city: "", jobType: "", employment: "", minSalary: "", maxSalary: "", description: "", requirements: "", phone: "", email: "", password: "" });
   const [postSubmitting, setPostSubmitting] = useState(false);
   const [postDone, setPostDone] = useState(false);
   const [postError, setPostError] = useState("");
-  const postCan = postForm.title.trim() && postForm.company.trim() && postForm.city.trim() && postForm.jobType.trim() && postForm.description.trim() && postForm.phone.trim();
+  const postCan = postForm.title.trim() && postForm.company.trim() && postForm.city.trim() && postForm.jobType.trim() && postForm.description.trim() && postForm.phone.trim() && postForm.email.trim() && postForm.password.length >= 6;
 
   async function loadJobs() {
     const { data } = await supabase.from("jobs").select("*").eq("status", "active").order("created_at", { ascending: false });
@@ -5811,6 +5882,34 @@ function JobsPortal({ goBack }) {
   async function submitPost() {
     setPostSubmitting(true);
     setPostError("");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(postForm.email.trim())) {
+      setPostError("Please enter a valid email — this is how you'll log in to manage this posting.");
+      setPostSubmitting(false);
+      return;
+    }
+    if (postForm.password.length < 6) {
+      setPostError("Password must be at least 6 characters.");
+      setPostSubmitting(false);
+      return;
+    }
+    let authUserId = null;
+    // If already logged in (e.g. posting a second job), reuse the session
+    // instead of trying to sign up again.
+    const { data: { user: existingUser } } = await supabase.auth.getUser();
+    if (existingUser) {
+      authUserId = existingUser.id;
+    } else {
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: postForm.email.trim(), password: postForm.password, options: { data: { role: "employer" } },
+      });
+      if (signUpError) {
+        setPostError(signUpError.message || "Couldn't create your login — please try again.");
+        setPostSubmitting(false);
+        return;
+      }
+      authUserId = authData.user?.id;
+      await supabase.rpc("claim_legacy_listings_bulk", { p_table: "jobs", p_phone_column: "phone", p_phone: postForm.phone.trim() });
+    }
     const pay = postForm.minSalary && postForm.maxSalary
       ? `${postForm.minSalary}–${postForm.maxSalary} SAR/mo`
       : postForm.minSalary ? `From ${postForm.minSalary} SAR/mo` : "Salary on request";
@@ -5825,6 +5924,7 @@ function JobsPortal({ goBack }) {
       category: "Driving",
       phone: postForm.phone,
       email: postForm.email,
+      auth_user_id: authUserId,
       description: postForm.description || "No description provided.",
       status: "active",
     });
@@ -5867,6 +5967,9 @@ function JobsPortal({ goBack }) {
             </button>
           );
         })}
+        <button onClick={() => navigate("employer_login")} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold whitespace-nowrap shrink-0" style={{ background: "transparent", border: `1px solid ${BORDER}`, color: MUTE }}>
+          <Key size={12} /> Manage my postings
+        </button>
       </div>
 
       {/* Job Openings tab */}
@@ -6008,8 +6111,13 @@ function JobsPortal({ goBack }) {
                     <input value={postForm.phone} onChange={(e) => setPostForm({ ...postForm, phone: e.target.value })} placeholder="+966 5X XXX XXXX" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
                   </div>
                   <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Contact Email</p>
-                    <input value={postForm.email} onChange={(e) => setPostForm({ ...postForm, email: e.target.value })} placeholder="hr@company.com" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Contact Email <span style={{ color: "#C0755B" }}>*</span></p>
+                    <input value={postForm.email} onChange={(e) => setPostForm({ ...postForm, email: e.target.value })} placeholder="hr@company.com — used to log in" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Set a Password <span style={{ color: "#C0755B" }}>*</span></p>
+                    <input value={postForm.password} onChange={(e) => setPostForm({ ...postForm, password: e.target.value })} placeholder="Min 6 characters" type="password" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                    <p className="text-[10px] mt-1.5" style={{ color: FAINT }}>This becomes your login — only you can edit or remove this posting later.</p>
                   </div>
                 </div>
 
@@ -11470,6 +11578,7 @@ export default function SayyaraDriveApp() {
   const [currentCompany, setCurrentCompany] = useState(null);
   const [currentStore, setCurrentStore] = useState(null);
   const [currentBusiness, setCurrentBusiness] = useState(null);
+  const [currentListings, setCurrentListings] = useState(null);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   useEffect(() => {
     function handleOnline() { setIsOffline(false); }
@@ -11667,6 +11776,9 @@ export default function SayyaraDriveApp() {
     restaurant_dashboard: <BusinessDashboard goBack={goBack} navigate={navigate} currentBusiness={currentBusiness} onLogout={businessLogout} />,
     cargo_company_login: <BusinessLoginScreen goBack={goBack} navigate={navigate} businessType="logistics_company" onLoggedIn={setCurrentBusiness} />,
     cargo_company_dashboard: <BusinessDashboard goBack={goBack} navigate={navigate} currentBusiness={currentBusiness} onLogout={businessLogout} />,
+    car_owner_login: <BusinessLoginScreen goBack={goBack} navigate={navigate} businessType="car_owner" onLoggedIn={setCurrentListings} />,
+    employer_login: <BusinessLoginScreen goBack={goBack} navigate={navigate} businessType="employer" onLoggedIn={setCurrentListings} />,
+    my_listings: <MyListingsScreen goBack={goBack} currentListings={currentListings} />,
     driver_login: <AuthScreen goBack={goBack} type="driver" navigate={navigate} onLoggedIn={setCurrentDriver} />,
     company_login: <CompanyAuthScreen goBack={goBack} navigate={navigate} onLoggedIn={setCurrentCompany} />,
     company_dashboard: <CompanyDashboard goBack={goBack} navigate={navigate} currentCompany={currentCompany} onLogout={companyLogout} />,
