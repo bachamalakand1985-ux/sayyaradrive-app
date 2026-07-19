@@ -2488,6 +2488,7 @@ function PartnerRegister({ goBack, type }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [city, setCity] = useState("Riyadh");
   const [district, setDistrict] = useState(SAUDI_CITIES["Riyadh"][0]);
   const [details, setDetails] = useState({});
@@ -2521,7 +2522,9 @@ function PartnerRegister({ goBack, type }) {
   }
 
   const step1Valid = name.trim() && phone.trim();
-  const step2Valid = cfg.detailFields.filter((f) => !f.optional).every((f) => (details[f.key] || "").trim());
+  const needsRealAuth = type === "food_partner" || type === "logistics_company";
+  const step2Valid = cfg.detailFields.filter((f) => !f.optional).every((f) => (details[f.key] || "").trim())
+    && (!needsRealAuth || (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && password.length >= 6));
   const step3Valid = cfg.documents.every((d) => checkedDocs[d]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -2589,6 +2592,13 @@ function PartnerRegister({ goBack, type }) {
         });
         if (listingError) throw listingError;
       } else if (type === "food_partner") {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw new Error("Please enter a valid email — this is how you'll log in to manage your restaurant.");
+        if (password.length < 6) throw new Error("Password must be at least 6 characters.");
+        const { data: authData, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { role: "restaurant_owner" } } });
+        if (signUpError) throw signUpError;
+        const authUserId = authData.user?.id;
+        const { data: claimedId } = await supabase.rpc("claim_legacy_business", { p_table: "restaurants", p_phone_column: "owner_phone", p_phone: phone.trim() });
+
         let logoUrl = null;
         if (logoFile) {
           const ext = logoFile.name.split(".").pop() || "jpg";
@@ -2608,16 +2618,26 @@ function PartnerRegister({ goBack, type }) {
           const { data: pub } = supabase.storage.from("company-photos").getPublicUrl(fileName);
           galleryUrls.push(pub.publicUrl);
         }
-        const { error: listingError } = await supabase.from("restaurants").insert({
-          name: details.restaurantName || name,
-          cuisine: details.cuisine || "Restaurant",
-          city,
-          logo_url: logoUrl,
-          gallery_urls: galleryUrls,
-          owner_phone: phone.trim(),
-          status: "active",
-        });
-        if (listingError) throw listingError;
+        if (claimedId) {
+          const { error: updErr } = await supabase.from("restaurants").update({
+            name: details.restaurantName || name, cuisine: details.cuisine || "Restaurant", city,
+            logo_url: logoUrl, gallery_urls: galleryUrls, email: email.trim(), status: "active",
+          }).eq("id", claimedId);
+          if (updErr) throw updErr;
+        } else {
+          const { error: listingError } = await supabase.from("restaurants").insert({
+            name: details.restaurantName || name,
+            cuisine: details.cuisine || "Restaurant",
+            city,
+            logo_url: logoUrl,
+            gallery_urls: galleryUrls,
+            owner_phone: phone.trim(),
+            auth_user_id: authUserId,
+            email: email.trim(),
+            status: "active",
+          });
+          if (listingError) throw listingError;
+        }
       } else if (type === "fleet_owner") {
         let logoUrl = null;
         if (logoFile) {
@@ -2651,6 +2671,13 @@ function PartnerRegister({ goBack, type }) {
         });
         if (companyError) throw companyError;
       } else if (type === "logistics_company") {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw new Error("Please enter a valid email — this is how you'll log in to manage your cargo company.");
+        if (password.length < 6) throw new Error("Password must be at least 6 characters.");
+        const { data: authData, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { role: "logistics_company_owner" } } });
+        if (signUpError) throw signUpError;
+        const authUserId = authData.user?.id;
+        const { data: claimedId } = await supabase.rpc("claim_legacy_business", { p_table: "logistics_companies", p_phone_column: "owner_phone", p_phone: phone.trim() });
+
         let logoUrl = null;
         if (logoFile) {
           const ext = logoFile.name.split(".").pop() || "jpg";
@@ -2670,20 +2697,30 @@ function PartnerRegister({ goBack, type }) {
           const { data: pub } = supabase.storage.from("company-photos").getPublicUrl(fileName);
           galleryUrls.push(pub.publicUrl);
         }
-        const { error: logisticsCoError } = await supabase.from("logistics_companies").insert({
-          company_name: details.companyName || name,
-          owner_name: name,
-          owner_phone: phone,
-          email: email || null,
-          city,
-          service_area: details.serviceArea || city,
-          fleet_size: parseInt(details.fleetSize, 10) || 0,
-          logo_url: logoUrl,
-          gallery_urls: galleryUrls,
-          status: "active",
-          verified: false,
-        });
-        if (logisticsCoError) throw logisticsCoError;
+        if (claimedId) {
+          const { error: updErr } = await supabase.from("logistics_companies").update({
+            company_name: details.companyName || name, owner_name: name, city,
+            service_area: details.serviceArea || city, fleet_size: parseInt(details.fleetSize, 10) || 0,
+            logo_url: logoUrl, gallery_urls: galleryUrls, email: email.trim(), status: "active",
+          }).eq("id", claimedId);
+          if (updErr) throw updErr;
+        } else {
+          const { error: logisticsCoError } = await supabase.from("logistics_companies").insert({
+            company_name: details.companyName || name,
+            owner_name: name,
+            owner_phone: phone.trim(),
+            auth_user_id: authUserId,
+            email: email.trim(),
+            city,
+            service_area: details.serviceArea || city,
+            fleet_size: parseInt(details.fleetSize, 10) || 0,
+            logo_url: logoUrl,
+            gallery_urls: galleryUrls,
+            status: "active",
+            verified: false,
+          });
+          if (logisticsCoError) throw logisticsCoError;
+        }
       }
 
       await supabase.from("notifications").insert({
@@ -2782,6 +2819,23 @@ function PartnerRegister({ goBack, type }) {
               </div>
             ))}
           </div>
+
+          {(type === "food_partner" || type === "logistics_company") && (
+            <>
+              <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>YOUR LOGIN</p>
+              <div className="flex flex-col gap-3 mb-6">
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+                  <Mail size={14} color={GOLD} />
+                  <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email — used to log in" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                </div>
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+                  <Key size={14} color={GOLD} />
+                  <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password (min 6 characters)" type="password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+                </div>
+                <p className="text-[10px] -mt-2" style={{ color: FAINT }}>This becomes your real login — only you, signed in, can ever edit or manage this listing.</p>
+              </div>
+            </>
+          )}
 
           {showsCompanyPhotos && (
             <>
@@ -4033,6 +4087,107 @@ function StoreDashboard({ goBack, navigate, currentStore, onLogout }) {
   );
 }
 
+/* ---------- BUSINESS LOGIN (restaurants & cargo companies) ---------- */
+function BusinessLoginScreen({ goBack, navigate, businessType, onLoggedIn }) {
+  const isRestaurant = businessType === "restaurant";
+  const table = isRestaurant ? "restaurants" : "logistics_companies";
+  const nameField = isRestaurant ? "name" : "company_name";
+  const label = isRestaurant ? "restaurant" : "cargo company";
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function login() {
+    setError("");
+    if (!email.trim() || !password) { setError("Please enter your email and password."); return; }
+    setLoading(true);
+    try {
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (loginError) throw loginError;
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: business } = await supabase.from(table).select("*").eq("auth_user_id", user.id).maybeSingle();
+      if (!business) throw new Error(`No ${label} is linked to this account yet.`);
+      if (onLoggedIn) onLoggedIn({ email: email.trim(), profile: business, table, nameField });
+      navigate(isRestaurant ? "restaurant_dashboard" : "cargo_company_dashboard");
+    } catch (e) {
+      setError(e.message || "Invalid email or password.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title={`${isRestaurant ? "Restaurant" : "Cargo company"} login`} onBack={goBack} />
+      <div className="px-5">
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Mail size={14} color={GOLD} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} autoFocus />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Key size={14} color={GOLD} />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} placeholder="Password" type="password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+        </div>
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <button onClick={login} disabled={loading} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: loading ? BORDER : GOLD, color: loading ? "#5C736D" : BG }}>
+          {loading ? "Logging in…" : "Log in"}
+        </button>
+        <button onClick={() => navigate(isRestaurant ? "register_food" : "register_logistics")} className="w-full mt-3 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: MUTE }}>Don't have one yet? Register</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- BUSINESS DASHBOARD (restaurants & cargo companies, real login required) ---------- */
+function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
+  const [editing, setEditing] = useState(false);
+  if (!currentBusiness?.profile) {
+    return (
+      <div style={{ color: TEXT }}>
+        <Header title="Dashboard" onBack={goBack} />
+        <div className="px-5 flex flex-col items-center text-center py-10">
+          <Briefcase size={32} color={FAINT} />
+          <p className="text-sm font-semibold mt-3">Not logged in</p>
+        </div>
+      </div>
+    );
+  }
+  const { profile, table, nameField } = currentBusiness;
+  const isRestaurant = table === "restaurants";
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title={profile[nameField]} onBack={goBack} right={
+        <button onClick={onLogout} className="text-xs font-semibold" style={{ color: "#C0755B" }}>Log out</button>
+      } />
+      <div className="px-5">
+        <div className="rounded-2xl px-4 py-4 mb-5 flex items-center gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="w-14 h-14 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
+            {profile.logo_url ? <img src={profile.logo_url} alt="" className="w-full h-full object-cover" /> : (isRestaurant ? <UtensilsCrossed size={20} color={FAINT} /> : <Truck size={20} color={FAINT} />)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold truncate">{profile[nameField]}</p>
+            <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{isRestaurant ? profile.cuisine : profile.service_area} · {profile.city}</p>
+          </div>
+          <button onClick={() => setEditing(true)} className="shrink-0 px-3 py-2 rounded-full text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
+        </div>
+        <p className="text-xs" style={{ color: FAINT }}>{isRestaurant ? "Menu and order management can be added here next." : "Fleet and route management can be added here next."}</p>
+      </div>
+      {editing && (
+        <EditActivityItemModal
+          item={{ id: profile.id, table, raw: profile }}
+          onClose={() => setEditing(false)}
+          onSaved={() => { setEditing(false); window.location.reload(); }}
+        />
+      )}
+    </div>
+  );
+}
+
 function StoreLoginScreen({ goBack, navigate, onLoggedIn }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -4979,6 +5134,9 @@ function FoodDelivery({ goBack, navigate }) {
           <button onClick={() => navigate("register_food")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold" style={{ background: GOLD, color: BG }}>
             <UtensilsCrossed size={13} /> List your restaurant
           </button>
+          <button onClick={() => navigate("restaurant_login")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+            <Key size={13} /> Restaurant login
+          </button>
           <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
             <Bag size={13} /> My orders
           </button>
@@ -5119,9 +5277,13 @@ function CargoCompaniesList({ navigate }) {
 
   return (
     <div className="px-5">
-      <button onClick={() => navigate("register_logistics_company")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+      <button onClick={() => navigate("register_logistics_company")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
         <span className="flex items-center gap-2 text-sm font-semibold"><Building2 size={15} color={GOLD} /> Register your cargo company</span>
         <ChevronRight size={14} color={GOLD} />
+      </button>
+      <button onClick={() => navigate("cargo_company_login")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "transparent", border: `1px solid ${BORDER}` }}>
+        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: MUTE }}><Key size={15} color={MUTE} /> Already registered? Log in</span>
+        <ChevronRight size={14} color={MUTE} />
       </button>
       {loading ? (
         <div className="flex justify-center py-10"><SearchingAnimation /></div>
@@ -11307,6 +11469,7 @@ export default function SayyaraDriveApp() {
   const [activeFriendChat, setActiveFriendChat] = useState(null);
   const [currentCompany, setCurrentCompany] = useState(null);
   const [currentStore, setCurrentStore] = useState(null);
+  const [currentBusiness, setCurrentBusiness] = useState(null);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   useEffect(() => {
     function handleOnline() { setIsOffline(false); }
@@ -11439,6 +11602,12 @@ export default function SayyaraDriveApp() {
     setHistory(["welcome"]);
   }
 
+  function businessLogout() {
+    supabase.auth.signOut();
+    setCurrentBusiness(null);
+    setHistory(["welcome"]);
+  }
+
   function navigate(next) {
     if (TAB_SCREENS.includes(next)) setHistory([next]);
     else setHistory((h) => [...h, next]);
@@ -11494,6 +11663,10 @@ export default function SayyaraDriveApp() {
     register_logistics: <PartnerRegister goBack={goBack} type="logistics_partner" />,
     register_logistics_company: <PartnerRegister goBack={goBack} type="logistics_company" />,
     register_fleet: <PartnerRegister goBack={goBack} type="fleet_owner" />,
+    restaurant_login: <BusinessLoginScreen goBack={goBack} navigate={navigate} businessType="restaurant" onLoggedIn={setCurrentBusiness} />,
+    restaurant_dashboard: <BusinessDashboard goBack={goBack} navigate={navigate} currentBusiness={currentBusiness} onLogout={businessLogout} />,
+    cargo_company_login: <BusinessLoginScreen goBack={goBack} navigate={navigate} businessType="logistics_company" onLoggedIn={setCurrentBusiness} />,
+    cargo_company_dashboard: <BusinessDashboard goBack={goBack} navigate={navigate} currentBusiness={currentBusiness} onLogout={businessLogout} />,
     driver_login: <AuthScreen goBack={goBack} type="driver" navigate={navigate} onLoggedIn={setCurrentDriver} />,
     company_login: <CompanyAuthScreen goBack={goBack} navigate={navigate} onLoggedIn={setCurrentCompany} />,
     company_dashboard: <CompanyDashboard goBack={goBack} navigate={navigate} currentCompany={currentCompany} onLogout={companyLogout} />,
