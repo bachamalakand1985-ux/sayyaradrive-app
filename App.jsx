@@ -2595,6 +2595,7 @@ function PartnerRegister({ goBack, type }) {
           city,
           logo_url: logoUrl,
           gallery_urls: galleryUrls,
+          owner_phone: phone.trim(),
           status: "active",
         });
         if (listingError) throw listingError;
@@ -6030,6 +6031,10 @@ const ACTIVITY_TABS = [
   { id: "food", label: "Food" },
   { id: "marketplace", label: "Marketplace" },
   { id: "jobs", label: "Jobs" },
+  { id: "mystore", label: "My Store" },
+  { id: "myrestaurant", label: "My Restaurant" },
+  { id: "cargocompany", label: "Cargo Co." },
+  { id: "transportco", label: "Transport Co." },
 ];
 
 function MyActivity({ goBack, currentDriver }) {
@@ -6072,6 +6077,30 @@ function MyActivity({ goBack, currentDriver }) {
         supabase.from("rental_listings").select("*").eq("owner_phone", phone).then(({ data }) => (data || []).map((r) => ({
           category: "mycars", id: r.id, ref: null, title: `${r.model} — listed for rent`,
           status: r.status, created_at: r.created_at, assigned: "Visible to renters", raw: r, table: "rental_listings", editable: true,
+        })))
+      );
+      queries.push(
+        supabase.from("stores").select("*").eq("owner_phone", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "mystore", id: r.id, ref: null, title: r.store_name,
+          status: r.status, created_at: r.created_at, assigned: "Visible to shoppers", raw: r, table: "stores", editable: true,
+        })))
+      );
+      queries.push(
+        supabase.from("restaurants").select("*").eq("owner_phone", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "myrestaurant", id: r.id, ref: null, title: r.name,
+          status: r.status, created_at: r.created_at, assigned: "Visible in Food", raw: r, table: "restaurants", editable: true,
+        })))
+      );
+      queries.push(
+        supabase.from("logistics_companies").select("*").eq("owner_phone", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "cargocompany", id: r.id, ref: null, title: r.company_name,
+          status: r.status, created_at: r.created_at, assigned: "Visible in Cargo Companies", raw: r, table: "logistics_companies", editable: true,
+        })))
+      );
+      queries.push(
+        supabase.from("companies").select("*").eq("mobile_number", phone).then(({ data }) => (data || []).map((r) => ({
+          category: "transportco", id: r.id, ref: null, title: r.name,
+          status: r.status, created_at: r.created_at, assigned: "Visible in Transport Companies", raw: r, table: "companies", editable: true,
         })))
       );
       queries.push(
@@ -6219,22 +6248,29 @@ function MyActivity({ goBack, currentDriver }) {
   );
 }
 
+const EDIT_TABLE_CONFIG = {
+  marketplace_listings: { label: "listing", nameField: "title", nameLabel: "Title", hasPrice: true, priceField: "price", hasDescription: true },
+  jobs: { label: "job posting", nameField: "title", nameLabel: "Title", hasPrice: false, hasDescription: true },
+  rental_listings: { label: "car listing", nameField: "model", nameLabel: "Car model", hasPrice: true, priceField: "price_per_day", priceLabel: "Price per day (SAR)", hasDescription: false },
+  stores: { label: "store", nameField: "store_name", nameLabel: "Store name", hasPrice: false, hasDescription: true },
+  restaurants: { label: "restaurant", nameField: "name", nameLabel: "Restaurant name", hasPrice: false, hasDescription: false },
+  logistics_companies: { label: "cargo company", nameField: "company_name", nameLabel: "Company name", hasPrice: false, hasDescription: false },
+  companies: { label: "transport company", nameField: "name", nameLabel: "Company name", hasPrice: false, hasDescription: false },
+};
+
 function EditActivityItemModal({ item, onClose, onSaved }) {
-  const isJob = item.table === "jobs";
-  const isCarListing = item.table === "rental_listings";
-  const [title, setTitle] = useState(isCarListing ? (item.raw.model || "") : (item.raw.title || ""));
-  const [price, setPrice] = useState(isCarListing ? (item.raw.price_per_day != null ? String(item.raw.price_per_day) : "") : (item.raw.price != null ? String(item.raw.price) : ""));
+  const cfg = EDIT_TABLE_CONFIG[item.table] || EDIT_TABLE_CONFIG.marketplace_listings;
+  const [name, setName] = useState(item.raw[cfg.nameField] || "");
+  const [price, setPrice] = useState(cfg.hasPrice && item.raw[cfg.priceField] != null ? String(item.raw[cfg.priceField]) : "");
   const [description, setDescription] = useState(item.raw.description || "");
   const [status, setStatus] = useState(item.raw.status || "active");
   const [saving, setSaving] = useState(false);
 
   async function save() {
     setSaving(true);
-    const payload = isJob
-      ? { title: title.trim(), description: description.trim() || null, status }
-      : isCarListing
-      ? { model: title.trim(), price_per_day: price ? Number(price) : null, status }
-      : { title: title.trim(), price: price ? Number(price) : null, description: description.trim() || null, status };
+    const payload = { [cfg.nameField]: name.trim(), status };
+    if (cfg.hasPrice) payload[cfg.priceField] = price ? Number(price) : null;
+    if (cfg.hasDescription) payload.description = description.trim() || null;
     const { error } = await supabase.from(item.table).update(payload).eq("id", item.id);
     setSaving(false);
     if (!error) onSaved();
@@ -6244,17 +6280,17 @@ function EditActivityItemModal({ item, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
       <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
-        <p className="text-sm font-semibold mb-4">Edit {isJob ? "job posting" : isCarListing ? "car listing" : "listing"}</p>
+        <p className="text-sm font-semibold mb-4">Edit {cfg.label}</p>
         <div className="flex flex-col gap-3 mb-4">
           <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={isCarListing ? "Car model" : "Title"} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={cfg.nameLabel} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
           </div>
-          {(!isJob) && (
+          {cfg.hasPrice && (
             <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
-              <input value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} placeholder={isCarListing ? "Price per day (SAR)" : "Price (SAR)"} inputMode="numeric" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+              <input value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} placeholder={cfg.priceLabel || "Price (SAR)"} inputMode="numeric" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
             </div>
           )}
-          {!isCarListing && (
+          {cfg.hasDescription && (
             <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" rows={3} className="bg-transparent outline-none text-sm w-full resize-y" style={{ color: TEXT }} />
             </div>
