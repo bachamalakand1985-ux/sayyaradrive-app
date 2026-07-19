@@ -3500,9 +3500,7 @@ const PARTNER_PLATFORMS = [
 const STORE_TYPES = ["Supermarket", "Electronics Store", "Fashion Boutique", "Furniture Store", "Auto Parts Shop", "Restaurant Supply", "Wholesale", "Retail Shop", "Other"];
 
 function PostMarketplaceItem({ goBack, navigate }) {
-  const [phase, setPhase] = useState("check"); // "check" | "no_store" | "form"
-  const [checkPhone, setCheckPhone] = useState("");
-  const [checking, setChecking] = useState(false);
+  const [phase, setPhase] = useState("checking"); // "checking" | "no_session" | "form"
   const [store, setStore] = useState(null);
 
   const [title, setTitle] = useState("");
@@ -3517,25 +3515,15 @@ function PostMarketplaceItem({ goBack, navigate }) {
   const MAX_PHOTOS = 6;
 
   useEffect(() => {
-    let saved = null;
-    try { saved = localStorage.getItem("sayyara_store_phone"); } catch (e) {}
-    if (saved) {
-      setCheckPhone(saved);
-      supabase.from("stores").select("*").eq("owner_phone", saved).maybeSingle().then(({ data }) => {
-        if (data) { setStore(data); setPhase("form"); }
-      });
+    async function checkSession() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setPhase("no_session"); return; }
+      const { data } = await supabase.from("stores").select("id, owner_name, owner_phone, store_name, store_type, logo_url, city, hours, description, status, lat, lng, address").eq("auth_user_id", user.id).maybeSingle();
+      if (data) { setStore(data); setPhase("form"); }
+      else { setPhase("no_session"); }
     }
+    checkSession();
   }, []);
-
-  async function checkStore() {
-    if (!checkPhone.trim()) { setError("Please enter your mobile number."); return; }
-    setError("");
-    setChecking(true);
-    const { data } = await supabase.from("stores").select("*").eq("owner_phone", checkPhone.trim()).maybeSingle();
-    setChecking(false);
-    if (data) { setStore(data); setPhase("form"); }
-    else { setPhase("no_store"); }
-  }
 
   function handleFilesSelected(e) {
     const files = Array.from(e.target.files || []);
@@ -3588,35 +3576,25 @@ function PostMarketplaceItem({ goBack, navigate }) {
     }
   }
 
-  if (phase === "check") {
+  if (phase === "checking") {
     return (
       <div style={{ color: TEXT }}>
         <Header title="Post an item" onBack={goBack} />
-        <div className="px-5">
-          <p className="text-sm mb-4" style={{ color: MUTE }}>Every listing is posted under your store. Enter your mobile number to continue.</p>
-          <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <Phone size={14} color={GOLD} />
-            <input value={checkPhone} onChange={(e) => setCheckPhone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && checkStore()} placeholder="Your store's mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} autoFocus />
-          </div>
-          {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
-          <button onClick={checkStore} disabled={checking} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: checking ? BORDER : GOLD, color: checking ? "#5C736D" : BG }}>
-            {checking ? "Checking…" : "Continue"}
-          </button>
-        </div>
+        <div className="flex justify-center py-16"><SearchingAnimation /></div>
       </div>
     );
   }
 
-  if (phase === "no_store") {
+  if (phase === "no_session") {
     return (
       <div style={{ color: TEXT }}>
         <Header title="Post an item" onBack={goBack} />
         <div className="px-5 flex flex-col items-center text-center py-8">
           <ShoppingBag size={32} color={GOLD} />
-          <p className="text-sm font-semibold mt-3">You need a store to post items</p>
-          <p className="text-xs mt-1" style={{ color: FAINT }}>Every listing is posted under a registered store — it only takes a minute to set up.</p>
-          <button onClick={() => navigate("register_store")} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Register your store</button>
-          <button onClick={() => setPhase("check")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Try a different number</button>
+          <p className="text-sm font-semibold mt-3">Log in to your store to post items</p>
+          <p className="text-xs mt-1" style={{ color: FAINT }}>Every listing is posted under your store account — this keeps it secure so only you can post to it.</p>
+          <button onClick={() => navigate("store_login")} className="w-full mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Log in to my store</button>
+          <button onClick={() => navigate("register_store")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>I don't have a store yet</button>
         </div>
       </div>
     );
@@ -3691,6 +3669,8 @@ function StoreRegister({ goBack, navigate }) {
   const [storeType, setStoreType] = useState(STORE_TYPES[0]);
   const [ownerName, setOwnerName] = useState("");
   const [ownerPhone, setOwnerPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [city, setCity] = useState("Riyadh");
   const [hours, setHours] = useState("");
   const [description, setDescription] = useState("");
@@ -3726,7 +3706,7 @@ function StoreRegister({ goBack, navigate }) {
     e.target.value = "";
   }
 
-  const can = storeName.trim() && ownerName.trim() && ownerPhone.trim() && logoFile;
+  const can = storeName.trim() && ownerName.trim() && ownerPhone.trim() && logoFile && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && password.length >= 6;
 
   async function submit() {
     setError("");
@@ -3734,10 +3714,20 @@ function StoreRegister({ goBack, navigate }) {
     if (!ownerName.trim()) { setError("Please enter your full name."); return; }
     if (!ownerPhone.trim()) { setError("Please enter your mobile number."); return; }
     if (!logoFile) { setError("A store logo is required."); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError("Please enter a valid email address — this is how you'll log in to manage your store."); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     setSaving(true);
     try {
-      const { data: existing } = await supabase.from("stores").select("id").eq("owner_phone", ownerPhone.trim()).maybeSingle();
-      if (existing) { setError("A store is already registered with this mobile number."); setSaving(false); return; }
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(), password,
+        options: { data: { role: "store_owner" } },
+      });
+      if (signUpError) throw signUpError;
+      const authUserId = authData.user?.id;
+
+      // If a store already exists with this phone (registered before real
+      // login existed), claim it instead of creating a duplicate.
+      const { data: claimedId } = await supabase.rpc("claim_legacy_store", { p_phone: ownerPhone.trim() });
 
       const ext = logoFile.name.split(".").pop() || "jpg";
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
@@ -3745,22 +3735,32 @@ function StoreRegister({ goBack, navigate }) {
       if (logoErr) throw logoErr;
       const { data: pub } = supabase.storage.from("company-logos").getPublicUrl(fileName);
 
-      const { error: insertError } = await supabase.from("stores").insert({
-        owner_name: ownerName.trim(),
-        owner_phone: ownerPhone.trim(),
-        store_name: storeName.trim(),
-        store_type: storeType,
-        logo_url: pub.publicUrl,
-        city,
-        hours: hours.trim() || null,
-        address: address.trim() || null,
-        lat: coords.lat,
-        lng: coords.lng,
-        description: description.trim() || null,
-        status: "active",
-      });
-      if (insertError) throw insertError;
-      try { localStorage.setItem("sayyara_store_phone", ownerPhone.trim()); } catch (e) {}
+      if (claimedId) {
+        const { error: updErr } = await supabase.from("stores").update({
+          owner_name: ownerName.trim(), email: email.trim(), store_name: storeName.trim(), store_type: storeType,
+          logo_url: pub.publicUrl, city, hours: hours.trim() || null, address: address.trim() || null,
+          lat: coords.lat, lng: coords.lng, description: description.trim() || null, status: "active",
+        }).eq("id", claimedId);
+        if (updErr) throw updErr;
+      } else {
+        const { error: insertError } = await supabase.from("stores").insert({
+          owner_name: ownerName.trim(),
+          owner_phone: ownerPhone.trim(),
+          auth_user_id: authUserId,
+          email: email.trim(),
+          store_name: storeName.trim(),
+          store_type: storeType,
+          logo_url: pub.publicUrl,
+          city,
+          hours: hours.trim() || null,
+          address: address.trim() || null,
+          lat: coords.lat,
+          lng: coords.lng,
+          description: description.trim() || null,
+          status: "active",
+        });
+        if (insertError) throw insertError;
+      }
       navigate("post_marketplace_item");
     } catch (e) {
       setError(e.message || "Couldn't register your store — please try again.");
@@ -3803,6 +3803,15 @@ function StoreRegister({ goBack, navigate }) {
             <Phone size={14} color={GOLD} />
             <input value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="Mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
           </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+            <Mail size={14} color={GOLD} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email — used to log in" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+            <Key size={14} color={GOLD} />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password (min 6 characters)" type="password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <p className="text-[10px] -mt-2" style={{ color: FAINT }}>This becomes your real login — only you, signed in, can ever post to or edit this store.</p>
           <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <MapPin size={14} color={GOLD} />
             <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
@@ -3840,6 +3849,55 @@ function StoreRegister({ goBack, navigate }) {
 }
 
 /* ---------- REGISTERED STORES DIRECTORY ---------- */
+/* ---------- STORE LOGIN (returning owners) ---------- */
+function StoreLoginScreen({ goBack, navigate }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function login() {
+    setError("");
+    if (!email.trim() || !password) { setError("Please enter your email and password."); return; }
+    setLoading(true);
+    try {
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (loginError) throw loginError;
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: store } = await supabase.from("stores").select("id").eq("auth_user_id", user.id).maybeSingle();
+      if (!store) throw new Error("No store is linked to this account yet.");
+      navigate("post_marketplace_item");
+    } catch (e) {
+      setError(e.message || "Invalid email or password.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Store login" onBack={goBack} />
+      <div className="px-5">
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Mail size={14} color={GOLD} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Store email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} autoFocus />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Key size={14} color={GOLD} />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} placeholder="Password" type="password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+        </div>
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <button onClick={login} disabled={loading} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: loading ? BORDER : GOLD, color: loading ? "#5C736D" : BG }}>
+          {loading ? "Logging in…" : "Log in"}
+        </button>
+        <button onClick={() => navigate("register_store")} className="w-full mt-3 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: MUTE }}>Don't have a store? Register one</button>
+      </div>
+    </div>
+  );
+}
+
 function RegisteredStoresList({ navigate }) {
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3848,7 +3906,7 @@ function RegisteredStoresList({ navigate }) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const { data } = await supabase.from("stores").select("*").eq("status", "active").order("created_at", { ascending: false });
+      const { data } = await supabase.from("stores").select("id, owner_name, owner_phone, store_name, store_type, logo_url, city, hours, description, status, created_at, lat, lng, address").eq("status", "active").order("created_at", { ascending: false });
       if (!cancelled) { setStores(data || []); setLoading(false); }
     }
     load();
@@ -3857,9 +3915,13 @@ function RegisteredStoresList({ navigate }) {
 
   return (
     <div className="px-5">
-      <button onClick={() => navigate("register_store")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
+      <button onClick={() => navigate("register_store")} className="w-full mb-2.5 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${GOLD}` }}>
         <span className="flex items-center gap-2 text-sm font-semibold"><ShoppingBag size={15} color={GOLD} /> Register your store</span>
         <ChevronRight size={14} color={GOLD} />
+      </button>
+      <button onClick={() => navigate("store_login")} className="w-full mb-4 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "transparent", border: `1px solid ${BORDER}` }}>
+        <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: MUTE }}><Key size={15} color={MUTE} /> Already have a store? Log in</span>
+        <ChevronRight size={14} color={MUTE} />
       </button>
       {loading ? (
         <div className="flex justify-center py-10"><SearchingAnimation /></div>
@@ -4135,7 +4197,7 @@ function Marketplace({ goBack, navigate }) {
 
   async function openStore(storeId) {
     setStoreLoading(true);
-    const { data } = await supabase.from("stores").select("*").eq("id", storeId).maybeSingle();
+    const { data } = await supabase.from("stores").select("id, owner_name, owner_phone, store_name, store_type, logo_url, city, hours, description, status, created_at, lat, lng, address").eq("id", storeId).maybeSingle();
     setStoreLoading(false);
     if (data) setOpenStoreOf(data);
   }
@@ -6035,6 +6097,7 @@ const ACTIVITY_TABS = [
   { id: "myrestaurant", label: "My Restaurant" },
   { id: "cargocompany", label: "Cargo Co." },
   { id: "transportco", label: "Transport Co." },
+  { id: "history", label: "History" },
 ];
 
 function MyActivity({ goBack, currentDriver }) {
@@ -6080,7 +6143,7 @@ function MyActivity({ goBack, currentDriver }) {
         })))
       );
       queries.push(
-        supabase.from("stores").select("*").eq("owner_phone", phone).then(({ data }) => (data || []).map((r) => ({
+        supabase.from("stores").select("id, owner_name, owner_phone, store_name, store_type, logo_url, city, hours, description, status, created_at, lat, lng, address").eq("owner_phone", phone).then(({ data }) => (data || []).map((r) => ({
           category: "mystore", id: r.id, ref: null, title: r.store_name,
           status: r.status, created_at: r.created_at, assigned: "Visible to shoppers", raw: r, table: "stores", editable: true,
         })))
@@ -6163,7 +6226,10 @@ function MyActivity({ goBack, currentDriver }) {
     loadAll();
   }
 
-  const filtered = tab === "all" ? items : items.filter((i) => i.category === tab);
+  const isCancelled = (i) => (i.status || "").toLowerCase() === "cancelled";
+  const filtered = tab === "history"
+    ? items.filter(isCancelled)
+    : (tab === "all" ? items : items.filter((i) => i.category === tab)).filter((i) => !isCancelled(i));
   const cancellableTables = ["rides", "logistics_parcels", "rental_bookings", "food_orders", "store_orders"];
   const cancellableStatuses = ["requested", "pending", "placed", "confirmed", "new"];
 
@@ -6185,7 +6251,7 @@ function MyActivity({ goBack, currentDriver }) {
 
       {loading && <div className="px-5 flex flex-col gap-2">{[1, 2, 3].map((i) => <SkeletonRow key={i} />)}</div>}
       {!loading && filtered.length === 0 && (
-        <EmptyState icon={Route} title="Nothing here yet" subtitle="Requests and posts you make will show up here." />
+        <EmptyState icon={Route} title={tab === "history" ? "No cancelled items" : "Nothing here yet"} subtitle={tab === "history" ? "Cancelled requests and posts will show up here." : "Requests and posts you make will show up here."} />
       )}
 
       <div className="px-5 grid grid-cols-1 lg:grid-cols-2 gap-2.5 pb-6">
@@ -11118,6 +11184,7 @@ export default function SayyaraDriveApp() {
     register_rental: <PartnerRegister goBack={goBack} type="rental_owner" />,
     register_seller: <PartnerRegister goBack={goBack} type="seller" />,
     register_store: <StoreRegister goBack={goBack} navigate={navigate} />,
+    store_login: <StoreLoginScreen goBack={goBack} navigate={navigate} />,
     post_marketplace_item: <PostMarketplaceItem goBack={goBack} navigate={navigate} />,
     register_food: <PartnerRegister goBack={goBack} type="food_partner" />,
     register_logistics: <PartnerRegister goBack={goBack} type="logistics_partner" />,
