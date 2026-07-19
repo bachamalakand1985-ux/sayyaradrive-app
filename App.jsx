@@ -9091,14 +9091,17 @@ function ReportModal({ context, referenceId, referenceTitle, onClose }) {
   const [reason, setReason] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
 
   async function submit() {
     if (!reason) return;
     setSending(true);
-    await supabase.from("reports").insert({
+    setError("");
+    const { error: insertError } = await supabase.from("reports").insert({
       context, reference_id: referenceId ? String(referenceId) : null, reference_title: referenceTitle, reason,
     });
     setSending(false);
+    if (insertError) { setError("Couldn't submit your report — please try again."); return; }
     setSent(true);
   }
 
@@ -9117,6 +9120,7 @@ function ReportModal({ context, referenceId, referenceTitle, onClose }) {
                 <button key={r} onClick={() => setReason(r)} className="text-left rounded-xl px-4 py-3 text-sm" style={{ background: reason === r ? BORDER : BG, border: reason === r ? `1px solid ${"#C0755B"}` : `1px solid ${BORDER}`, color: TEXT }}>{r}</button>
               ))}
             </div>
+            {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
             <button onClick={submit} disabled={!reason || sending} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: reason ? "#C0755B" : BORDER, color: reason ? "#fff" : "#5C736D" }}>
               {sending ? "Submitting…" : "Submit report"}
             </button>
@@ -10046,7 +10050,7 @@ function relativeTimeFrom(iso) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function AdminListPage({ goBack, navigate, title, table, columns, showDriverActions, deletable, addFields, statusToggle, approvalActions, resolveToggle, companyActions, passengerActions }) {
+function AdminListPage({ goBack, navigate, title, table, columns, showDriverActions, deletable, blockable, addFields, statusToggle, approvalActions, resolveToggle, companyActions, passengerActions }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -10153,6 +10157,13 @@ function AdminListPage({ goBack, navigate, title, table, columns, showDriverActi
 
   async function toggleSold(row) {
     await supabase.from(table).update({ status: row.status === "sold" ? "active" : "sold" }).eq("id", row.id);
+    loadRows();
+  }
+
+  async function toggleBlocked(row) {
+    const isBlocked = row.status === "blocked" || row.status === "hidden";
+    await supabase.from(table).update({ status: isBlocked ? "active" : "blocked" }).eq("id", row.id);
+    logAction(isBlocked ? `Unblocked ${table} record` : `Blocked ${table} record`, table, columns.map((c) => row[c.key]).filter(Boolean)[0] || row.id);
     loadRows();
   }
 
@@ -10364,6 +10375,11 @@ function AdminListPage({ goBack, navigate, title, table, columns, showDriverActi
                 {statusToggle && (
                   <button onClick={() => toggleSold(r)} className="w-full mt-3 rounded-full py-2 text-xs font-semibold" style={{ background: r.status === "sold" ? "rgba(91,143,212,0.15)" : "rgba(192,117,91,0.12)", color: r.status === "sold" ? GREEN : "#C0755B" }}>
                     {r.status === "sold" ? "Mark as available again" : "Mark as sold"}
+                  </button>
+                )}
+                {blockable && (
+                  <button onClick={() => toggleBlocked(r)} className="w-full mt-3 rounded-full py-2 text-xs font-semibold" style={{ background: (r.status === "blocked" || r.status === "hidden") ? "rgba(91,143,212,0.15)" : "rgba(192,117,91,0.12)", color: (r.status === "blocked" || r.status === "hidden") ? GREEN : "#C0755B" }}>
+                    {(r.status === "blocked" || r.status === "hidden") ? "Unblock" : "Block"}
                   </button>
                 )}
                 {resolveToggle && (
@@ -11115,6 +11131,9 @@ const ADMIN_SECTIONS = [
   { id: "logistics_parcels", label: "Logistics", table: "logistics_parcels", icon: Truck },
   { id: "fleet_vehicles", label: "Fleet", table: "fleet_vehicles", icon: Car },
   { id: "fleet_routes", label: "Fleet Routes", table: "fleet_routes", icon: MapPin },
+  { id: "stores", label: "Stores", table: "stores", icon: ShoppingBag },
+  { id: "store_orders", label: "Store Orders", table: "store_orders", icon: ShoppingBag },
+  { id: "logistics_companies", label: "Cargo Companies", table: "logistics_companies", icon: Truck },
   { id: "call_logs", label: "Calls", table: "call_logs", icon: PhoneCall },
   { id: "violations", label: "Violations", table: "violations", icon: Shield },
   { id: "audit_logs", label: "Audit Logs", table: "audit_logs", icon: Package },
@@ -11487,17 +11506,17 @@ export default function SayyaraDriveApp() {
     admin_ratings: <AdminListPage goBack={goBack} title="Ratings & Reviews" table="ratings" deletable columns={[{key:"target_label",label:"About"},{key:"rating_type",label:"Type"},{key:"rating",label:"Stars"},{key:"review",label:"Review"},{key:"reviewer_name",label:"By"}]} />,
     admin_crash_reports: <AdminListPage goBack={goBack} title="Errors" table="crash_reports" deletable columns={[{key:"message",label:"Error"},{key:"url",label:"Page"},{key:"user_agent",label:"Device"}]} />,
     admin_reports: <AdminListPage goBack={goBack} title="Reports" table="reports" deletable resolveToggle columns={[{key:"reference_title",label:"Listing"},{key:"context",label:"Section"},{key:"reason",label:"Reason"}]} />,
-    admin_companies: <AdminListPage goBack={goBack} title="Companies" table="companies" deletable companyActions columns={[{key:"name",label:"Name"},{key:"cr_number",label:"CR Number"},{key:"contact_name",label:"Contact"},{key:"mobile_number",label:"Mobile"},{key:"email",label:"Email"}]} />,
-    admin_rental_listings: <AdminListPage goBack={goBack} title="Car Listings" table="rental_listings" deletable columns={[{key:"model",label:"Model"},{key:"owner_name",label:"Owner"},{key:"owner_phone",label:"Phone"},{key:"city",label:"City"},{key:"price_per_day",label:"Price/day"}]} />,
+    admin_companies: <AdminListPage goBack={goBack} title="Companies" table="companies" deletable blockable companyActions columns={[{key:"name",label:"Name"},{key:"cr_number",label:"CR Number"},{key:"contact_name",label:"Contact"},{key:"mobile_number",label:"Mobile"},{key:"email",label:"Email"}]} />,
+    admin_rental_listings: <AdminListPage goBack={goBack} title="Car Listings" table="rental_listings" deletable blockable columns={[{key:"model",label:"Model"},{key:"owner_name",label:"Owner"},{key:"owner_phone",label:"Phone"},{key:"city",label:"City"},{key:"price_per_day",label:"Price/day"}]} />,
     admin_audit_logs: <AdminListPage goBack={goBack} title="Audit Logs" table="audit_logs" columns={[{key:"action",label:"Action"},{key:"target_label",label:"Target"},{key:"performed_by",label:"By"},{key:"target_table",label:"Table"}]} />,
-    admin_call_logs: <AdminListPage goBack={goBack} title="Calls" table="call_logs" columns={[{key:"caller_name",label:"Caller"},{key:"callee_name",label:"Callee"},{key:"connected",label:"Connected"},{key:"duration_seconds",label:"Duration (s)"}]} />,
-    admin_fleet_routes: <AdminListPage goBack={goBack} title="Fleet Routes" table="fleet_routes" deletable columns={[{key:"route_name",label:"Route"},{key:"from_city",label:"From"},{key:"to_city",label:"To"}]} />,
+    admin_call_logs: <AdminListPage goBack={goBack} title="Calls" table="call_logs" deletable columns={[{key:"caller_name",label:"Caller"},{key:"callee_name",label:"Callee"},{key:"connected",label:"Connected"},{key:"duration_seconds",label:"Duration (s)"}]} />,
+    admin_fleet_routes: <AdminListPage goBack={goBack} title="Fleet Routes" table="fleet_routes" deletable blockable columns={[{key:"route_name",label:"Route"},{key:"from_city",label:"From"},{key:"to_city",label:"To"}]} />,
     admin_data_cleanup: <AdminDataCleanup goBack={goBack} navigate={navigate} />,
     admin_ride_stats: <AdminRideStats goBack={goBack} />,
     admin_security: <AdminSecurity goBack={goBack} />,
     admin_marketplace_listings: <AdminListPage goBack={goBack} title="Marketplace" table="marketplace_listings" deletable statusToggle columns={[{key:"title",label:"Title"},{key:"seller_name",label:"Seller"},{key:"price",label:"Price"},{key:"category",label:"Category"},{key:"location",label:"Location"}]} addFields={[{key:"title",label:"Title",required:true},{key:"price",label:"Price (SAR)",required:true},{key:"category",label:"Category",type:"select",options:["Cars","Electronics","Furniture","Fashion","Spare parts"],required:true},{key:"location",label:"City",required:true},{key:"seller_name",label:"Seller name"},{key:"seller_phone",label:"Seller phone"},{key:"condition",label:"Condition (e.g. Excellent, Like New)"},{key:"year",label:"Year (cars only)"},{key:"km",label:"Mileage (cars only)"},{key:"image_url",label:"Image URL (optional)"}]} />,
-    admin_restaurants: <AdminListPage goBack={goBack} title="Restaurants" table="restaurants" deletable columns={[{key:"name",label:"Name"},{key:"cuisine",label:"Cuisine"},{key:"city",label:"City"},{key:"hours",label:"Hours"}]} addFields={[{key:"name",label:"Restaurant name",required:true},{key:"cuisine",label:"Cuisine (e.g. Arabic, Fast food)",required:true},{key:"city",label:"City",required:true},{key:"hours",label:"Hours (e.g. 10:00–23:00)"},{key:"food_category",label:"Photo type",type:"select",options:["rice","burger","dessert","pasta","butter-chicken"],required:true}]} />,
-    admin_jobs: <AdminListPage goBack={goBack} title="Jobs" table="jobs" deletable columns={[{key:"title",label:"Title"},{key:"company",label:"Company"},{key:"location",label:"Location"},{key:"pay",label:"Pay"}]} addFields={[{key:"title",label:"Job title",required:true},{key:"company",label:"Company name",required:true},{key:"location",label:"City",required:true},{key:"pay",label:"Pay",required:true},{key:"job_type",label:"Type",type:"select",options:["Full-time","Part-time","Flexible","Freelance"]},{key:"phone",label:"Contact phone"},{key:"description",label:"Description"}]} />,
+    admin_restaurants: <AdminListPage goBack={goBack} title="Restaurants" table="restaurants" deletable blockable columns={[{key:"name",label:"Name"},{key:"cuisine",label:"Cuisine"},{key:"city",label:"City"},{key:"hours",label:"Hours"}]} addFields={[{key:"name",label:"Restaurant name",required:true},{key:"cuisine",label:"Cuisine (e.g. Arabic, Fast food)",required:true},{key:"city",label:"City",required:true},{key:"hours",label:"Hours (e.g. 10:00–23:00)"},{key:"food_category",label:"Photo type",type:"select",options:["rice","burger","dessert","pasta","butter-chicken"],required:true}]} />,
+    admin_jobs: <AdminListPage goBack={goBack} title="Jobs" table="jobs" deletable blockable columns={[{key:"title",label:"Title"},{key:"company",label:"Company"},{key:"location",label:"Location"},{key:"pay",label:"Pay"}]} addFields={[{key:"title",label:"Job title",required:true},{key:"company",label:"Company name",required:true},{key:"location",label:"City",required:true},{key:"pay",label:"Pay",required:true},{key:"job_type",label:"Type",type:"select",options:["Full-time","Part-time","Flexible","Freelance"]},{key:"phone",label:"Contact phone"},{key:"description",label:"Description"}]} />,
     admin_partner_applications: <AdminListPage goBack={goBack} title="Applications" table="partner_applications" deletable approvalActions columns={[{key:"full_name",label:"Name"},{key:"type",label:"Type"},{key:"phone",label:"Phone"},{key:"email",label:"Email"},{key:"city",label:"City"},{key:"district",label:"District"},{key:"details",label:"Details"}]} />,
     admin_messages: <AdminListPage goBack={goBack} title="Messages" table="messages" deletable columns={[{key:"sender_name",label:"From"},{key:"sender_phone",label:"Phone"},{key:"context",label:"About"},{key:"reference_title",label:"Reference"},{key:"body",label:"Message"}]} />,
     admin_broadcast: <AdminBroadcast goBack={goBack} />,
@@ -11505,11 +11524,14 @@ export default function SayyaraDriveApp() {
     admin_ride_chats: <AdminRideChats goBack={goBack} />,
     admin_support_inbox: <AdminSupportInbox goBack={goBack} />,
     support_chat: <SupportChatScreen goBack={goBack} currentDriver={currentDriver} />,
-    admin_rental_bookings: <AdminListPage goBack={goBack} title="Car Rentals" table="rental_bookings" columns={[{key:"renter_name",label:"Renter"},{key:"provider",label:"Company"},{key:"car_model",label:"Car"},{key:"pickup_date",label:"Pickup"},{key:"return_date",label:"Return"},{key:"total_price",label:"Total"}]} />,
-    admin_food_orders: <AdminListPage goBack={goBack} title="Food Delivery" table="food_orders" columns={[{key:"restaurant_name",label:"Restaurant"},{key:"customer_name",label:"Customer"},{key:"total",label:"Total"}]} />,
-    admin_logistics_parcels: <AdminListPage goBack={goBack} title="Logistics" table="logistics_parcels" columns={[{key:"sender_name",label:"Sender"},{key:"pickup_address",label:"Pickup"},{key:"dropoff_address",label:"Dropoff"}]} />,
-    admin_fleet_vehicles: <AdminListPage goBack={goBack} title="Fleet" table="fleet_vehicles" columns={[{key:"plate_number",label:"Plate"},{key:"model",label:"Model"},{key:"driver_name",label:"Driver"}]} />,
-    admin_violations: <AdminListPage goBack={goBack} title="Violations" table="violations" columns={[{key:"reason",label:"Reason"},{key:"driver_id",label:"Driver ID"}]} />,
+    admin_rental_bookings: <AdminListPage goBack={goBack} title="Car Rentals" table="rental_bookings" deletable blockable columns={[{key:"renter_name",label:"Renter"},{key:"provider",label:"Company"},{key:"car_model",label:"Car"},{key:"pickup_date",label:"Pickup"},{key:"return_date",label:"Return"},{key:"total_price",label:"Total"}]} />,
+    admin_food_orders: <AdminListPage goBack={goBack} title="Food Delivery" table="food_orders" deletable blockable columns={[{key:"restaurant_name",label:"Restaurant"},{key:"customer_name",label:"Customer"},{key:"total",label:"Total"}]} />,
+    admin_logistics_parcels: <AdminListPage goBack={goBack} title="Logistics" table="logistics_parcels" deletable blockable columns={[{key:"sender_name",label:"Sender"},{key:"pickup_address",label:"Pickup"},{key:"dropoff_address",label:"Dropoff"}]} />,
+    admin_fleet_vehicles: <AdminListPage goBack={goBack} title="Fleet" table="fleet_vehicles" deletable blockable columns={[{key:"plate_number",label:"Plate"},{key:"model",label:"Model"},{key:"driver_name",label:"Driver"}]} />,
+    admin_stores: <AdminListPage goBack={goBack} title="Stores" table="stores" deletable blockable columns={[{key:"store_name",label:"Store"},{key:"store_type",label:"Type"},{key:"owner_name",label:"Owner"},{key:"owner_phone",label:"Phone"},{key:"city",label:"City"}]} />,
+    admin_store_orders: <AdminListPage goBack={goBack} title="Store Orders" table="store_orders" deletable blockable columns={[{key:"store_name",label:"Store"},{key:"customer_name",label:"Customer"},{key:"customer_phone",label:"Phone"},{key:"total",label:"Total"},{key:"status",label:"Status"}]} />,
+    admin_logistics_companies: <AdminListPage goBack={goBack} title="Cargo Companies" table="logistics_companies" deletable blockable columns={[{key:"company_name",label:"Company"},{key:"owner_name",label:"Owner"},{key:"owner_phone",label:"Phone"},{key:"city",label:"City"},{key:"fleet_size",label:"Fleet size"}]} />,
+    admin_violations: <AdminListPage goBack={goBack} title="Violations" table="violations" deletable columns={[{key:"reason",label:"Reason"},{key:"driver_id",label:"Driver ID"}]} />,
   };
 
   return (
@@ -11525,7 +11547,9 @@ export default function SayyaraDriveApp() {
         </div>
       </div>
       <div className={`w-full relative z-10 ${screen === "admin" ? "max-w-6xl" : "max-w-md lg:max-w-5xl"}`} style={{ paddingBottom: isTab ? 70 : 20, paddingTop: isOffline ? 32 : 0 }}>
-        {SCREEN_MAP[screen] || <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />}
+        {screen.startsWith("admin") && screen !== "admin_login" && !currentAdmin
+          ? <AdminLogin goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAdmin} />
+          : (SCREEN_MAP[screen] || <Home navigate={navigate} lang={lang} setLang={setLang} t={t} />)}
 
         {isTab && <BottomNav screen={screen} navigate={navigate} t={t} currentDriver={currentDriver} />}
       </div>
