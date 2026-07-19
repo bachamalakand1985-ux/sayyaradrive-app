@@ -69,6 +69,17 @@ function LuxPillTabs({ tabs, active, onChange }) {
 
 const HERE_API_KEY = "-ZUX_FxV-ok4896M-TXR2aqAShTd04KfYRqS_3_JGAM";
 
+// Routes HERE's REST APIs (geocode/reverse-geocode/routing/autosuggest)
+// through a Supabase Edge Function so the API key never appears in these
+// requests from the browser. Pass a URL with NO apiKey param — the server
+// attaches the real key. (The map-rendering key above is separate and
+// necessarily client-visible, same as any JS map SDK — see HERE_API_KEY.)
+async function hereFetch(url, options) {
+  const { data, error } = await supabase.functions.invoke("here-proxy", { body: { url } });
+  if (error) throw error;
+  return { ok: true, json: async () => data };
+}
+
 /* ---------- shared HERE Maps SDK loader ---------- */
 let hereSdkPromise = null;
 /* ---------- shared push notification sender ---------- */
@@ -363,7 +374,7 @@ function PinMapPicker({ coords, onMove, height = 150, destination = null, routeR
       setRouteInfo(null);
       if (routeLineRef.current) { mapObjRef.current.removeObject(routeLineRef.current); routeLineRef.current = null; }
       try {
-        const res = await fetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${coords.lat},${coords.lng}&destination=${destination.lat},${destination.lng}&return=summary,polyline&apiKey=${HERE_API_KEY}`);
+        const res = await hereFetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${coords.lat},${coords.lng}&destination=${destination.lat},${destination.lng}&return=summary,polyline`);
         const data = await res.json();
         const route = data?.routes?.[0];
         if (cancelled) return;
@@ -435,8 +446,8 @@ function detectLocation({ onStart, onSuccess, onError, _retriesLeft = 2 }) {
 
   async function resolveWithCoords(latitude, longitude) {
     try {
-      const res = await fetch(
-        `https://revgeocode.search.hereapi.com/v1/revgeocode?at=${latitude},${longitude}&lang=en-US&apiKey=${HERE_API_KEY}`
+      const res = await hereFetch(
+        `https://revgeocode.search.hereapi.com/v1/revgeocode?at=${latitude},${longitude}&lang=en-US`
       );
       if (!res.ok) throw new Error("reverse geocode failed");
       const data = await res.json();
@@ -1265,13 +1276,13 @@ function BookRide({ goBack, lang, t, currentDriver }) {
     setRouteLoading(true);
     setRouteInfo(null);
     try {
-      const geoRes = await fetch(`https://geocode.search.hereapi.com/v1/geocode?q=${encodeURIComponent(label + ", Saudi Arabia")}&apiKey=${HERE_API_KEY}`);
+      const geoRes = await hereFetch(`https://geocode.search.hereapi.com/v1/geocode?q=${encodeURIComponent(label + ", Saudi Arabia")}`);
       const geoData = await geoRes.json();
       const pos = geoData?.items?.[0]?.position;
       if (!pos) { setRouteLoading(false); return; }
       setDropoffCoords({ lat: pos.lat, lng: pos.lng });
 
-      const routeRes = await fetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${pickupCoords.lat},${pickupCoords.lng}&destination=${pos.lat},${pos.lng}&return=summary,polyline&alternatives=1&apiKey=${HERE_API_KEY}`);
+      const routeRes = await hereFetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${pickupCoords.lat},${pickupCoords.lng}&destination=${pos.lat},${pos.lng}&return=summary,polyline&alternatives=1`);
       const routeData = await routeRes.json();
       const route = routeData?.routes?.[0];
       const summary = route?.sections?.[0]?.summary;
@@ -1302,7 +1313,7 @@ function BookRide({ goBack, lang, t, currentDriver }) {
     const timer = setTimeout(async () => {
       try {
         const center = SAUDI_CITY_COORDS[pickupCity] || SAUDI_CITY_COORDS.Riyadh;
-        const res = await fetch(`https://autosuggest.search.hereapi.com/v1/autosuggest?q=${encodeURIComponent(pickup)}&at=${center.lat},${center.lng}&in=countryCode:SAU&limit=6&lang=en-US&apiKey=${HERE_API_KEY}`, { signal: controller.signal });
+        const res = await hereFetch(`https://autosuggest.search.hereapi.com/v1/autosuggest?q=${encodeURIComponent(pickup)}&at=${center.lat},${center.lng}&in=countryCode:SAU&limit=6&lang=en-US`);
         const data = await res.json();
         const items = (data?.items || []).filter((it) => it.address?.label || it.title).map((it) => ({ label: it.address?.label || it.title, lat: it.position?.lat, lng: it.position?.lng }));
         setPickupLive(items);
@@ -1317,7 +1328,7 @@ function BookRide({ goBack, lang, t, currentDriver }) {
     const timer = setTimeout(async () => {
       try {
         const center = SAUDI_CITY_COORDS[pickupCity] || SAUDI_CITY_COORDS.Riyadh;
-        const res = await fetch(`https://autosuggest.search.hereapi.com/v1/autosuggest?q=${encodeURIComponent(dropoff)}&at=${center.lat},${center.lng}&in=countryCode:SAU&limit=6&lang=en-US&apiKey=${HERE_API_KEY}`, { signal: controller.signal });
+        const res = await hereFetch(`https://autosuggest.search.hereapi.com/v1/autosuggest?q=${encodeURIComponent(dropoff)}&at=${center.lat},${center.lng}&in=countryCode:SAU&limit=6&lang=en-US`);
         const data = await res.json();
         const items = (data?.items || []).filter((it) => it.address?.label || it.title).map((it) => ({ label: it.address?.label || it.title, lat: it.position?.lat, lng: it.position?.lng }));
         setDropoffLive(items);
@@ -1413,7 +1424,7 @@ function BookRide({ goBack, lang, t, currentDriver }) {
 
   async function reverseGeocodeCoords(lat, lng) {
     try {
-      const res = await fetch(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${lat},${lng}&lang=en-US&apiKey=${HERE_API_KEY}`);
+      const res = await hereFetch(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${lat},${lng}&lang=en-US`);
       const data = await res.json();
       return data?.items?.[0]?.address?.label || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     } catch (e) { return `${lat.toFixed(4)}, ${lng.toFixed(4)}`; }
@@ -1897,7 +1908,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
           if (driverRow?.id) {
             supabase.from("drivers").update({ last_lat: latitude, last_lng: longitude, last_seen_at: new Date().toISOString() }).eq("id", driverRow.id);
           }
-          fetch(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${latitude},${longitude}&lang=en-US&apiKey=${HERE_API_KEY}`)
+          hereFetch(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${latitude},${longitude}&lang=en-US`)
             .then((r) => (r.ok ? r.json() : null))
             .then((data) => {
               const label = data?.items?.[0]?.address?.label;
@@ -2019,7 +2030,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
 
       // Draw the actual driving route from the driver's current location to pickup,
       // instead of just dropping a marker with no path shown.
-      fetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${driverLoc.lat},${driverLoc.lng}&destination=${pickupCoords.lat},${pickupCoords.lng}&return=summary,polyline&apiKey=${HERE_API_KEY}`)
+      hereFetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${driverLoc.lat},${driverLoc.lng}&destination=${pickupCoords.lat},${pickupCoords.lng}&return=summary,polyline`)
         .then((res) => res.json())
         .then((routeData) => {
           const route = routeData?.routes?.[0];
@@ -5431,7 +5442,7 @@ function Logistics({ goBack, navigate, currentDriver }) {
     if (!pickupAddress.trim() || !dropoffAddress.trim()) return;
     setFindingRoute(true);
     try {
-      const res = await fetch(`https://geocode.search.hereapi.com/v1/geocode?q=${encodeURIComponent(dropoffAddress + ", Saudi Arabia")}&apiKey=${HERE_API_KEY}`);
+      const res = await hereFetch(`https://geocode.search.hereapi.com/v1/geocode?q=${encodeURIComponent(dropoffAddress + ", Saudi Arabia")}`);
       const data = await res.json();
       const pos = data?.items?.[0]?.position;
       if (pos) {
@@ -5449,7 +5460,7 @@ function Logistics({ goBack, navigate, currentDriver }) {
     const timer = setTimeout(async () => {
       try {
         const center = SAUDI_CITY_COORDS.Riyadh;
-        const res = await fetch(`https://autosuggest.search.hereapi.com/v1/autosuggest?q=${encodeURIComponent(pickupAddress)}&at=${center.lat},${center.lng}&in=countryCode:SAU&limit=6&lang=en-US&apiKey=${HERE_API_KEY}`, { signal: controller.signal });
+        const res = await hereFetch(`https://autosuggest.search.hereapi.com/v1/autosuggest?q=${encodeURIComponent(pickupAddress)}&at=${center.lat},${center.lng}&in=countryCode:SAU&limit=6&lang=en-US`);
         const data = await res.json();
         setPickupLive((data?.items || []).filter((it) => it.address?.label || it.title).map((it) => ({ label: it.address?.label || it.title })));
       } catch (e) {}
@@ -5463,7 +5474,7 @@ function Logistics({ goBack, navigate, currentDriver }) {
     const timer = setTimeout(async () => {
       try {
         const center = SAUDI_CITY_COORDS.Riyadh;
-        const res = await fetch(`https://autosuggest.search.hereapi.com/v1/autosuggest?q=${encodeURIComponent(dropoffAddress)}&at=${center.lat},${center.lng}&in=countryCode:SAU&limit=6&lang=en-US&apiKey=${HERE_API_KEY}`, { signal: controller.signal });
+        const res = await hereFetch(`https://autosuggest.search.hereapi.com/v1/autosuggest?q=${encodeURIComponent(dropoffAddress)}&at=${center.lat},${center.lng}&in=countryCode:SAU&limit=6&lang=en-US`);
         const data = await res.json();
         setDropoffLive((data?.items || []).filter((it) => it.address?.label || it.title).map((it) => ({ label: it.address?.label || it.title })));
       } catch (e) {}
