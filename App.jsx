@@ -10431,25 +10431,29 @@ function AdminListPage({ goBack, navigate, title, table, columns, showDriverActi
   }
 
   async function deleteRow(row) {
-    await supabase.from(table).delete().eq("id", row.id);
+    const { error } = await supabase.from(table).delete().eq("id", row.id);
+    if (error) { alert("Couldn't delete this — " + error.message); return; }
     logAction(`Deleted ${table} record`, table, columns.map((c) => row[c.key]).filter(Boolean)[0] || row.id);
     loadRows();
   }
 
   async function toggleSold(row) {
-    await supabase.from(table).update({ status: row.status === "sold" ? "active" : "sold" }).eq("id", row.id);
+    const { error } = await supabase.from(table).update({ status: row.status === "sold" ? "active" : "sold" }).eq("id", row.id);
+    if (error) { alert("Couldn't update this — " + error.message); return; }
     loadRows();
   }
 
   async function toggleBlocked(row) {
     const isBlocked = row.status === "blocked" || row.status === "hidden";
-    await supabase.from(table).update({ status: isBlocked ? "active" : "blocked" }).eq("id", row.id);
+    const { error } = await supabase.from(table).update({ status: isBlocked ? "active" : "blocked" }).eq("id", row.id);
+    if (error) { alert("Couldn't update this — " + error.message); return; }
     logAction(isBlocked ? `Unblocked ${table} record` : `Blocked ${table} record`, table, columns.map((c) => row[c.key]).filter(Boolean)[0] || row.id);
     loadRows();
   }
 
   async function toggleResolved(row) {
-    await supabase.from(table).update({ status: row.status === "resolved" ? "open" : "resolved" }).eq("id", row.id);
+    const { error } = await supabase.from(table).update({ status: row.status === "resolved" ? "open" : "resolved" }).eq("id", row.id);
+    if (error) { alert("Couldn't update this — " + error.message); return; }
     loadRows();
   }
 
