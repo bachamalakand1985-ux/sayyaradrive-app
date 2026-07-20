@@ -6229,11 +6229,11 @@ function JobsPortal({ goBack, navigate }) {
     }
   }
 
-  const [postForm, setPostForm] = useState({ title: "", company: "", city: "", jobType: "", employment: "", minSalary: "", maxSalary: "", description: "", requirements: "", phone: "", email: "", password: "" });
+  const [postForm, setPostForm] = useState({ title: "", company: "", email: "", password: "" });
   const [postSubmitting, setPostSubmitting] = useState(false);
   const [postDone, setPostDone] = useState(false);
   const [postError, setPostError] = useState("");
-  const postCan = postForm.title.trim() && postForm.company.trim() && postForm.city.trim() && postForm.jobType.trim() && postForm.description.trim() && postForm.phone.trim() && postForm.email.trim() && postForm.password.length >= 6;
+  const postCan = postForm.title.trim() && postForm.company.trim() && postForm.email.trim() && postForm.password.length >= 6;
 
   async function loadJobs() {
     const { data } = await supabase.from("jobs").select("*").eq("status", "active").order("created_at", { ascending: false });
@@ -6298,24 +6298,20 @@ function JobsPortal({ goBack, navigate }) {
         setPostSubmitting(false);
         return;
       }
-      await supabase.rpc("claim_legacy_listings_bulk", { p_table: "jobs", p_phone_column: "phone", p_phone: postForm.phone.trim() });
     }
-    const pay = postForm.minSalary && postForm.maxSalary
-      ? `${postForm.minSalary}–${postForm.maxSalary} SAR/mo`
-      : postForm.minSalary ? `From ${postForm.minSalary} SAR/mo` : "Salary on request";
     // Supabase queries return an { error } object on failure rather than throwing —
     // that error must be checked explicitly, or a failed post silently shows as "success".
     const { error } = await supabase.from("jobs").insert({
       title: postForm.title,
       company: postForm.company,
-      location: postForm.city,
-      pay,
-      job_type: postForm.jobType,
+      location: "Saudi Arabia",
+      pay: "Salary on request",
+      job_type: "Full-time",
       category: "Driving",
-      phone: postForm.phone,
+      phone: "",
       email: postForm.email,
       auth_user_id: authUserId,
-      description: postForm.description || "No description provided.",
+      description: "No description provided.",
       status: "active",
     });
     if (error) {
@@ -6425,90 +6421,27 @@ function JobsPortal({ goBack, navigate }) {
 
               <div className="flex flex-col gap-4">
                 <div>
-                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Job Title</p>
+                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Job Title <span style={{ color: "#C0755B" }}>*</span></p>
                   <input value={postForm.title} onChange={(e) => setPostForm({ ...postForm, title: e.target.value })} placeholder="e.g. Senior Delivery Driver" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Company Name <span style={{ color: "#C0755B" }}>*</span></p>
-                    <div className="flex items-center gap-2 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                      <Briefcase size={13} color={GOLD} />
-                      <input value={postForm.company} onChange={(e) => setPostForm({ ...postForm, company: e.target.value })} placeholder="e.g. Golden Transport Fleet" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>City <span style={{ color: "#C0755B" }}>*</span></p>
-                    <div className="rounded-xl px-4 py-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                      <select value={postForm.city} onChange={(e) => setPostForm({ ...postForm, city: e.target.value })} className="bg-transparent outline-none text-sm w-full py-3" style={{ color: postForm.city ? TEXT : FAINT }}>
-                        <option value="" style={{ background: CARD }}>Select City</option>
-                        {SAUDI_CITY_LIST.map((c) => <option key={c} value={c} style={{ background: CARD }}>{c}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Job Type <span style={{ color: "#C0755B" }}>*</span></p>
-                    <div className="rounded-xl px-4 py-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                      <select value={postForm.jobType} onChange={(e) => setPostForm({ ...postForm, jobType: e.target.value })} className="bg-transparent outline-none text-sm w-full py-3" style={{ color: postForm.jobType ? TEXT : FAINT }}>
-                        <option value="" style={{ background: CARD }}>Select Type</option>
-                        <option value="Full-time" style={{ background: CARD }}>Full-time</option>
-                        <option value="Part-time" style={{ background: CARD }}>Part-time</option>
-                        <option value="Flexible" style={{ background: CARD }}>Flexible</option>
-                        <option value="Freelance" style={{ background: CARD }}>Freelance</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Employment</p>
-                    <div className="rounded-xl px-4 py-1" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                      <select value={postForm.employment} onChange={(e) => setPostForm({ ...postForm, employment: e.target.value })} className="bg-transparent outline-none text-sm w-full py-3" style={{ color: postForm.employment ? TEXT : FAINT }}>
-                        <option value="" style={{ background: CARD }}>Select</option>
-                        <option value="On-site" style={{ background: CARD }}>On-site</option>
-                        <option value="Remote" style={{ background: CARD }}>Remote</option>
-                        <option value="Hybrid" style={{ background: CARD }}>Hybrid</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Min Salary (SAR)</p>
-                    <input value={postForm.minSalary} onChange={(e) => setPostForm({ ...postForm, minSalary: e.target.value })} placeholder="4000" inputMode="numeric" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Max Salary (SAR)</p>
-                    <input value={postForm.maxSalary} onChange={(e) => setPostForm({ ...postForm, maxSalary: e.target.value })} placeholder="8000" inputMode="numeric" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                <div>
+                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Company Name <span style={{ color: "#C0755B" }}>*</span></p>
+                  <div className="flex items-center gap-2 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    <Briefcase size={13} color={GOLD} />
+                    <input value={postForm.company} onChange={(e) => setPostForm({ ...postForm, company: e.target.value })} placeholder="e.g. Golden Transport Fleet" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
                   </div>
                 </div>
 
                 <div>
-                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Job Description <span style={{ color: "#C0755B" }}>*</span></p>
-                  <textarea value={postForm.description} onChange={(e) => setPostForm({ ...postForm, description: e.target.value })} placeholder="Describe role, qualifications, benefits..." rows={4} className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Contact Email <span style={{ color: "#C0755B" }}>*</span></p>
+                  <input value={postForm.email} onChange={(e) => setPostForm({ ...postForm, email: e.target.value })} placeholder="hr@company.com" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
                 </div>
 
                 <div>
-                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Requirements</p>
-                  <textarea value={postForm.requirements} onChange={(e) => setPostForm({ ...postForm, requirements: e.target.value })} placeholder="Experience, license, nationality..." rows={3} className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Contact Phone <span style={{ color: "#C0755B" }}>*</span></p>
-                    <input value={postForm.phone} onChange={(e) => setPostForm({ ...postForm, phone: e.target.value })} placeholder="+966 5X XXX XXXX" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Contact Email <span style={{ color: "#C0755B" }}>*</span></p>
-                    <input value={postForm.email} onChange={(e) => setPostForm({ ...postForm, email: e.target.value })} placeholder="hr@company.com — used to log in" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Set a Password <span style={{ color: "#C0755B" }}>*</span></p>
-                    <input value={postForm.password} onChange={(e) => setPostForm({ ...postForm, password: e.target.value })} placeholder="Min 6 characters" type="password" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
-                    <p className="text-[10px] mt-1.5" style={{ color: FAINT }}>This becomes your login — only you can edit or remove this posting later.</p>
-                  </div>
+                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Set a Password <span style={{ color: "#C0755B" }}>*</span></p>
+                  <input value={postForm.password} onChange={(e) => setPostForm({ ...postForm, password: e.target.value })} placeholder="Min 6 characters" type="password" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  <p className="text-[10px] mt-1.5" style={{ color: FAINT }}>This becomes your login — only you can edit or remove this posting later.</p>
                 </div>
 
                 {postError && <p className="text-[12px] text-center" style={{ color: "#C0755B" }}>{postError}</p>}
@@ -6522,7 +6455,7 @@ function JobsPortal({ goBack, navigate }) {
               <CheckCircle2 size={44} color={GREEN} />
               <h2 className="mt-4 text-lg font-semibold">Job posted</h2>
               <p className="text-xs mt-1" style={{ color: MUTE }}>Your listing is now live under Job Openings.</p>
-              <button onClick={() => { setPostDone(false); setPostForm({ title: "", company: "", city: "", jobType: "", employment: "", minSalary: "", maxSalary: "", description: "", requirements: "", phone: "", email: "" }); setTab("openings"); }} className="w-full max-w-xs mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>View openings</button>
+              <button onClick={() => { setPostDone(false); setPostForm({ title: "", company: "", email: "", password: "" }); setTab("openings"); }} className="w-full max-w-xs mt-6 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>View openings</button>
             </div>
           )}
         </div>
