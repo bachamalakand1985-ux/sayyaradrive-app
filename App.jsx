@@ -4833,7 +4833,7 @@ function Marketplace({ goBack, navigate }) {
     loadListings();
   }, []);
 
-  const allListings = [...dbListings, ...LISTINGS];
+  const allListings = dbListings;
   const filtered = allListings.filter((l) => (category === "All" || l.category === category) && l.title.toLowerCase().includes(query.toLowerCase()));
   return (
     <div style={{ color: TEXT }}>
@@ -6094,7 +6094,7 @@ function JobsPortal({ goBack, navigate }) {
     return () => { cancelled = true; };
   }, [tab]);
 
-  const allJobs = [...dbJobs, ...JOBS];
+  const allJobs = dbJobs;
   const filtered = allJobs.filter((j) =>
     (category === "All" || j.category === category) &&
     (j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase()) || j.location.toLowerCase().includes(query.toLowerCase()))
