@@ -223,12 +223,12 @@ function playCheckpointAlertSound() {
         o.type = "square"; o.frequency.value = freq;
         o.connect(g); g.connect(ctx.destination);
         g.gain.setValueAtTime(0.0001, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.02);
         g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
         o.start(); o.stop(ctx.currentTime + dur + 0.02);
       }, delay);
     }
-    beep(660, 0, 0.18); beep(660, 240, 0.18); beep(660, 480, 0.25);
+    beep(660, 0, 0.18); beep(660, 200, 0.18); beep(660, 400, 0.25);
   } catch (e) { /* audio is best-effort */ }
 }
 
@@ -269,16 +269,16 @@ function playOfferAlertSound() {
         o.type = "sine"; o.frequency.value = freq;
         o.connect(g); g.connect(ctx.destination);
         g.gain.setValueAtTime(0.0001, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3);
-        o.start(); o.stop(ctx.currentTime + 0.32);
+        g.gain.exponentialRampToValueAtTime(0.65, ctx.currentTime + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+        o.start(); o.stop(ctx.currentTime + 0.3);
       }, delay);
     }
-    beep(880, 0); beep(1100, 380);
+    beep(880, 0); beep(1100, 220); beep(880, 440);
   } catch (e) { /* audio is best-effort */ }
 }
 
-// Repeats the same two-tone alert every 2.5s to act as an incoming-call ringtone,
+// Repeats the same three-tone alert every 2.5s to act as an incoming-call ringtone,
 // since browsers won't play a real ringtone without a user-uploaded audio file.
 function startRingtone(intervalRef) {
   playOfferAlertSound();
