@@ -9,11 +9,25 @@ import {
   Package, Phone, DollarSign,
   Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check,
   Link, Globe, Trophy, MessageCircle, Mic, RefreshCw, Flag, Image as ImageIcon, PhoneOff, PhoneCall,
-  Settings, LogIn, HelpCircle, Building2
+  Settings, LogIn, HelpCircle, Building2, MoreVertical, Download
 } from "lucide-react";
 
 /* ---------- support contact ---------- */
 const SUPPORT_WHATSAPP_NUMBER = "966581965361";
+
+/* ---------- PWA install prompt (captured early so it isn't missed if Home mounts after the browser fires it) ---------- */
+let capturedInstallPrompt = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    capturedInstallPrompt = e;
+    window.dispatchEvent(new Event("sayyara-install-available"));
+  });
+  window.addEventListener("appinstalled", () => {
+    capturedInstallPrompt = null;
+    window.dispatchEvent(new Event("sayyara-install-available"));
+  });
+}
 
 /* ---------- shared tokens ---------- */
 const BG = "#070E1F", CARD = "#101B36", BORDER = "#1E2E52";
@@ -1064,6 +1078,7 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(capturedInstallPrompt);
   const identity = resolveIdentity(currentDriver);
   useEffect(() => {
     async function loadUnread() {
@@ -1072,12 +1087,25 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
     }
     loadUnread();
   }, []);
+  useEffect(() => {
+    function onAvailable() { setInstallPrompt(capturedInstallPrompt); }
+    window.addEventListener("sayyara-install-available", onAvailable);
+    if (capturedInstallPrompt) setInstallPrompt(capturedInstallPrompt);
+    return () => window.removeEventListener("sayyara-install-available", onAvailable);
+  }, []);
+  async function handleInstallClick() {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  }
   return (
     <div className="pb-8 relative overflow-hidden" style={{ color: TEXT }} dir={RTL_LANGS.includes(lang) ? "rtl" : "ltr"}>
       <SkylineBackground opacity={0.9} />
       <div className="max-w-6xl mx-auto">
         <div className="relative flex items-center justify-between px-5 pt-6 pb-2 gap-2">
-          <button onClick={() => setShowAppMenu(true)} aria-label="Menu" className="flex items-center gap-2 shrink-0">
+          <button onClick={() => setShowAppMenu(true)} aria-label="Menu" className="flex items-center gap-1.5 shrink-0">
+            <MoreVertical size={18} color={TEXT} />
             <img src={LOGO_URI} alt="SayyaraDrive" className="h-8 w-auto" style={{ filter: "drop-shadow(0 3px 10px rgba(217,166,83,0.35))" }} />
           </button>
           <div className="flex-1 min-w-0 text-center text-[9px] uppercase truncate hidden sm:block" style={{ color: GREEN, letterSpacing: "0.12em" }}>Riyadh, Saudi Arabia</div>
@@ -1092,10 +1120,17 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
             <button onClick={() => navigate("friends")} aria-label="Friends & family chat" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}>
               <MessageCircle size={17} color={TEXT} />
             </button>
-            <button onClick={() => navigate("notifications")} aria-label="Notifications" className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
-              <Bell size={17} color={TEXT} />
-              {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />}
-            </button>
+            <div className="flex flex-col items-center gap-1">
+              <button onClick={() => navigate("notifications")} aria-label="Notifications" className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
+                <Bell size={17} color={TEXT} />
+                {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />}
+              </button>
+              {installPrompt && (
+                <button onClick={handleInstallClick} aria-label="Install app" className="flex items-center gap-1 px-2 h-5 rounded-full text-[9px] font-semibold" style={{ background: GOLD, color: BG }}>
+                  <Download size={9} /> Install
+                </button>
+              )}
+            </div>
           </div>
         </div>
         {showAppMenu && <AppMenu onClose={() => setShowAppMenu(false)} navigate={navigate} currentDriver={currentDriver} driverLogout={driverLogout} identity={identity} />}
