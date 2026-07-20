@@ -6758,6 +6758,16 @@ function statusProgress(status) {
   if (["pending", "new"].includes(s)) return { percent: 35, label: "Pending review", color: GOLD };
   return { percent: 15, label: "Requested", color: FAINT };
 }
+// A rough, honest time estimate based on order stage — not a precise ETA,
+// since that would need real dispatch/routing data we don't track yet.
+function orderTimeEstimate(status) {
+  const s = (status || "").toLowerCase();
+  if (["delivered", "completed", "done"].includes(s)) return null;
+  if (["cancelled", "canceled", "rejected"].includes(s)) return null;
+  if (["out_for_delivery", "in_transit", "picked_up"].includes(s)) return "On the way — arriving soon";
+  if (["preparing", "accepted"].includes(s)) return "Being prepared, usually ready in 20–40 min";
+  return "Just placed — the other side will confirm shortly";
+}
 function timeAgo(dateStr) {
   if (!dateStr) return "";
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -6793,6 +6803,7 @@ function MyActivity({ goBack, currentDriver }) {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [editItem, setEditItem] = useState(null);
+  const [editAddressItem, setEditAddressItem] = useState(null);
   const phone = currentDriver?.profile?.mobile_number;
 
   useEffect(() => { loadAll(); }, [phone]);
@@ -6960,6 +6971,26 @@ function MyActivity({ goBack, currentDriver }) {
                 <div className="h-full rounded-full transition-all" style={{ width: `${prog.percent}%`, background: prog.color }} />
               </div>
 
+              {(item.table === "food_orders" || item.table === "store_orders") && orderTimeEstimate(item.status) && (
+                <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: GOLD }}>
+                  <Clock size={11} /> {orderTimeEstimate(item.status)}
+                </p>
+              )}
+
+              {(item.table === "food_orders" || item.table === "store_orders") && Array.isArray(item.raw?.items) && item.raw.items.length > 0 && (
+                <div className="mt-2 pt-2" style={{ borderTop: `1px solid ${BORDER}` }}>
+                  {item.raw.items.map((it, i) => (
+                    <p key={i} className="text-[11px]" style={{ color: MUTE }}>{it.name || it.title} × {it.qty} — <span style={{ color: TEXT }}>{(it.price * it.qty).toFixed(2)} SAR</span></p>
+                  ))}
+                </div>
+              )}
+
+              {(item.table === "food_orders" || item.table === "store_orders") && item.raw?.delivery_address && (
+                <p className="text-[11px] mt-2 flex items-start gap-1.5" style={{ color: FAINT }}>
+                  <MapPin size={11} className="mt-0.5 shrink-0" /> {item.raw.delivery_address}
+                </p>
+              )}
+
               <div className="flex items-center justify-between mt-2">
                 <p className="text-[10px]" style={{ color: FAINT }}>
                   {item.assigned ? <span style={{ color: MUTE }}>{item.assigned} · </span> : null}
@@ -6978,6 +7009,9 @@ function MyActivity({ goBack, currentDriver }) {
                       <button onClick={() => setEditItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
                       <button onClick={() => deleteListing(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Delete</button>
                     </>
+                  )}
+                  {(item.table === "food_orders" || item.table === "store_orders") && canCancel && (
+                    <button onClick={() => setEditAddressItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}>Change address</button>
                   )}
                 </div>
               )}
@@ -6999,6 +7033,7 @@ function MyActivity({ goBack, currentDriver }) {
       </div>
 
       {editItem && <EditActivityItemModal item={editItem} onClose={() => setEditItem(null)} onSaved={() => { setEditItem(null); loadAll(); }} />}
+      {editAddressItem && <EditAddressModal item={editAddressItem} onClose={() => setEditAddressItem(null)} onSaved={() => { setEditAddressItem(null); loadAll(); }} />}
     </div>
   );
 }
@@ -7012,6 +7047,38 @@ const EDIT_TABLE_CONFIG = {
   logistics_companies: { label: "cargo company", nameField: "company_name", nameLabel: "Company name", hasPrice: false, hasDescription: false },
   companies: { label: "transport company", nameField: "name", nameLabel: "Company name", hasPrice: false, hasDescription: false },
 };
+
+/* ---------- EDIT DELIVERY ADDRESS (food/store orders in progress) ---------- */
+function EditAddressModal({ item, onClose, onSaved }) {
+  const [address, setAddress] = useState(item.raw?.delivery_address || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    if (!address.trim()) { setError("Please enter a delivery address."); return; }
+    setSaving(true);
+    const { error: updErr } = await supabase.from(item.table).update({ delivery_address: address.trim() }).eq("id", item.id);
+    setSaving(false);
+    if (updErr) { setError("Couldn't update your address — please try again."); return; }
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+        <p className="text-sm font-semibold mb-4">Change delivery address</p>
+        <div className="rounded-xl px-4 py-3 mb-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+          <textarea value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Delivery address" rows={3} className="bg-transparent outline-none text-sm w-full resize-y" style={{ color: TEXT }} autoFocus />
+        </div>
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>{saving ? "Saving…" : "Save address"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function EditActivityItemModal({ item, onClose, onSaved }) {
   const cfg = EDIT_TABLE_CONFIG[item.table] || EDIT_TABLE_CONFIG.marketplace_listings;
