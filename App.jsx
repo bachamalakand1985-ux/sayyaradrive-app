@@ -4201,9 +4201,14 @@ function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
   const [loadingMenu, setLoadingMenu] = useState(true);
   const [showAddItem, setShowAddItem] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [cargoVehicles, setCargoVehicles] = useState([]);
+  const [loadingVehicles, setLoadingVehicles] = useState(true);
+  const [showAddVehicle, setShowAddVehicle] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState(null);
 
   const profile = currentBusiness?.profile;
   const isRestaurant = currentBusiness?.table === "restaurants";
+  const isCargoCompany = currentBusiness?.table === "logistics_companies";
 
   async function loadMenu() {
     if (!profile?.id || !isRestaurant) return;
@@ -4214,10 +4219,25 @@ function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
   }
   useEffect(() => { loadMenu(); }, [profile?.id]);
 
+  async function loadCargoVehicles() {
+    if (!profile?.id || !isCargoCompany) return;
+    setLoadingVehicles(true);
+    const { data } = await supabase.from("cargo_vehicles").select("*").eq("logistics_company_id", profile.id).order("created_at", { ascending: false });
+    setCargoVehicles(data || []);
+    setLoadingVehicles(false);
+  }
+  useEffect(() => { loadCargoVehicles(); }, [profile?.id]);
+
   async function deleteItem(id) {
     if (!confirm("Delete this menu item permanently?")) return;
     await supabase.from("menu_items").delete().eq("id", id);
     loadMenu();
+  }
+
+  async function deleteCargoVehicle(id) {
+    if (!confirm("Remove this vehicle permanently?")) return;
+    await supabase.from("cargo_vehicles").delete().eq("id", id);
+    loadCargoVehicles();
   }
 
   if (!currentBusiness?.profile) {
@@ -4279,10 +4299,47 @@ function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
               </div>
             )}
           </>
+        ) : isCargoCompany ? (
+          <>
+            <button onClick={() => setShowAddVehicle(true)} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+              <Plus size={14} /> Add vehicle
+            </button>
+            {loadingVehicles ? (
+              <div className="flex justify-center py-10"><SearchingAnimation /></div>
+            ) : cargoVehicles.length === 0 ? (
+              <EmptyState icon={Truck} title="No vehicles yet" subtitle="Add your vans and trucks so customers can see your fleet." />
+            ) : (
+              <div className="flex flex-col gap-2 pb-6">
+                {cargoVehicles.map((v) => (
+                  <div key={v.id} className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    {v.photo_urls?.[0] ? (
+                      <img src={v.photo_urls[0]} alt={v.plate_number} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: BORDER }}><Truck size={16} color={FAINT} /></div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{v.model || "Vehicle"} · {v.category}</p>
+                      <p className="text-[11px]" style={{ color: FAINT }}>{v.plate_number} · {v.driver_name || "Unassigned"}</p>
+                    </div>
+                    <button onClick={() => setEditingVehicle(v)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold shrink-0" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
+                    <button onClick={() => deleteCargoVehicle(v.id)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold shrink-0" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Delete</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         ) : (
           <p className="text-xs" style={{ color: FAINT }}>Fleet and route management can be added here next.</p>
         )}
       </div>
+      {(showAddVehicle || editingVehicle) && (
+        <CargoVehicleFormModal
+          logisticsCompanyId={profile.id}
+          vehicle={editingVehicle}
+          onClose={() => { setShowAddVehicle(false); setEditingVehicle(null); }}
+          onSaved={() => { setShowAddVehicle(false); setEditingVehicle(null); loadCargoVehicles(); }}
+        />
+      )}
       {(showAddItem || editingItem) && (
         <MenuItemFormModal
           restaurantId={profile.id}
@@ -4438,6 +4495,104 @@ function MenuItemFormModal({ restaurantId, item, onClose, onSaved }) {
             <select value={status} onChange={(e) => setStatus(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
               <option value="active" style={{ background: CARD }}>Active</option>
               <option value="hidden" style={{ background: CARD }}>Hidden (out of stock)</option>
+            </select>
+          </div>
+        </div>
+
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>{saving ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- CARGO VEHICLE FORM (add/edit, with photo upload) ---------- */
+function CargoVehicleFormModal({ logisticsCompanyId, vehicle, onClose, onSaved }) {
+  const [plateNumber, setPlateNumber] = useState(vehicle?.plate_number || "");
+  const [model, setModel] = useState(vehicle?.model || "");
+  const [category, setCategory] = useState(vehicle?.category || "Van");
+  const [driverName, setDriverName] = useState(vehicle?.driver_name || "");
+  const [status, setStatus] = useState(vehicle?.status || "active");
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(vehicle?.photo_urls?.[0] || null);
+  const photoInputRef = useRef(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const isEdit = !!vehicle;
+
+  function handlePhotoSelected(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    e.target.value = "";
+  }
+
+  async function save() {
+    setError("");
+    if (!plateNumber.trim()) { setError("Please enter a plate number."); return; }
+    setSaving(true);
+    try {
+      let photoUrls = vehicle?.photo_urls || [];
+      if (photoFile) {
+        const ext = photoFile.name.split(".").pop() || "jpg";
+        const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("cargo-vehicle-photos").upload(fileName, photoFile);
+        if (upErr) throw upErr;
+        const { data: pub } = supabase.storage.from("cargo-vehicle-photos").getPublicUrl(fileName);
+        photoUrls = [pub.publicUrl];
+      }
+      const payload = { plate_number: plateNumber.trim(), model: model.trim() || null, category, driver_name: driverName.trim() || null, status, photo_urls: photoUrls };
+      if (isEdit) {
+        const { error: updErr } = await supabase.from("cargo_vehicles").update(payload).eq("id", vehicle.id);
+        if (updErr) throw updErr;
+      } else {
+        const { error: insErr } = await supabase.from("cargo_vehicles").insert({ ...payload, logistics_company_id: logisticsCompanyId });
+        if (insErr) throw insErr;
+      }
+      onSaved();
+    } catch (e) {
+      setError(e.message || "Couldn't save this vehicle — please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-3xl p-5 max-h-[85vh] overflow-y-auto" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+        <p className="text-sm font-semibold mb-4">{isEdit ? "Edit vehicle" : "Add vehicle"}</p>
+
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={() => photoInputRef.current?.click()} className="w-16 h-16 rounded-xl overflow-hidden flex items-center justify-center shrink-0" style={{ background: BG, border: `1px dashed ${BORDER}` }}>
+            {photoPreview ? <img src={photoPreview} alt="" className="w-full h-full object-cover" /> : <ImageIcon size={18} color={FAINT} />}
+          </button>
+          <button onClick={() => photoInputRef.current?.click()} className="text-xs font-semibold" style={{ color: GOLD }}>{photoPreview ? "Change photo" : "Add photo"}</button>
+          <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} />
+        </div>
+
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <input value={plateNumber} onChange={(e) => setPlateNumber(e.target.value)} placeholder="Plate number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Vehicle model (e.g. Hyundai H100)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="rounded-xl px-4 py-2" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+              {["Van", "Small Truck", "Large Truck", "Pickup", "Motorcycle", "Refrigerated Truck"].map((c) => <option key={c} value={c} style={{ background: CARD }}>{c}</option>)}
+            </select>
+          </div>
+          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="Assigned driver (optional)" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="rounded-xl px-4 py-2" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+              <option value="active" style={{ background: CARD }}>Active</option>
+              <option value="maintenance" style={{ background: CARD }}>In maintenance</option>
             </select>
           </div>
         </div>
@@ -5556,6 +5711,7 @@ function CargoCompaniesStrip({ navigate, setView }) {
 function CargoCompaniesList({ navigate }) {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [openCompany, setOpenCompany] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -5584,7 +5740,7 @@ function CargoCompaniesList({ navigate }) {
       ) : (
         <div className="flex flex-col gap-2 pb-6">
           {companies.map((c) => (
-            <div key={c.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <button key={c.id} onClick={() => setOpenCompany(c)} className="w-full text-left rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: BORDER }}>
                   {c.logo_url ? <img src={c.logo_url} alt={c.company_name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <Building2 size={16} color={FAINT} />}
@@ -5596,6 +5752,7 @@ function CargoCompaniesList({ navigate }) {
                   </div>
                   <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{c.service_area || c.city} · {c.fleet_size || 0} vehicles</p>
                 </div>
+                <ChevronRight size={14} color={FAINT} />
               </div>
               {Array.isArray(c.gallery_urls) && c.gallery_urls.length > 0 && (
                 <div className="flex gap-1.5 mt-2.5 overflow-x-auto">
@@ -5604,15 +5761,101 @@ function CargoCompaniesList({ navigate }) {
                   ))}
                 </div>
               )}
-              {c.owner_phone && (
-                <a href={`tel:${c.owner_phone}`} className="mt-2.5 flex items-center gap-2 text-[12px]" style={{ color: GOLD }}>
-                  <Phone size={12} /> {c.owner_phone}
-                </a>
-              )}
-            </div>
+            </button>
           ))}
         </div>
       )}
+      {openCompany && <CargoCompanyProfileModal company={openCompany} onClose={() => setOpenCompany(null)} />}
+    </div>
+  );
+}
+
+function CargoCompanyProfileModal({ company, onClose }) {
+  const [vehicles, setVehicles] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data } = await supabase.from("cargo_vehicles").select("*").eq("logistics_company_id", company.id).eq("status", "active").order("created_at", { ascending: false });
+      if (!cancelled) { setVehicles(data || []); setLoading(false); }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [company.id]);
+
+  const categoryCounts = vehicles.reduce((acc, v) => {
+    const cat = v.category || "Other";
+    acc[cat] = (acc[cat] || 0) + 1;
+    return acc;
+  }, {});
+  const allPhotos = [
+    ...(Array.isArray(company.gallery_urls) ? company.gallery_urls : []),
+    ...vehicles.flatMap((v) => (Array.isArray(v.photo_urls) ? v.photo_urls : [])),
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto" style={{ background: BG }}>
+      <Header title={company.company_name} onBack={onClose} />
+      <div className="px-5 pb-8">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            {company.logo_url ? <img src={company.logo_url} alt={company.company_name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} /> : <Building2 size={22} color={FAINT} />}
+          </div>
+          <div>
+            <p className="text-base font-semibold">{company.company_name}</p>
+            <p className="text-xs mt-0.5" style={{ color: FAINT }}>{company.service_area || company.city}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mb-6">
+          {company.owner_phone && (
+            <a href={`tel:${company.owner_phone}`} className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+              <Phone size={13} /> Call
+            </a>
+          )}
+          {company.owner_phone && (
+            <a
+              href={`https://wa.me/${company.owner_phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hi, I found ${company.company_name} on SayyaraDrive and I'd like to know more.`)}`}
+              target="_blank" rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-full py-2.5 text-xs font-semibold"
+              style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}
+            >
+              <Bot size={13} /> WhatsApp
+            </a>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-10"><SearchingAnimation /></div>
+        ) : (
+          <>
+            <p className="text-sm font-semibold mb-3" style={{ color: GREEN }}>FLEET — {vehicles.length} VEHICLE{vehicles.length !== 1 ? "S" : ""}</p>
+            {Object.keys(categoryCounts).length === 0 ? (
+              <p className="text-xs mb-6" style={{ color: FAINT }}>This company hasn't listed their vehicles yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+                {Object.entries(categoryCounts).map(([cat, count]) => (
+                  <div key={cat} className="rounded-xl px-3 py-3 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    <p className="text-lg font-bold" style={{ color: GOLD }}>{count}</p>
+                    <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{cat}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {allPhotos.length > 0 && (
+              <>
+                <p className="text-sm font-semibold mb-3" style={{ color: GREEN }}>PHOTOS</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {allPhotos.map((url, i) => (
+                    <img key={i} src={url} alt="" className="aspect-square rounded-lg object-cover" style={{ border: `1px solid ${BORDER}` }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
