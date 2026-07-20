@@ -4205,6 +4205,9 @@ function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
   const [loadingVehicles, setLoadingVehicles] = useState(true);
   const [showAddVehicle, setShowAddVehicle] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState(null);
+  const [cargoTab, setCargoTab] = useState("requests"); // "requests" | "vehicles"
+  const [parcelRequests, setParcelRequests] = useState([]);
+  const [loadingParcels, setLoadingParcels] = useState(true);
 
   const profile = currentBusiness?.profile;
   const isRestaurant = currentBusiness?.table === "restaurants";
@@ -4227,6 +4230,28 @@ function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
     setLoadingVehicles(false);
   }
   useEffect(() => { loadCargoVehicles(); }, [profile?.id]);
+
+  async function loadParcelRequests() {
+    if (!profile?.id || !isCargoCompany) return;
+    setLoadingParcels(true);
+    const { data } = await supabase.from("logistics_parcels").select("*").eq("logistics_company_id", profile.id).order("created_at", { ascending: false });
+    setParcelRequests(data || []);
+    setLoadingParcels(false);
+  }
+  useEffect(() => { loadParcelRequests(); }, [profile?.id]);
+
+  const PARCEL_STAGES = ["requested", "accepted", "picked_up", "in_transit", "delivered"];
+  async function advanceParcel(p) {
+    const idx = PARCEL_STAGES.indexOf(p.status);
+    const next = PARCEL_STAGES[Math.min(idx + 1, PARCEL_STAGES.length - 1)];
+    await supabase.from("logistics_parcels").update({ status: next }).eq("id", p.id);
+    loadParcelRequests();
+  }
+  async function cancelParcel(id) {
+    if (!confirm("Cancel this request?")) return;
+    await supabase.from("logistics_parcels").update({ status: "cancelled" }).eq("id", id);
+    loadParcelRequests();
+  }
 
   async function deleteItem(id) {
     if (!confirm("Delete this menu item permanently?")) return;
@@ -4301,31 +4326,77 @@ function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
           </>
         ) : isCargoCompany ? (
           <>
-            <button onClick={() => setShowAddVehicle(true)} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
-              <Plus size={14} /> Add vehicle
-            </button>
-            {loadingVehicles ? (
-              <div className="flex justify-center py-10"><SearchingAnimation /></div>
-            ) : cargoVehicles.length === 0 ? (
-              <EmptyState icon={Truck} title="No vehicles yet" subtitle="Add your vans and trucks so customers can see your fleet." />
-            ) : (
-              <div className="flex flex-col gap-2 pb-6">
-                {cargoVehicles.map((v) => (
-                  <div key={v.id} className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                    {v.photo_urls?.[0] ? (
-                      <img src={v.photo_urls[0]} alt={v.plate_number} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                    ) : (
-                      <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: BORDER }}><Truck size={16} color={FAINT} /></div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{v.model || "Vehicle"} · {v.category}</p>
-                      <p className="text-[11px]" style={{ color: FAINT }}>{v.plate_number} · {v.driver_name || "Unassigned"}</p>
-                    </div>
-                    <button onClick={() => setEditingVehicle(v)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold shrink-0" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
-                    <button onClick={() => deleteCargoVehicle(v.id)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold shrink-0" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Delete</button>
+            <div className="flex gap-2 mb-4">
+              <button onClick={() => setCargoTab("requests")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: cargoTab === "requests" ? GOLD : CARD, color: cargoTab === "requests" ? BG : MUTE, border: cargoTab === "requests" ? "none" : `1px solid ${BORDER}` }}>
+                Requests ({parcelRequests.filter((p) => !["delivered", "cancelled"].includes(p.status)).length})
+              </button>
+              <button onClick={() => setCargoTab("vehicles")} className="flex-1 rounded-full py-2 text-xs font-semibold" style={{ background: cargoTab === "vehicles" ? GOLD : CARD, color: cargoTab === "vehicles" ? BG : MUTE, border: cargoTab === "vehicles" ? "none" : `1px solid ${BORDER}` }}>
+                Vehicles ({cargoVehicles.length})
+              </button>
+            </div>
+
+            {cargoTab === "requests" && (
+              loadingParcels ? (
+                <div className="flex justify-center py-10"><SearchingAnimation /></div>
+              ) : parcelRequests.length === 0 ? (
+                <EmptyState icon={Package} title="No requests yet" subtitle="Pickup requests customers send you will show up here." />
+              ) : (
+                <div className="flex flex-col gap-2 pb-6">
+                  {parcelRequests.map((p) => {
+                    const isDone = ["delivered", "cancelled"].includes(p.status);
+                    return (
+                      <div key={p.id} className="rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold">{p.sender_name || "Customer"}</p>
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${statusProgress(p.status).color}22`, color: statusProgress(p.status).color }}>{p.status}</span>
+                        </div>
+                        {p.sender_phone && <a href={`tel:${p.sender_phone}`} className="text-[11px] flex items-center gap-1.5 mt-1" style={{ color: GREEN }}><Phone size={10} /> {p.sender_phone}</a>}
+                        <p className="text-[11px] mt-1.5 flex items-start gap-1.5" style={{ color: FAINT }}><MapPin size={10} className="mt-0.5 shrink-0" /> {p.pickup_address} → {p.dropoff_address}</p>
+                        <p className="text-[11px] mt-1" style={{ color: MUTE }}>{p.parcel_size} parcel · <span style={{ color: GOLD }}>{p.price} SAR</span></p>
+                        {!isDone && (
+                          <div className="flex gap-2 mt-3">
+                            <button onClick={() => advanceParcel(p)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+                              Mark as {PARCEL_STAGES[Math.min(PARCEL_STAGES.indexOf(p.status) + 1, 4)].replace(/_/g, " ")}
+                            </button>
+                            <button onClick={() => cancelParcel(p.id)} className="px-4 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Cancel</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
+
+            {cargoTab === "vehicles" && (
+              <>
+                <button onClick={() => setShowAddVehicle(true)} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+                  <Plus size={14} /> Add vehicle
+                </button>
+                {loadingVehicles ? (
+                  <div className="flex justify-center py-10"><SearchingAnimation /></div>
+                ) : cargoVehicles.length === 0 ? (
+                  <EmptyState icon={Truck} title="No vehicles yet" subtitle="Add your vans and trucks so customers can see your fleet." />
+                ) : (
+                  <div className="flex flex-col gap-2 pb-6">
+                    {cargoVehicles.map((v) => (
+                      <div key={v.id} className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                        {v.photo_urls?.[0] ? (
+                          <img src={v.photo_urls[0]} alt={v.plate_number} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: BORDER }}><Truck size={16} color={FAINT} /></div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate">{v.model || "Vehicle"} · {v.category}</p>
+                          <p className="text-[11px]" style={{ color: FAINT }}>{v.plate_number} · {v.driver_name || "Unassigned"}</p>
+                        </div>
+                        <button onClick={() => setEditingVehicle(v)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold shrink-0" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
+                        <button onClick={() => deleteCargoVehicle(v.id)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold shrink-0" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Delete</button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </>
         ) : (
@@ -5708,7 +5779,7 @@ function CargoCompaniesStrip({ navigate, setView }) {
 }
 
 /* ---------- CARGO COMPANIES DIRECTORY ---------- */
-function CargoCompaniesList({ navigate }) {
+function CargoCompaniesList({ navigate, onSelectCompany }) {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openCompany, setOpenCompany] = useState(null);
@@ -5765,12 +5836,12 @@ function CargoCompaniesList({ navigate }) {
           ))}
         </div>
       )}
-      {openCompany && <CargoCompanyProfileModal company={openCompany} onClose={() => setOpenCompany(null)} />}
+      {openCompany && <CargoCompanyProfileModal company={openCompany} onClose={() => setOpenCompany(null)} onSelectCompany={onSelectCompany} />}
     </div>
   );
 }
 
-function CargoCompanyProfileModal({ company, onClose }) {
+function CargoCompanyProfileModal({ company, onClose, onSelectCompany }) {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -5807,6 +5878,12 @@ function CargoCompanyProfileModal({ company, onClose }) {
             <p className="text-xs mt-0.5" style={{ color: FAINT }}>{company.service_area || company.city}</p>
           </div>
         </div>
+
+        {onSelectCompany && (
+          <button onClick={() => onSelectCompany(company)} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+            <Package size={15} /> Request pickup with {company.company_name}
+          </button>
+        )}
 
         <div className="flex gap-2 mb-6">
           {company.owner_phone && (
@@ -5863,6 +5940,7 @@ function CargoCompanyProfileModal({ company, onClose }) {
 function Logistics({ goBack, navigate, currentDriver }) {
   const [view, setView] = useState("request");
   const [openCourier, setOpenCourier] = useState(null);
+  const [selectedCompany, setSelectedCompany] = useState(null);
   const [pickupAddress, setPickupAddress] = useState(""); const [dropoffAddress, setDropoffAddress] = useState("");
   const [pickupContact, setPickupContact] = useState(""); const [dropoffContact, setDropoffContact] = useState("");
   const [senderName, setSenderName] = useState("");
@@ -5965,7 +6043,8 @@ function Logistics({ goBack, navigate, currentDriver }) {
         pickup_lat: pickupCoords.lat,
         pickup_lng: pickupCoords.lng,
         parcel_size: size,
-        courier: openCourier?.name || null,
+        courier: selectedCompany?.company_name || openCourier?.name || null,
+        logistics_company_id: selectedCompany?.id || null,
         price: chosenTier ? chosenTier.price : chosen.price,
         notes: notes.trim() || null,
         status: "requested",
@@ -5983,7 +6062,7 @@ function Logistics({ goBack, navigate, currentDriver }) {
   if (stage === "confirmed") return (
     <div className="px-5 pt-20 flex flex-col items-center text-center" style={{ color: TEXT, background: LUX_BG, minHeight: "100%" }}>
       <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Pickup requested</h2>
-      <p className="mt-1 text-sm" style={{ color: MUTE }}>{openCourier ? `${openCourier.name} will contact you on WhatsApp.` : "Driver will contact you on WhatsApp."}</p>
+      <p className="mt-1 text-sm" style={{ color: MUTE }}>{(selectedCompany?.company_name || openCourier?.name) ? `${selectedCompany?.company_name || openCourier?.name} will contact you on WhatsApp.` : "Driver will contact you on WhatsApp."}</p>
       <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this pickup</button>
       <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
       <button onClick={() => setStage("cancelled")} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: "#C0755B" }}>Cancel pickup</button>
@@ -6035,7 +6114,7 @@ function Logistics({ goBack, navigate, currentDriver }) {
         </div>
       </div>
 
-      {view === "companies" && <div className="pt-5"><CargoCompaniesList navigate={navigate} /></div>}
+      {view === "companies" && <div className="pt-5"><CargoCompaniesList navigate={navigate} onSelectCompany={(c) => { setSelectedCompany(c); setView("request"); }} /></div>}
 
       {view === "couriers" && (
         <div className="px-5 pt-5 flex flex-col gap-2">
@@ -6053,6 +6132,12 @@ function Logistics({ goBack, navigate, currentDriver }) {
 
       {view === "request" && (
       <div className="px-5 pt-5 max-w-5xl mx-auto">
+        {selectedCompany && (
+          <div className="rounded-2xl px-4 py-3 mb-4 flex items-center justify-between gap-3" style={{ background: "rgba(212,175,55,0.1)", border: `1px solid ${LUX_GOLD}` }}>
+            <p className="text-sm" style={{ color: LUX_TEXT }}>Requesting via <span style={{ fontWeight: 700 }}>{selectedCompany.company_name}</span></p>
+            <button onClick={() => setSelectedCompany(null)} className="text-xs font-semibold shrink-0" style={{ color: LUX_MUTE }}>Clear</button>
+          </div>
+        )}
         <div className="rounded-2xl p-4 mb-5 flex items-center justify-between gap-3" style={{ background: LUX_NAVY }}>
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(212,175,55,0.18)" }}><Truck size={18} color={LUX_GOLD} /></div>
