@@ -6804,6 +6804,8 @@ function MyActivity({ goBack, currentDriver }) {
   const [expandedId, setExpandedId] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [editAddressItem, setEditAddressItem] = useState(null);
+  const [editLocationItem, setEditLocationItem] = useState(null);
+  const [editDatesItem, setEditDatesItem] = useState(null);
   const phone = currentDriver?.profile?.mobile_number;
 
   useEffect(() => { loadAll(); }, [phone]);
@@ -6971,9 +6973,11 @@ function MyActivity({ goBack, currentDriver }) {
                 <div className="h-full rounded-full transition-all" style={{ width: `${prog.percent}%`, background: prog.color }} />
               </div>
 
-              {(item.table === "food_orders" || item.table === "store_orders") && orderTimeEstimate(item.status) && (
+              {(item.table === "food_orders" || item.table === "store_orders" || item.table === "rides" || item.table === "logistics_parcels") && orderTimeEstimate(item.status) && (
                 <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: GOLD }}>
-                  <Clock size={11} /> {orderTimeEstimate(item.status)}
+                  <Clock size={11} /> {item.table === "rides" || item.table === "logistics_parcels"
+                    ? (["out_for_delivery", "in_transit", "picked_up"].includes((item.status || "").toLowerCase()) ? "On the way" : ["accepted", "preparing"].includes((item.status || "").toLowerCase()) ? "Driver assigned — heading your way" : "Waiting for a driver to accept")
+                    : orderTimeEstimate(item.status)}
                 </p>
               )}
 
@@ -7013,6 +7017,12 @@ function MyActivity({ goBack, currentDriver }) {
                   {(item.table === "food_orders" || item.table === "store_orders") && canCancel && (
                     <button onClick={() => setEditAddressItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}>Change address</button>
                   )}
+                  {(item.table === "rides" || item.table === "logistics_parcels") && canCancel && (
+                    <button onClick={() => setEditLocationItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}>Change location</button>
+                  )}
+                  {item.table === "rental_bookings" && canCancel && (
+                    <button onClick={() => setEditDatesItem(item)} className="flex-1 rounded-full py-2 text-[11px] font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}>Change dates</button>
+                  )}
                 </div>
               )}
 
@@ -7034,6 +7044,8 @@ function MyActivity({ goBack, currentDriver }) {
 
       {editItem && <EditActivityItemModal item={editItem} onClose={() => setEditItem(null)} onSaved={() => { setEditItem(null); loadAll(); }} />}
       {editAddressItem && <EditAddressModal item={editAddressItem} onClose={() => setEditAddressItem(null)} onSaved={() => { setEditAddressItem(null); loadAll(); }} />}
+      {editLocationItem && <EditLocationModal item={editLocationItem} onClose={() => setEditLocationItem(null)} onSaved={() => { setEditLocationItem(null); loadAll(); }} />}
+      {editDatesItem && <EditRentalDatesModal item={editDatesItem} onClose={() => setEditDatesItem(null)} onSaved={() => { setEditDatesItem(null); loadAll(); }} />}
     </div>
   );
 }
@@ -7048,7 +7060,130 @@ const EDIT_TABLE_CONFIG = {
   companies: { label: "transport company", nameField: "name", nameLabel: "Company name", hasPrice: false, hasDescription: false },
 };
 
-/* ---------- EDIT DELIVERY ADDRESS (food/store orders in progress) ---------- */
+/* ---------- EDIT PICKUP/DROPOFF (rides & cargo, before someone accepts) ---------- */
+function EditLocationModal({ item, onClose, onSaved }) {
+  const isRide = item.table === "rides";
+  const pickupField = isRide ? "pickup_label" : "pickup_address";
+  const dropoffField = isRide ? "dropoff_label" : "dropoff_address";
+
+  const [pickupLabel, setPickupLabel] = useState(item.raw?.[pickupField] || "");
+  const [dropoffLabel, setDropoffLabel] = useState(item.raw?.[dropoffField] || "");
+  const [coords, setCoords] = useState(
+    item.raw?.pickup_lat && item.raw?.pickup_lng ? { lat: item.raw.pickup_lat, lng: item.raw.pickup_lng } : SAUDI_CITY_COORDS.Riyadh
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function reverseGeocodeCoords(lat, lng) {
+    try {
+      const res = await hereFetch(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${lat},${lng}&lang=en-US`);
+      const data = await res.json();
+      return data?.items?.[0]?.address?.label || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    } catch (e) { return `${lat.toFixed(4)}, ${lng.toFixed(4)}`; }
+  }
+
+  async function onPinMove(newCoords) {
+    setCoords(newCoords);
+    const label = await reverseGeocodeCoords(newCoords.lat, newCoords.lng);
+    setPickupLabel(label);
+  }
+
+  function useMyLocation() {
+    detectLocation({
+      onStart: () => {},
+      onSuccess: ({ label, lat, lng }) => { setPickupLabel(label); setCoords({ lat, lng }); },
+      onError: () => {},
+    });
+  }
+
+  async function save() {
+    if (!pickupLabel.trim() || !dropoffLabel.trim()) { setError("Please fill in both pickup and dropoff."); return; }
+    setSaving(true);
+    const payload = {
+      [pickupField]: pickupLabel.trim(),
+      [dropoffField]: dropoffLabel.trim(),
+      pickup_lat: coords.lat,
+      pickup_lng: coords.lng,
+    };
+    const { error: updErr } = await supabase.from(item.table).update(payload).eq("id", item.id);
+    setSaving(false);
+    if (updErr) { setError("Couldn't update — please try again."); return; }
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-3xl p-5 max-h-[85vh] overflow-y-auto" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+        <p className="text-sm font-semibold mb-4">Change pickup & dropoff</p>
+
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold" style={{ color: GOLD }}>PICKUP</p>
+          <button onClick={useMyLocation} className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: GOLD }}><Navigation size={11} /> Use my location</button>
+        </div>
+        <div className="rounded-xl overflow-hidden mb-2.5" style={{ border: `1px solid ${BORDER}` }}>
+          <PinMapPicker coords={coords} onMove={onPinMove} height={150} />
+        </div>
+        <div className="rounded-xl px-4 py-3 mb-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+          <input value={pickupLabel} onChange={(e) => setPickupLabel(e.target.value)} placeholder="Pickup address" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+        </div>
+
+        <p className="text-xs font-semibold mb-2" style={{ color: GOLD }}>DROPOFF</p>
+        <div className="rounded-xl px-4 py-3 mb-4" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+          <input value={dropoffLabel} onChange={(e) => setDropoffLabel(e.target.value)} placeholder="Dropoff address" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+        </div>
+
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>{saving ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- EDIT RENTAL DATES (before confirmed) ---------- */
+function EditRentalDatesModal({ item, onClose, onSaved }) {
+  const [pickupDate, setPickupDate] = useState(item.raw?.pickup_date || "");
+  const [returnDate, setReturnDate] = useState(item.raw?.return_date || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    if (!pickupDate || !returnDate) { setError("Please choose both dates."); return; }
+    if (returnDate < pickupDate) { setError("Return date must be after pickup date."); return; }
+    setSaving(true);
+    const days = Math.max(1, Math.round((new Date(returnDate) - new Date(pickupDate)) / 86400000) || 1);
+    const payload = { pickup_date: pickupDate, return_date: returnDate, days };
+    if (item.raw?.price_per_day) payload.total_price = item.raw.price_per_day * days;
+    const { error: updErr } = await supabase.from(item.table).update(payload).eq("id", item.id);
+    setSaving(false);
+    if (updErr) { setError("Couldn't update — please try again."); return; }
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-3xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+        <p className="text-sm font-semibold mb-4">Change rental dates</p>
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+        </div>
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>{saving ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditAddressModal({ item, onClose, onSaved }) {
   const [address, setAddress] = useState(item.raw?.delivery_address || "");
   const [saving, setSaving] = useState(false);
