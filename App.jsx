@@ -80,6 +80,31 @@ async function hereFetch(url, options) {
   return { ok: true, json: async () => data };
 }
 
+// Signs up a new business account, but correctly handles the case where the
+// email is already registered (e.g. the same person registering a second
+// business type with the same email) — Supabase silently "succeeds" on
+// signUp for an existing email but returns a user object with no real,
+// usable identity attached, which previously caused broken accounts that
+// could never log in. This detects that and falls back to signing in.
+async function signUpOrLinkExisting(email, password, roleData) {
+  const { data: authData, error: signUpError } = await supabase.auth.signUp({
+    email, password, options: { data: roleData },
+  });
+  if (signUpError) throw signUpError;
+
+  const isExistingAccount = !authData.user || (authData.user.identities && authData.user.identities.length === 0);
+  if (!isExistingAccount) {
+    return authData.user.id;
+  }
+
+  // Email already belongs to an account — try the password they just typed.
+  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+  if (signInError) {
+    throw new Error("This email is already registered to another account here. Please enter the same password you used before, or use a different email.");
+  }
+  return signInData.user.id;
+}
+
 /* ---------- shared HERE Maps SDK loader ---------- */
 let hereSdkPromise = null;
 /* ---------- shared push notification sender ---------- */
@@ -2576,9 +2601,7 @@ function PartnerRegister({ goBack, type }) {
         if (existingUser) {
           authUserId = existingUser.id;
         } else {
-          const { data: authData, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { role: "car_owner" } } });
-          if (signUpError) throw signUpError;
-          authUserId = authData.user?.id;
+          authUserId = await signUpOrLinkExisting(email.trim(), password, { role: "car_owner" });
           await supabase.rpc("claim_legacy_listings_bulk", { p_table: "rental_listings", p_phone_column: "owner_phone", p_phone: phone.trim() });
         }
         const galleryUrls = [];
@@ -2618,9 +2641,7 @@ function PartnerRegister({ goBack, type }) {
       } else if (type === "food_partner") {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw new Error("Please enter a valid email — this is how you'll log in to manage your restaurant.");
         if (password.length < 6) throw new Error("Password must be at least 6 characters.");
-        const { data: authData, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { role: "restaurant_owner" } } });
-        if (signUpError) throw signUpError;
-        const authUserId = authData.user?.id;
+        const authUserId = await signUpOrLinkExisting(email.trim(), password, { role: "restaurant_owner" });
         const { data: claimedId } = await supabase.rpc("claim_legacy_business", { p_table: "restaurants", p_phone_column: "owner_phone", p_phone: phone.trim() });
 
         let logoUrl = null;
@@ -2697,9 +2718,7 @@ function PartnerRegister({ goBack, type }) {
       } else if (type === "logistics_company") {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw new Error("Please enter a valid email — this is how you'll log in to manage your cargo company.");
         if (password.length < 6) throw new Error("Password must be at least 6 characters.");
-        const { data: authData, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { role: "logistics_company_owner" } } });
-        if (signUpError) throw signUpError;
-        const authUserId = authData.user?.id;
+        const authUserId = await signUpOrLinkExisting(email.trim(), password, { role: "logistics_company_owner" });
         const { data: claimedId } = await supabase.rpc("claim_legacy_business", { p_table: "logistics_companies", p_phone_column: "owner_phone", p_phone: phone.trim() });
 
         let logoUrl = null;
@@ -3820,12 +3839,7 @@ function StoreRegister({ goBack, navigate, onLoggedIn }) {
     if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     setSaving(true);
     try {
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(), password,
-        options: { data: { role: "store_owner" } },
-      });
-      if (signUpError) throw signUpError;
-      const authUserId = authData.user?.id;
+      const authUserId = await signUpOrLinkExisting(email.trim(), password, { role: "store_owner" });
 
       // If a store already exists with this phone (registered before real
       // login existed), claim it instead of creating a duplicate.
@@ -5910,15 +5924,13 @@ function JobsPortal({ goBack, navigate }) {
     if (existingUser) {
       authUserId = existingUser.id;
     } else {
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: postForm.email.trim(), password: postForm.password, options: { data: { role: "employer" } },
-      });
-      if (signUpError) {
-        setPostError(signUpError.message || "Couldn't create your login — please try again.");
+      try {
+        authUserId = await signUpOrLinkExisting(postForm.email.trim(), postForm.password, { role: "employer" });
+      } catch (e) {
+        setPostError(e.message || "Couldn't create your login — please try again.");
         setPostSubmitting(false);
         return;
       }
-      authUserId = authData.user?.id;
       await supabase.rpc("claim_legacy_listings_bulk", { p_table: "jobs", p_phone_column: "phone", p_phone: postForm.phone.trim() });
     }
     const pay = postForm.minSalary && postForm.maxSalary
