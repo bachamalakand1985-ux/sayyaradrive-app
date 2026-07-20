@@ -6214,7 +6214,12 @@ function JobsPortal({ goBack, navigate }) {
             coverMessage: form.cover.trim() || null,
             cvUrl,
           },
-        }).catch(() => {});
+        }).then(({ data, error }) => {
+          if (error) console.error("Job notification email failed:", error);
+          else if (data && !data.success) console.warn("Job notification email did not send:", data.reason);
+        }).catch((e) => console.error("Job notification email failed:", e));
+      } else {
+        console.warn("No employer email on this job posting — notification email skipped.");
       }
       setSubmitted(true);
     } catch (e) {
@@ -6242,6 +6247,7 @@ function JobsPortal({ goBack, navigate }) {
         type: r.job_type || "Full-time",
         category: r.category || "Driving",
         phone: r.phone,
+        email: r.email,
         description: r.description,
       })));
     }
