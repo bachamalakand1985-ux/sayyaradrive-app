@@ -4197,6 +4197,29 @@ function BusinessLoginScreen({ goBack, navigate, businessType, onLoggedIn }) {
 /* ---------- BUSINESS DASHBOARD (restaurants & cargo companies, real login required) ---------- */
 function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
   const [editing, setEditing] = useState(false);
+  const [menuItems, setMenuItems] = useState([]);
+  const [loadingMenu, setLoadingMenu] = useState(true);
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+
+  const profile = currentBusiness?.profile;
+  const isRestaurant = currentBusiness?.table === "restaurants";
+
+  async function loadMenu() {
+    if (!profile?.id || !isRestaurant) return;
+    setLoadingMenu(true);
+    const { data } = await supabase.from("menu_items").select("*").eq("restaurant_id", profile.id).order("created_at", { ascending: false });
+    setMenuItems(data || []);
+    setLoadingMenu(false);
+  }
+  useEffect(() => { loadMenu(); }, [profile?.id]);
+
+  async function deleteItem(id) {
+    if (!confirm("Delete this menu item permanently?")) return;
+    await supabase.from("menu_items").delete().eq("id", id);
+    loadMenu();
+  }
+
   if (!currentBusiness?.profile) {
     return (
       <div style={{ color: TEXT }}>
@@ -4208,8 +4231,7 @@ function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
       </div>
     );
   }
-  const { profile, table, nameField } = currentBusiness;
-  const isRestaurant = table === "restaurants";
+  const { table, nameField } = currentBusiness;
 
   return (
     <div style={{ color: TEXT }}>
@@ -4227,8 +4249,48 @@ function BusinessDashboard({ goBack, navigate, currentBusiness, onLogout }) {
           </div>
           <button onClick={() => setEditing(true)} className="shrink-0 px-3 py-2 rounded-full text-[11px] font-semibold" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
         </div>
-        <p className="text-xs" style={{ color: FAINT }}>{isRestaurant ? "Menu and order management can be added here next." : "Fleet and route management can be added here next."}</p>
+
+        {isRestaurant ? (
+          <>
+            <button onClick={() => setShowAddItem(true)} className="w-full mb-4 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>
+              <Plus size={14} /> Add menu item
+            </button>
+            {loadingMenu ? (
+              <div className="flex justify-center py-10"><SearchingAnimation /></div>
+            ) : menuItems.length === 0 ? (
+              <EmptyState icon={UtensilsCrossed} title="No menu items yet" subtitle="Add your first item so customers can see and order it." />
+            ) : (
+              <div className="flex flex-col gap-2 pb-6">
+                {menuItems.map((m) => (
+                  <div key={m.id} className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                    {m.photo_url ? (
+                      <img src={m.photo_url} alt={m.name} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: BORDER }}><UtensilsCrossed size={16} color={FAINT} /></div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{m.name}</p>
+                      <p className="text-[11px]" style={{ color: GOLD }}>{m.price} SAR · <span style={{ color: FAINT }}>{m.category}{m.status !== "active" ? ` · ${m.status}` : ""}</span></p>
+                    </div>
+                    <button onClick={() => setEditingItem(m)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold shrink-0" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>Edit</button>
+                    <button onClick={() => deleteItem(m.id)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold shrink-0" style={{ background: "rgba(192,117,91,0.14)", color: "#C0755B" }}>Delete</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-xs" style={{ color: FAINT }}>Fleet and route management can be added here next.</p>
+        )}
       </div>
+      {(showAddItem || editingItem) && (
+        <MenuItemFormModal
+          restaurantId={profile.id}
+          item={editingItem}
+          onClose={() => { setShowAddItem(false); setEditingItem(null); }}
+          onSaved={() => { setShowAddItem(false); setEditingItem(null); loadMenu(); }}
+        />
+      )}
       {editing && (
         <EditActivityItemModal
           item={{ id: profile.id, table, raw: profile }}
@@ -4280,6 +4342,112 @@ function MyListingsScreen({ goBack, currentListings }) {
         ))}
       </div>
       {editItem && <EditActivityItemModal item={editItem} onClose={() => setEditItem(null)} onSaved={() => setEditItem(null)} />}
+    </div>
+  );
+}
+
+/* ---------- MENU ITEM FORM (add/edit, with photo upload) ---------- */
+function MenuItemFormModal({ restaurantId, item, onClose, onSaved }) {
+  const [name, setName] = useState(item?.name || "");
+  const [description, setDescription] = useState(item?.description || "");
+  const [price, setPrice] = useState(item?.price != null ? String(item.price) : "");
+  const [category, setCategory] = useState(item?.category || "Mains");
+  const [status, setStatus] = useState(item?.status || "active");
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(item?.photo_url || null);
+  const photoInputRef = useRef(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const isEdit = !!item;
+
+  function handlePhotoSelected(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    e.target.value = "";
+  }
+
+  async function save() {
+    setError("");
+    if (!name.trim()) { setError("Please enter a name."); return; }
+    if (!price || Number(price) <= 0) { setError("Please enter a valid price."); return; }
+    setSaving(true);
+    try {
+      let photoUrl = item?.photo_url || null;
+      if (photoFile) {
+        const ext = photoFile.name.split(".").pop() || "jpg";
+        const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("menu-photos").upload(fileName, photoFile);
+        if (upErr) throw upErr;
+        const { data: pub } = supabase.storage.from("menu-photos").getPublicUrl(fileName);
+        photoUrl = pub.publicUrl;
+      }
+      const payload = {
+        name: name.trim(),
+        description: description.trim() || null,
+        price: Number(price),
+        category,
+        status,
+        photo_url: photoUrl,
+      };
+      if (isEdit) {
+        const { error: updErr } = await supabase.from("menu_items").update(payload).eq("id", item.id);
+        if (updErr) throw updErr;
+      } else {
+        const { error: insErr } = await supabase.from("menu_items").insert({ ...payload, restaurant_id: restaurantId });
+        if (insErr) throw insErr;
+      }
+      onSaved();
+    } catch (e) {
+      setError(e.message || "Couldn't save this item — please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-3xl p-5 max-h-[85vh] overflow-y-auto" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+        <p className="text-sm font-semibold mb-4">{isEdit ? "Edit menu item" : "Add menu item"}</p>
+
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={() => photoInputRef.current?.click()} className="w-16 h-16 rounded-xl overflow-hidden flex items-center justify-center shrink-0" style={{ background: BG, border: `1px dashed ${BORDER}` }}>
+            {photoPreview ? <img src={photoPreview} alt="" className="w-full h-full object-cover" /> : <ImageIcon size={18} color={FAINT} />}
+          </button>
+          <button onClick={() => photoInputRef.current?.click()} className="text-xs font-semibold" style={{ color: GOLD }}>{photoPreview ? "Change photo" : "Add photo"}</button>
+          <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} />
+        </div>
+
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Item name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <input value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="Price (SAR)" inputMode="decimal" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+          <div className="rounded-xl px-4 py-2" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+              {["Chef's Picks", "Starters", "Mains", "Sides", "Desserts", "Drinks"].map((c) => <option key={c} value={c} style={{ background: CARD }}>{c}</option>)}
+            </select>
+          </div>
+          <div className="rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" rows={3} className="bg-transparent outline-none text-sm w-full resize-y" style={{ color: TEXT }} />
+          </div>
+          <div className="rounded-xl px-4 py-2" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="bg-transparent outline-none text-sm w-full py-2.5" style={{ color: TEXT }}>
+              <option value="active" style={{ background: CARD }}>Active</option>
+              <option value="hidden" style={{ background: CARD }}>Hidden (out of stock)</option>
+            </select>
+          </div>
+        </div>
+
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>{saving ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -5044,6 +5212,7 @@ function FoodDelivery({ goBack, navigate }) {
           foodCategory: r.food_category || "rice",
           logoUrl: r.logo_url || null,
           galleryUrls: Array.isArray(r.gallery_urls) ? r.gallery_urls : [],
+          isReal: true,
         })));
       }
     }
@@ -5051,9 +5220,25 @@ function FoodDelivery({ goBack, navigate }) {
   }, []);
 
   const allRestaurants = [...dbRestaurants, ...RESTAURANTS];
+  const [realMenu, setRealMenu] = useState([]);
+  const [menuLoading, setMenuLoading] = useState(false);
+  useEffect(() => {
+    if (!openRestaurant?.isReal) { setRealMenu([]); return; }
+    let cancelled = false;
+    async function loadMenu() {
+      setMenuLoading(true);
+      const { data } = await supabase.from("menu_items").select("*").eq("restaurant_id", openRestaurant.id).eq("status", "active").order("created_at", { ascending: false });
+      if (!cancelled) {
+        setRealMenu((data || []).map((m) => ({ id: m.id, category: m.category || "Mains", name: m.name, desc: m.description || "", price: m.price, photoUrl: m.photo_url })));
+        setMenuLoading(false);
+      }
+    }
+    loadMenu();
+    return () => { cancelled = true; };
+  }, [openRestaurant?.id]);
   function addItem(item) { setCart((c) => ({ ...c, [item.id]: (c[item.id] || 0) + 1 })); }
   function removeItem(item) { setCart((c) => { const n = { ...c }; if (n[item.id] > 1) n[item.id]--; else delete n[item.id]; return n; }); }
-  const menu = getMenuForRestaurant(openRestaurant);
+  const menu = openRestaurant?.isReal ? realMenu : getMenuForRestaurant(openRestaurant);
   const menuByCategory = menu.reduce((acc, m) => { (acc[m.category] = acc[m.category] || []).push(m); return acc; }, {});
   const cartItems = menu.filter((m) => cart[m.id]);
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
@@ -5170,8 +5355,13 @@ function FoodDelivery({ goBack, navigate }) {
         </div>
       </div>
 
-      <div className="px-5 flex flex-col gap-5 mt-4">
-        {Object.entries(menuByCategory).map(([cat, items]) => (
+      <div className="px-5 flex flex-col gap-5 mt-4 pb-6">
+        {menuLoading ? (
+          <div className="flex justify-center py-10"><SearchingAnimation /></div>
+        ) : openRestaurant.isReal && menu.length === 0 ? (
+          <EmptyState icon={UtensilsCrossed} title="No menu items yet" subtitle="This restaurant hasn't added their menu yet — check back soon." />
+        ) : (
+          Object.entries(menuByCategory).map(([cat, items]) => (
           <div key={cat}>
             <div className="flex items-center gap-2 mb-2.5">
               <div className="w-1 h-4 rounded-full" style={{ background: GOLD }} />
@@ -5180,7 +5370,11 @@ function FoodDelivery({ goBack, navigate }) {
             <div className="flex flex-col gap-2">
               {items.map((m) => (
                 <div key={m.id} className="flex items-center gap-3 rounded-xl px-3 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                  <FoodPhoto category={openRestaurant.foodCategory} alt={m.name} className="w-14 h-14 rounded-lg object-cover shrink-0" />
+                  {m.photoUrl ? (
+                    <img src={m.photoUrl} alt={m.name} className="w-14 h-14 rounded-lg object-cover shrink-0" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                  ) : (
+                    <FoodPhoto category={openRestaurant.foodCategory} alt={m.name} className="w-14 h-14 rounded-lg object-cover shrink-0" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold">{m.name}</p>
                     <p className="text-[11px] mt-0.5" style={{ color: FAINT }}>{m.desc}</p>
@@ -5199,8 +5393,10 @@ function FoodDelivery({ goBack, navigate }) {
               ))}
             </div>
           </div>
-        ))}
+          ))
+        )}
       </div>
+      
 
       {cartCount > 0 && (
         <div className="px-5 mt-6 sticky bottom-3">
