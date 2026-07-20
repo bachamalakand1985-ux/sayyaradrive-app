@@ -2367,10 +2367,10 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
       )}
       {currentDriver?.profile && (
         <div className="px-5 mb-4 grid grid-cols-3 gap-2">
-          <div className="rounded-2xl px-3 py-3 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <p className="text-base font-bold" style={{ color: GOLD }}>{todayEarnings.toFixed(0)}</p>
-            <p className="text-[9px] mt-0.5" style={{ color: FAINT }}>SAR today</p>
-          </div>
+          <button onClick={() => setCheckpointsPanelOpen((v) => !v)} className="rounded-2xl px-3 py-3 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <p className="text-base font-bold" style={{ color: GOLD }}>{checkpoints.length}</p>
+            <p className="text-[9px] mt-0.5" style={{ color: FAINT }}>Checkpoints</p>
+          </button>
           <div className="rounded-2xl px-3 py-3 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <p className="text-base font-bold" style={{ color: TEXT }}>{todayTrips}</p>
             <p className="text-[9px] mt-0.5" style={{ color: FAINT }}>Trips today</p>
@@ -2381,21 +2381,23 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
           </button>
         </div>
       )}
-      {checkpoints.length > 0 && (
+      {checkpointsPanelOpen && (
         <div className="px-5 mb-3">
-          <button onClick={() => setCheckpointsPanelOpen((v) => !v)} className="w-full flex items-center justify-between rounded-xl px-4 py-2.5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <span className="flex items-center gap-2 text-xs font-semibold" style={{ color: TEXT }}>
-              <Shield size={14} color={GOLD} />
-              {checkpoints.length} checkpoint{checkpoints.length !== 1 ? "s" : ""} active
-              <span style={{ color: FAINT, fontWeight: 400 }}>
-                · {checkpoints.filter((c) => c.zone === "inside_city").length} inside city, {checkpoints.filter((c) => c.zone === "outside_city").length} outside
+          <div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+              <span className="flex items-center gap-2 text-xs font-semibold" style={{ color: TEXT }}>
+                <Shield size={14} color={GOLD} />
+                {checkpoints.length} checkpoint{checkpoints.length !== 1 ? "s" : ""} active
+                <span style={{ color: FAINT, fontWeight: 400 }}>
+                  · {checkpoints.filter((c) => c.zone === "inside_city").length} inside city, {checkpoints.filter((c) => c.zone === "outside_city").length} outside
+                </span>
               </span>
-            </span>
-            <ChevronRight size={14} color={FAINT} style={{ transform: checkpointsPanelOpen ? "rotate(90deg)" : "none" }} />
-          </button>
-          {checkpointsPanelOpen && (
-            <div className="mt-2 rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              {[...checkpoints]
+              <button onClick={() => setCheckpointsPanelOpen(false)} aria-label="Close"><X size={14} color={FAINT} /></button>
+            </div>
+            {checkpoints.length === 0 ? (
+              <p className="text-[11px] text-center py-6 px-4" style={{ color: FAINT }}>No checkpoints reported right now.</p>
+            ) : (
+              [...checkpoints]
                 .sort((a, b) => distanceMeters(driverLoc.lat, driverLoc.lng, Number(a.lat), Number(a.lng)) - distanceMeters(driverLoc.lat, driverLoc.lng, Number(b.lat), Number(b.lng)))
                 .map((cp) => {
                   const distKm = (distanceMeters(driverLoc.lat, driverLoc.lng, Number(cp.lat), Number(cp.lng)) / 1000).toFixed(1);
@@ -2404,14 +2406,14 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
                     <div key={cp.id} className="flex items-center justify-between gap-2 px-4 py-3" style={{ borderTop: `1px solid ${BORDER}` }}>
                       <div className="min-w-0">
                         <p className="text-xs font-semibold truncate">{cp.label || (cp.zone === "outside_city" ? "Outside city" : "Inside city")}</p>
-                        <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{distKm} km away · reported {minsAgo}m ago{cp.confirmations > 1 ? ` · confirmed by ${cp.confirmations}` : ""}</p>
+                        <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{cp.zone === "outside_city" ? "Outside city" : "Inside city"} · {distKm} km away · reported {minsAgo}m ago{cp.confirmations > 1 ? ` · confirmed by ${cp.confirmations}` : ""}</p>
                       </div>
                       <button onClick={() => showAvoidRoute(cp)} className="shrink-0 rounded-full px-3 py-1.5 text-[10px] font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}>Route around</button>
                     </div>
                   );
-                })}
-            </div>
-          )}
+                })
+            )}
+          </div>
         </div>
       )}
       {checkpointBanner && (
@@ -2465,6 +2467,10 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
         <div className="px-5 mt-6">
           <p className="text-[11px] font-semibold uppercase tracking-widest mb-3" style={{ color: FAINT }}>Quick actions</p>
           <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => navigate("driver_trips")} className="rounded-2xl px-4 py-3.5 flex flex-col items-start gap-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              <DollarSign size={17} color={GOLD} />
+              <span className="text-xs font-semibold text-left">{todayEarnings.toFixed(0)} SAR today</span>
+            </button>
             <button onClick={() => navigate("driver_trips")} className="rounded-2xl px-4 py-3.5 flex flex-col items-start gap-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <Route size={17} color={GOLD} />
               <span className="text-xs font-semibold text-left">Trip history & earnings</span>
