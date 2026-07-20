@@ -716,6 +716,34 @@ function LanguagePicker({ lang, setLang, onClose }) {
   );
 }
 
+/* ---------- iOS install instructions (Safari has no native install-prompt API, so this is a manual how-to) ---------- */
+function IOSInstallHint({ onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-3xl px-5 pt-5 pb-8" style={{ background: CARD, border: `1px solid ${BORDER}` }} onClick={(e) => e.stopPropagation()}>
+        <div className="w-10 h-1 rounded-full mx-auto mb-4" style={{ background: BORDER }} />
+        <h3 className="text-sm font-semibold mb-1" style={{ color: TEXT }}>Install SayyaraDrive</h3>
+        <p className="text-xs mb-4" style={{ color: MUTE }}>iPhone doesn't let apps trigger install automatically — just a couple of taps in Safari:</p>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0" style={{ background: GOLD, color: BG }}>1</span>
+            <p className="text-xs" style={{ color: TEXT }}>Tap the <b>Share</b> icon in Safari's toolbar (square with an arrow pointing up)</p>
+          </div>
+          <div className="flex items-start gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0" style={{ background: GOLD, color: BG }}>2</span>
+            <p className="text-xs" style={{ color: TEXT }}>Scroll down and tap <b>"Add to Home Screen"</b></p>
+          </div>
+          <div className="flex items-start gap-3 rounded-xl px-4 py-3" style={{ background: BG, border: `1px solid ${BORDER}` }}>
+            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0" style={{ background: GOLD, color: BG }}>3</span>
+            <p className="text-xs" style={{ color: TEXT }}>Tap <b>"Add"</b> — the app icon appears on your home screen</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="w-full mt-5 rounded-full py-3 text-sm font-semibold" style={{ background: GOLD, color: BG }}>Got it</button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Riyadh skyline + desert silhouette background ---------- */
 function SkylineBackground({ opacity = 1 }) {
   return (
@@ -1079,7 +1107,10 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(capturedInstallPrompt);
+  const [showIOSInstallHint, setShowIOSInstallHint] = useState(false);
   const identity = resolveIdentity(currentDriver);
+  const isStandalone = typeof window !== "undefined" && (window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true);
+  const isIOS = typeof navigator !== "undefined" && /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
   useEffect(() => {
     async function loadUnread() {
       const { count } = await supabase.from("notifications").select("*", { count: "exact", head: true }).eq("recipient_type", "all").eq("read", false);
@@ -1094,11 +1125,13 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
     return () => window.removeEventListener("sayyara-install-available", onAvailable);
   }, []);
   async function handleInstallClick() {
+    if (isIOS) { setShowIOSInstallHint(true); return; }
     if (!installPrompt) return;
     installPrompt.prompt();
     await installPrompt.userChoice;
     setInstallPrompt(null);
   }
+  const showInstallButton = !isStandalone && (installPrompt || isIOS);
   return (
     <div className="pb-8 relative overflow-hidden" style={{ color: TEXT }} dir={RTL_LANGS.includes(lang) ? "rtl" : "ltr"}>
       <SkylineBackground opacity={0.9} />
@@ -1125,7 +1158,7 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
                 <Bell size={17} color={TEXT} />
                 {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />}
               </button>
-              {installPrompt && (
+              {showInstallButton && (
                 <button onClick={handleInstallClick} aria-label="Install app" className="flex items-center gap-1 px-2 h-5 rounded-full text-[9px] font-semibold" style={{ background: GOLD, color: BG }}>
                   <Download size={9} /> Install
                 </button>
@@ -1133,6 +1166,7 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
             </div>
           </div>
         </div>
+        {showIOSInstallHint && <IOSInstallHint onClose={() => setShowIOSInstallHint(false)} />}
         {showAppMenu && <AppMenu onClose={() => setShowAppMenu(false)} navigate={navigate} currentDriver={currentDriver} driverLogout={driverLogout} identity={identity} />}
         {showLangPicker && <LanguagePicker lang={lang} setLang={setLang} onClose={() => setShowLangPicker(false)} />}
 
@@ -12305,6 +12339,14 @@ export default function SayyaraDriveApp() {
   }, []);
   const [currentAdmin, setCurrentAdmin] = useState(null);
   const [sessionChecked, setSessionChecked] = useState(false);
+  // Register the service worker unconditionally on load. This is required
+  // (along with the manifest) for Chrome/Android to consider the app
+  // installable — previously it only registered once a user opted into push
+  // notifications, so most visitors never got an install prompt at all.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }, []);
   const [lang, setLangRaw] = useState(() => {
     try { return localStorage.getItem("sayyara_lang") || "en"; } catch (e) { return "en"; }
   });
