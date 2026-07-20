@@ -1825,8 +1825,15 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
   const [checkpointBanner, setCheckpointBanner] = useState(null);
   const [reportingCheckpoint, setReportingCheckpoint] = useState(false);
   const [showCheckpoints, setShowCheckpoints] = useState(true);
+  const [locationSuspicious, setLocationSuspicious] = useState(false);
+  const [checkpointsPanelOpen, setCheckpointsPanelOpen] = useState(false);
+  const [avoidRouteInfo, setAvoidRouteInfo] = useState(null);
   const checkpointMarkersRef = useRef({});
   const alertedCheckpointIdsRef = useRef(new Set());
+  const gpsHistoryRef = useRef(null); // { lat, lng, t } from the previous GPS fix, used to catch impossible jumps
+  const currentSpeedKmhRef = useRef(0); // latest instantaneous speed derived from consecutive GPS fixes
+  const noSlowdownContributedRef = useRef(new Set()); // checkpoint ids this driver has already "voted" on by passing at speed
+  const avoidRouteLineRef = useRef(null);
 
   useEffect(() => {
     async function loadStats() {
@@ -1845,7 +1852,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
   // push (map marker + sound + banner) the instant anyone reports a new one.
   useEffect(() => {
     async function loadCheckpoints() {
-      const { data } = await supabase.from("checkpoint_alerts").select("*").eq("status", "active").order("created_at", { ascending: false });
+      const { data } = await supabase.from("checkpoint_alerts").select("*").eq("status", "active").gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false });
       setCheckpoints(data || []);
     }
     loadCheckpoints();
@@ -1859,9 +1866,21 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
         setCheckpointBanner({ zone: row.zone, label: row.label, reportedBy: row.reported_by_name });
         setTimeout(() => setCheckpointBanner(null), 8000);
       })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "checkpoint_alerts" }, (payload) => {
+        const row = payload.new;
+        setCheckpoints((prev) => prev.map((c) => (c.id === row.id ? row : c)));
+      })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // Drop expired checkpoints from the local list every minute — they were
+    // filtered out of the initial load, but ones already on screen won't
+    // disappear on their own without this.
+    const expiryTimer = setInterval(() => {
+      const now = Date.now();
+      setCheckpoints((prev) => prev.filter((c) => !c.expires_at || new Date(c.expires_at).getTime() > now));
+    }, 60000);
+
+    return () => { supabase.removeChannel(channel); clearInterval(expiryTimer); };
   }, []);
 
   // Proximity check: if the driver's current location is near an active
@@ -1881,9 +1900,102 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     }
   }, [checkpoints, driverLoc]);
 
+  // Crowd-sourced auto-removal: if a checkpoint is over an hour old and other
+  // drivers keep passing right by it at normal traffic speed (i.e. nobody is
+  // slowing down for it), that's a strong signal it's gone. After enough such
+  // passes, the checkpoint is auto-expired for everyone.
+  useEffect(() => {
+    if (!checkpoints.length) return;
+    const nowMs = Date.now();
+    for (const cp of checkpoints) {
+      const ageMs = nowMs - new Date(cp.created_at).getTime();
+      if (ageMs < 60 * 60 * 1000) continue; // only applies once a checkpoint is 1h+ old
+      if (noSlowdownContributedRef.current.has(cp.id)) continue;
+      const dist = distanceMeters(driverLoc.lat, driverLoc.lng, Number(cp.lat), Number(cp.lng));
+      if (dist > 200) continue; // driver needs to actually pass close by it
+      if (currentSpeedKmhRef.current < 40) continue; // slowing down still counts as "checkpoint might be real"
+      noSlowdownContributedRef.current.add(cp.id);
+      const newCount = (cp.no_slowdown_count || 0) + 1;
+      if (newCount >= 3) {
+        supabase.from("checkpoint_alerts").update({ status: "expired" }).eq("id", cp.id);
+        setCheckpoints((prev) => prev.filter((c) => c.id !== cp.id));
+      } else {
+        supabase.from("checkpoint_alerts").update({ no_slowdown_count: newCount }).eq("id", cp.id);
+        setCheckpoints((prev) => prev.map((c) => (c.id === cp.id ? { ...c, no_slowdown_count: newCount } : c)));
+      }
+    }
+  }, [checkpoints, driverLoc]);
+
+  // Draws an alternate route from the driver's current location to a chosen
+  // checkpoint that detours around the checkpoint's immediate area, using
+  // HERE routing's avoid-area option, and reports the resulting distance/time.
+  async function showAvoidRoute(cp) {
+    setCheckpointsPanelOpen(false);
+    if (!mapObjRef.current || !window.H) return;
+    if (avoidRouteLineRef.current) { mapObjRef.current.removeObject(avoidRouteLineRef.current); avoidRouteLineRef.current = null; }
+    const lat = Number(cp.lat), lng = Number(cp.lng);
+    const d = 0.004; // ~400m box around the checkpoint to route around
+    const avoidBox = `${(lat + d).toFixed(6)},${(lng - d).toFixed(6)};${(lat - d).toFixed(6)},${(lng + d).toFixed(6)}`;
+    try {
+      const res = await hereFetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${driverLoc.lat},${driverLoc.lng}&destination=${lat},${lng}&avoid[areas]=${avoidBox}&return=summary,polyline`);
+      const data = await res.json();
+      const route = data?.routes?.[0];
+      if (route?.sections?.[0]?.polyline) {
+        const lineString = window.H.geo.LineString.fromFlexiblePolyline(route.sections[0].polyline);
+        const line = new window.H.map.Polyline(lineString, { style: { lineWidth: 4, strokeColor: "#5B8FD4", lineDash: [2, 6] } });
+        mapObjRef.current.addObject(line);
+        avoidRouteLineRef.current = line;
+        mapObjRef.current.getViewModel().setLookAtData({ bounds: line.getBoundingBox() });
+        const summary = route.sections[0].summary;
+        setAvoidRouteInfo({ label: cp.label, distanceKm: (summary.length / 1000).toFixed(1), durationMin: Math.round(summary.duration / 60) });
+      } else {
+        setAvoidRouteInfo({ label: cp.label, error: true });
+      }
+    } catch (e) {
+      setAvoidRouteInfo({ label: cp.label, error: true });
+    }
+  }
+
   async function reportCheckpoint() {
+    if (locationSuspicious) {
+      alert("Your location looks unreliable right now (unrealistic movement detected). Please wait a moment for GPS to settle and try again.");
+      return;
+    }
     setReportingCheckpoint(true);
     try {
+      // Cooldown: block a driver from reporting more than once every 15 minutes,
+      // to stop accidental double-taps and casual spam.
+      if (driverRow?.id) {
+        const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        const { data: recent } = await supabase
+          .from("checkpoint_alerts")
+          .select("id")
+          .eq("reported_by_driver_id", driverRow.id)
+          .gte("created_at", cutoff)
+          .limit(1);
+        if (recent && recent.length) {
+          alert("You already reported a checkpoint recently. You can report again in a few minutes.");
+          setReportingCheckpoint(false);
+          return;
+        }
+      }
+
+      // Duplicate suppression: if an active checkpoint already exists within
+      // ~300m, treat this as a confirmation of that one instead of creating a
+      // near-identical duplicate pin.
+      const nearby = checkpoints.find((cp) => distanceMeters(driverLoc.lat, driverLoc.lng, Number(cp.lat), Number(cp.lng)) < 300);
+      if (nearby) {
+        const { error: confirmError } = await supabase
+          .from("checkpoint_alerts")
+          .update({ confirmations: (nearby.confirmations || 1) + 1, expires_at: new Date(Date.now() + 45 * 60 * 1000).toISOString() })
+          .eq("id", nearby.id);
+        if (confirmError) throw confirmError;
+        setCheckpoints((prev) => prev.map((c) => (c.id === nearby.id ? { ...c, confirmations: (c.confirmations || 1) + 1 } : c)));
+        setCheckpointBanner({ zone: nearby.zone, label: nearby.label, confirmed: true, confirmations: (nearby.confirmations || 1) + 1 });
+        setTimeout(() => setCheckpointBanner(null), 8000);
+        return;
+      }
+
       const zone = driverRow?.city_type === "intercity" ? "outside_city" : "inside_city";
       const { error } = await supabase.from("checkpoint_alerts").insert({
         lat: driverLoc.lat,
@@ -1921,6 +2033,20 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
+        // Flag GPS fixes that imply impossible travel speed (a common sign of a
+        // fake-GPS app) — used to block checkpoint reports while it's active,
+        // without blocking normal map/tracking use.
+        const nowT = Date.now();
+        if (gpsHistoryRef.current) {
+          const elapsedSec = (nowT - gpsHistoryRef.current.t) / 1000;
+          if (elapsedSec > 0.5 && elapsedSec < 30) {
+            const jumpM = distanceMeters(gpsHistoryRef.current.lat, gpsHistoryRef.current.lng, latitude, longitude);
+            const speedKmh = (jumpM / elapsedSec) * 3.6;
+            setLocationSuspicious(speedKmh > 200);
+            currentSpeedKmhRef.current = speedKmh;
+          }
+        }
+        gpsHistoryRef.current = { lat: latitude, lng: longitude, t: nowT };
         setDriverLoc({ lat: latitude, lng: longitude });
         setLocDenied(false);
         setLocError("");
@@ -2220,7 +2346,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     <div style={{ color: TEXT }}>
       <Header title={t ? t("driverHeader") : "Driver"} onBack={goBack} right={
         <div className="flex items-center gap-2">
-          <button onClick={reportCheckpoint} disabled={reportingCheckpoint} aria-label="Report checkpoint at my location" className="h-9 px-3 rounded-full flex items-center gap-1.5 text-xs font-semibold" style={{ background: reportingCheckpoint ? BORDER : "rgba(217,166,83,0.14)", color: reportingCheckpoint ? "#5C736D" : GOLD }}>
+          <button onClick={reportCheckpoint} disabled={reportingCheckpoint || locationSuspicious} aria-label="Report checkpoint at my location" title={locationSuspicious ? "GPS looks unreliable right now — please wait a moment" : undefined} className="h-9 px-3 rounded-full flex items-center gap-1.5 text-xs font-semibold" style={{ background: (reportingCheckpoint || locationSuspicious) ? BORDER : "rgba(217,166,83,0.14)", color: (reportingCheckpoint || locationSuspicious) ? "#5C736D" : GOLD }}>
             <Shield size={14} /> {reportingCheckpoint ? "Reporting…" : "Checkpoint"}
           </button>
           <button onClick={online ? goOffline : goOnline} className="flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold" style={{ background: online ? GREEN : BORDER, color: online ? BG : MUTE }}>
@@ -2255,18 +2381,64 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
           </button>
         </div>
       )}
+      {checkpoints.length > 0 && (
+        <div className="px-5 mb-3">
+          <button onClick={() => setCheckpointsPanelOpen((v) => !v)} className="w-full flex items-center justify-between rounded-xl px-4 py-2.5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <span className="flex items-center gap-2 text-xs font-semibold" style={{ color: TEXT }}>
+              <Shield size={14} color={GOLD} />
+              {checkpoints.length} checkpoint{checkpoints.length !== 1 ? "s" : ""} active
+              <span style={{ color: FAINT, fontWeight: 400 }}>
+                · {checkpoints.filter((c) => c.zone === "inside_city").length} inside city, {checkpoints.filter((c) => c.zone === "outside_city").length} outside
+              </span>
+            </span>
+            <ChevronRight size={14} color={FAINT} style={{ transform: checkpointsPanelOpen ? "rotate(90deg)" : "none" }} />
+          </button>
+          {checkpointsPanelOpen && (
+            <div className="mt-2 rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+              {[...checkpoints]
+                .sort((a, b) => distanceMeters(driverLoc.lat, driverLoc.lng, Number(a.lat), Number(a.lng)) - distanceMeters(driverLoc.lat, driverLoc.lng, Number(b.lat), Number(b.lng)))
+                .map((cp) => {
+                  const distKm = (distanceMeters(driverLoc.lat, driverLoc.lng, Number(cp.lat), Number(cp.lng)) / 1000).toFixed(1);
+                  const minsAgo = Math.max(0, Math.round((Date.now() - new Date(cp.created_at).getTime()) / 60000));
+                  return (
+                    <div key={cp.id} className="flex items-center justify-between gap-2 px-4 py-3" style={{ borderTop: `1px solid ${BORDER}` }}>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold truncate">{cp.label || (cp.zone === "outside_city" ? "Outside city" : "Inside city")}</p>
+                        <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{distKm} km away · reported {minsAgo}m ago{cp.confirmations > 1 ? ` · confirmed by ${cp.confirmations}` : ""}</p>
+                      </div>
+                      <button onClick={() => showAvoidRoute(cp)} className="shrink-0 rounded-full px-3 py-1.5 text-[10px] font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}>Route around</button>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
       {checkpointBanner && (
         <div className="mx-5 mb-3 rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: checkpointBanner.zone === "outside_city" ? "rgba(91,143,212,0.16)" : "rgba(217,166,83,0.16)", border: `1px solid ${checkpointBanner.zone === "outside_city" ? GREEN : GOLD}` }}>
           <Shield size={18} color={checkpointBanner.zone === "outside_city" ? GREEN : GOLD} />
           <div className="flex-1">
-            <p className="text-xs font-semibold">{checkpointBanner.nearby ? "Checkpoint nearby" : "New checkpoint reported"}</p>
+            <p className="text-xs font-semibold">{checkpointBanner.confirmed ? "Checkpoint confirmed" : checkpointBanner.nearby ? "Checkpoint nearby" : "New checkpoint reported"}</p>
             <p className="text-[10px]" style={{ color: FAINT }}>
               {checkpointBanner.zone === "outside_city" ? "Outside city" : "Inside city"}
               {checkpointBanner.label ? ` · ${checkpointBanner.label}` : ""}
               {checkpointBanner.reportedBy ? ` · reported by ${checkpointBanner.reportedBy}` : ""}
+              {checkpointBanner.confirmed ? ` · confirmed by ${checkpointBanner.confirmations} drivers` : ""}
             </p>
           </div>
           <button onClick={() => setCheckpointBanner(null)} aria-label="Dismiss"><X size={14} color={FAINT} /></button>
+        </div>
+      )}
+      {avoidRouteInfo && (
+        <div className="mx-5 mb-3 rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: "rgba(91,143,212,0.16)", border: `1px solid ${GREEN}` }}>
+          <Route size={18} color={GREEN} />
+          <div className="flex-1">
+            <p className="text-xs font-semibold">{avoidRouteInfo.error ? "Couldn't find an alternate route" : "Alternate route shown on map"}</p>
+            {!avoidRouteInfo.error && (
+              <p className="text-[10px]" style={{ color: FAINT }}>Avoids {avoidRouteInfo.label || "checkpoint"} · {avoidRouteInfo.distanceKm} km · ~{avoidRouteInfo.durationMin} min</p>
+            )}
+          </div>
+          <button onClick={() => { setAvoidRouteInfo(null); if (avoidRouteLineRef.current && mapObjRef.current) { mapObjRef.current.removeObject(avoidRouteLineRef.current); avoidRouteLineRef.current = null; } }} aria-label="Dismiss"><X size={14} color={FAINT} /></button>
         </div>
       )}
       <div className="mx-5 rounded-2xl overflow-hidden relative" style={{ height: 220, background: CARD, border: `1px solid ${BORDER}` }}>
