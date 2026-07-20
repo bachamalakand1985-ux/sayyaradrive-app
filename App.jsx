@@ -6311,7 +6311,7 @@ function JobsPortal({ goBack, navigate }) {
       phone: "",
       email: postForm.email,
       auth_user_id: authUserId,
-      description: "No description provided.",
+      description: postForm.title,
       status: "active",
     });
     if (error) {
@@ -6421,8 +6421,8 @@ function JobsPortal({ goBack, navigate }) {
 
               <div className="flex flex-col gap-4">
                 <div>
-                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Job Title <span style={{ color: "#C0755B" }}>*</span></p>
-                  <input value={postForm.title} onChange={(e) => setPostForm({ ...postForm, title: e.target.value })} placeholder="e.g. Senior Delivery Driver" className="w-full rounded-xl px-4 py-3 text-sm outline-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
+                  <p className="text-xs font-medium mb-1.5" style={{ color: MUTE }}>Job Title & Details <span style={{ color: "#C0755B" }}>*</span></p>
+                  <textarea value={postForm.title} onChange={(e) => setPostForm({ ...postForm, title: e.target.value })} placeholder="e.g. Senior Delivery Driver — full-time, Riyadh, 4000–6000 SAR/month, valid license required..." rows={6} className="w-full rounded-xl px-4 py-3 text-sm outline-none resize-none" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }} />
                 </div>
 
                 <div>
