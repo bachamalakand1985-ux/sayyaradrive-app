@@ -1811,6 +1811,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
   const [tripState, setTripState] = useState("idle");
   const [driverLoc, setDriverLoc] = useState({ lat: 24.7136, lng: 46.6753 });
   const [locLabel, setLocLabel] = useState("Riyadh (default)");
+  const [driverCity, setDriverCity] = useState("Riyadh");
   const [locError, setLocError] = useState("");
   const [locDenied, setLocDenied] = useState(false);
   const [declinedIds, setDeclinedIds] = useState([]);
@@ -1848,11 +1849,13 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     loadStats();
   }, [driverRow?.id]);
 
-  // Load active checkpoint alerts, then subscribe so every driver gets a live
-  // push (map marker + sound + banner) the instant anyone reports a new one.
+  // Load active checkpoint alerts for the driver's current city only, then
+  // subscribe so drivers in that same city get a live push (map marker +
+  // sound + banner) the instant anyone reports a new one — drivers elsewhere
+  // aren't shown or alerted about checkpoints outside their own city.
   useEffect(() => {
     async function loadCheckpoints() {
-      const { data } = await supabase.from("checkpoint_alerts").select("*").eq("status", "active").gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false });
+      const { data } = await supabase.from("checkpoint_alerts").select("*").eq("status", "active").eq("city", driverCity).gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false });
       setCheckpoints(data || []);
     }
     loadCheckpoints();
@@ -1861,6 +1864,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
       .channel("checkpoint-alerts-live")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "checkpoint_alerts" }, (payload) => {
         const row = payload.new;
+        if (row.city !== driverCity) return;
         setCheckpoints((prev) => (prev.some((c) => c.id === row.id) ? prev : [row, ...prev]));
         playCheckpointAlertSound();
         setCheckpointBanner({ zone: row.zone, label: row.label, reportedBy: row.reported_by_name });
@@ -1868,6 +1872,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "checkpoint_alerts" }, (payload) => {
         const row = payload.new;
+        if (row.city !== driverCity) return;
         setCheckpoints((prev) => prev.map((c) => (c.id === row.id ? row : c)));
       })
       .subscribe();
@@ -1881,7 +1886,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     }, 60000);
 
     return () => { supabase.removeChannel(channel); clearInterval(expiryTimer); };
-  }, []);
+  }, [driverCity]);
 
   // Proximity check: if the driver's current location is near an active
   // checkpoint they haven't already been alerted for, play the sound again
@@ -1934,8 +1939,16 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     if (!mapObjRef.current || !window.H) return;
     if (avoidRouteLineRef.current) { mapObjRef.current.removeObject(avoidRouteLineRef.current); avoidRouteLineRef.current = null; }
     const lat = Number(cp.lat), lng = Number(cp.lng);
+    // A route "around" a point only makes sense if the driver isn't already
+    // standing on it — most often true right after they're the one who
+    // reported it.
+    if (distanceMeters(driverLoc.lat, driverLoc.lng, lat, lng) < 80) {
+      setAvoidRouteInfo({ label: cp.label, atLocation: true });
+      return;
+    }
     const d = 0.004; // ~400m box around the checkpoint to route around
-    const avoidBox = `${(lat + d).toFixed(6)},${(lng - d).toFixed(6)};${(lat - d).toFixed(6)},${(lng + d).toFixed(6)}`;
+    // HERE Routing v8 expects avoid[areas]=bbox:{west},{south},{east},{north}
+    const avoidBox = `bbox:${(lng - d).toFixed(6)},${(lat - d).toFixed(6)},${(lng + d).toFixed(6)},${(lat + d).toFixed(6)}`;
     try {
       const res = await hereFetch(`https://router.hereapi.com/v8/routes?transportMode=car&origin=${driverLoc.lat},${driverLoc.lng}&destination=${lat},${lng}&avoid[areas]=${avoidBox}&return=summary,polyline`);
       const data = await res.json();
@@ -1955,6 +1968,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
       setAvoidRouteInfo({ label: cp.label, error: true });
     }
   }
+
 
   async function reportCheckpoint() {
     if (locationSuspicious) {
@@ -2002,6 +2016,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
         lng: driverLoc.lng,
         zone,
         label: locLabel,
+        city: driverCity,
         reported_by_driver_id: driverRow?.id || null,
         reported_by_name: driverRow?.full_name || "A driver",
       });
@@ -2024,7 +2039,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
 
   useEffect(() => {
     detectLocation({
-      onSuccess: ({ lat, lng, label }) => { setDriverLoc({ lat, lng }); setLocLabel(label); setLocDenied(false); },
+      onSuccess: ({ lat, lng, label, city }) => { setDriverLoc({ lat, lng }); setLocLabel(label); if (city) setDriverCity(city); setLocDenied(false); },
       onError: (msg, type) => { setLocError(msg); setLocDenied(type === "denied"); },
     });
 
@@ -2062,8 +2077,9 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
           hereFetch(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${latitude},${longitude}&lang=en-US`)
             .then((r) => (r.ok ? r.json() : null))
             .then((data) => {
-              const label = data?.items?.[0]?.address?.label;
-              if (label) setLocLabel(label);
+              const address = data?.items?.[0]?.address;
+              if (address?.label) setLocLabel(address.label);
+              if (address?.city) setDriverCity(address.city);
             })
             .catch(() => {});
         }
@@ -2300,8 +2316,8 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
     if (!online || !driverRow?.id) return;
     const interval = setInterval(() => {
       detectLocation({
-        onSuccess: ({ lat, lng, label }) => {
-          setDriverLoc({ lat, lng }); setLocLabel(label);
+        onSuccess: ({ lat, lng, label, city }) => {
+          setDriverLoc({ lat, lng }); setLocLabel(label); if (city) setDriverCity(city);
           supabase.from("drivers").update({ last_lat: lat, last_lng: lng, last_seen_at: new Date().toISOString() }).eq("id", driverRow.id);
           if (driverMarkerObjRef.current) driverMarkerObjRef.current.setGeometry({ lat, lng });
         },
@@ -2387,7 +2403,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
             <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
               <span className="flex items-center gap-2 text-xs font-semibold" style={{ color: TEXT }}>
                 <Shield size={14} color={GOLD} />
-                {checkpoints.length} checkpoint{checkpoints.length !== 1 ? "s" : ""} active
+                {checkpoints.length} checkpoint{checkpoints.length !== 1 ? "s" : ""} in {driverCity || "your area"}
                 <span style={{ color: FAINT, fontWeight: 400 }}>
                   · {checkpoints.filter((c) => c.zone === "inside_city").length} inside city, {checkpoints.filter((c) => c.zone === "outside_city").length} outside
                 </span>
@@ -2404,10 +2420,17 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
                   const minsAgo = Math.max(0, Math.round((Date.now() - new Date(cp.created_at).getTime()) / 60000));
                   return (
                     <div key={cp.id} className="flex items-center justify-between gap-2 px-4 py-3" style={{ borderTop: `1px solid ${BORDER}` }}>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold truncate">{cp.label || (cp.zone === "outside_city" ? "Outside city" : "Inside city")}</p>
+                      <button
+                        onClick={() => {
+                          setCheckpointsPanelOpen(false);
+                          if (mapObjRef.current) mapObjRef.current.setCenter({ lat: Number(cp.lat), lng: Number(cp.lng) }, true);
+                          if (mapObjRef.current) mapObjRef.current.setZoom(16, true);
+                        }}
+                        className="min-w-0 text-left"
+                      >
+                        <p className="text-xs font-semibold leading-snug">{cp.label || (cp.zone === "outside_city" ? "Outside city" : "Inside city")}</p>
                         <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{cp.zone === "outside_city" ? "Outside city" : "Inside city"} · {distKm} km away · reported {minsAgo}m ago{cp.confirmations > 1 ? ` · confirmed by ${cp.confirmations}` : ""}</p>
-                      </div>
+                      </button>
                       <button onClick={() => showAvoidRoute(cp)} className="shrink-0 rounded-full px-3 py-1.5 text-[10px] font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}>Route around</button>
                     </div>
                   );
@@ -2435,8 +2458,11 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
         <div className="mx-5 mb-3 rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: "rgba(91,143,212,0.16)", border: `1px solid ${GREEN}` }}>
           <Route size={18} color={GREEN} />
           <div className="flex-1">
-            <p className="text-xs font-semibold">{avoidRouteInfo.error ? "Couldn't find an alternate route" : "Alternate route shown on map"}</p>
-            {!avoidRouteInfo.error && (
+            <p className="text-xs font-semibold">{avoidRouteInfo.atLocation ? "You're already at this location" : avoidRouteInfo.error ? "Couldn't find an alternate route" : "Alternate route shown on map"}</p>
+            {avoidRouteInfo.atLocation && (
+              <p className="text-[10px]" style={{ color: FAINT }}>Route-around only applies once you're some distance away from the checkpoint.</p>
+            )}
+            {!avoidRouteInfo.error && !avoidRouteInfo.atLocation && (
               <p className="text-[10px]" style={{ color: FAINT }}>Avoids {avoidRouteInfo.label || "checkpoint"} · {avoidRouteInfo.distanceKm} km · ~{avoidRouteInfo.durationMin} min</p>
             )}
           </div>
@@ -2458,7 +2484,7 @@ function DriverApp({ goBack, navigate, currentDriver, lang, t }) {
           {locDenied ? (
             <p className="text-[10px] mt-1" style={{ color: FAINT }}>Look for the location icon in your browser's address bar to re-enable it, then reload the page.</p>
           ) : (
-            <button onClick={() => detectLocation({ onSuccess: ({ lat, lng, label }) => { setDriverLoc({ lat, lng }); setLocLabel(label); setLocError(""); }, onError: (msg, type) => { setLocError(msg); setLocDenied(type === "denied"); } })} className="text-[11px] mt-1 underline" style={{ color: GOLD }}>Retry</button>
+            <button onClick={() => detectLocation({ onSuccess: ({ lat, lng, label, city }) => { setDriverLoc({ lat, lng }); setLocLabel(label); if (city) setDriverCity(city); setLocError(""); }, onError: (msg, type) => { setLocError(msg); setLocDenied(type === "denied"); } })} className="text-[11px] mt-1 underline" style={{ color: GOLD }}>Retry</button>
           )}
         </div>
       )}
