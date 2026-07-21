@@ -1138,8 +1138,8 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
       <div className="max-w-6xl mx-auto">
         <div className="relative flex items-center justify-between px-5 pt-6 pb-2 gap-2">
           <button onClick={() => setShowAppMenu(true)} aria-label="Menu" className="flex items-center gap-1.5 shrink-0">
-            <MoreVertical size={18} color={TEXT} />
             <img src={LOGO_URI} alt="SayyaraDrive" className="h-8 w-auto" style={{ filter: "drop-shadow(0 3px 10px rgba(217,166,83,0.35))" }} />
+            <MoreVertical size={18} color={TEXT} />
           </button>
           <div className="flex-1 min-w-0 text-center text-[9px] uppercase truncate hidden sm:block" style={{ color: GREEN, letterSpacing: "0.12em" }}>Riyadh, Saudi Arabia</div>
           <div className="flex items-center gap-2 shrink-0">
