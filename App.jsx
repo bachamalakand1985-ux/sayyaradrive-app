@@ -9,7 +9,7 @@ import {
   Package, Phone, DollarSign,
   Mail, LogOut, Power, Sparkles, Send, Bot, Shield, User, Check,
   Link, Globe, Trophy, MessageCircle, Mic, RefreshCw, Flag, Image as ImageIcon, PhoneOff, PhoneCall,
-  Settings, LogIn, HelpCircle, Building2, MoreVertical, Download
+  Settings, LogIn, HelpCircle, Building2, MoreVertical, Download, Info, Smartphone, Wallet, Lock
 } from "lucide-react";
 
 /* ---------- support contact ---------- */
@@ -851,6 +851,69 @@ function Header({ title, onBack, right }) {
   );
 }
 
+// Fetches the single admin-controlled switch that decides whether real payment
+// methods (card, Apple Pay, STC Pay) are unlocked platform-wide. Defaults to
+// false (Cash only) while loading or if the row can't be reached, so the app
+// never accidentally shows "live" payment options it isn't ready for.
+function useEarningsEnabled() {
+  const [earningsEnabled, setEarningsEnabled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from("app_settings").select("earnings_enabled").eq("id", true).maybeSingle().then(({ data }) => {
+      if (!cancelled && data) setEarningsEnabled(!!data.earnings_enabled);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  return earningsEnabled;
+}
+
+// Careem/Uber/Noon-style payment method picker. Cash always works. Card/Apple
+// Pay/STC Pay are shown (so the checkout looks complete) but stay locked with
+// a "Coming soon" badge until the earnings switch is turned on AND a real
+// payment gateway is wired in — this component never collects card details.
+function PaymentMethodSelector({ value, onChange }) {
+  const earningsEnabled = useEarningsEnabled();
+  const METHODS = [
+    { id: "cash", label: "Cash", sub: "Pay on delivery / in person", icon: DollarSign, locked: false },
+    { id: "card", label: "Card", sub: "Visa, Mastercard, mada", icon: Key, locked: !earningsEnabled },
+    { id: "apple_pay", label: "Apple Pay", sub: "Pay with your iPhone", icon: Smartphone, locked: !earningsEnabled },
+    { id: "stc_pay", label: "STC Pay", sub: "Pay with your wallet", icon: Wallet, locked: !earningsEnabled },
+  ];
+  return (
+    <div className="mb-4">
+      <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>PAYMENT METHOD</p>
+      <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+        {METHODS.map((m, i) => {
+          const Icon = m.icon;
+          const selected = value === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => !m.locked && onChange(m.id)}
+              disabled={m.locked}
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
+              style={{ borderBottom: i < METHODS.length - 1 ? `1px solid ${BORDER}` : "none", opacity: m.locked ? 0.5 : 1 }}
+            >
+              <Icon size={16} color={selected ? GOLD : FAINT} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold">{m.label}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{m.locked ? "Coming soon" : m.sub}</p>
+              </div>
+              {m.locked ? (
+                <Lock size={13} color={FAINT} />
+              ) : (
+                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ border: `2px solid ${selected ? GOLD : BORDER}` }}>
+                  {selected && <div className="w-2.5 h-2.5 rounded-full" style={{ background: GOLD }} />}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- SKELETON LOADING ---------- */
 /* ---------- SEARCHING ANIMATION (looking for a driver) ---------- */
 function SearchingAnimation() {
@@ -941,6 +1004,8 @@ function AppMenu({ onClose, navigate, currentDriver, driverLogout, identity }) {
     { icon: MessageCircle, label: "Friends & family", route: "friends" },
     { icon: Bell, label: "Notifications", route: "notifications" },
     { icon: Settings, label: "Account settings", route: "profile" },
+    { icon: Users2, label: "Become an agent", route: "register_agent" },
+    { icon: LogIn, label: "Agent login", route: "agent_login" },
   ];
   return (
     <div className="fixed inset-0 z-50 flex" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
@@ -2786,6 +2851,13 @@ const REGISTER_CONFIGS = {
     ],
     documents: ["Commercial registration", "National ID / Iqama of owner"],
   },
+  agent: {
+    title: "Become an agent",
+    icon: Users2,
+    intro: "Bring restaurants and companies onto SayyaraDrive and grow your own network. SayyaraDrive doesn't charge commission and doesn't pay agents — any arrangement you make with a restaurant or company (like a referral fee) is between you and them, agreed independently.",
+    detailFields: [],
+    documents: [],
+  },
 };
 
 function PartnerRegister({ goBack, type }) {
@@ -2800,6 +2872,7 @@ function PartnerRegister({ goBack, type }) {
   const [district, setDistrict] = useState(SAUDI_CITIES["Riyadh"][0]);
   const [details, setDetails] = useState({});
   const [checkedDocs, setCheckedDocs] = useState({});
+  const [referralCode, setReferralCode] = useState("");
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
   const [galleryFiles, setGalleryFiles] = useState([]); // { file, previewUrl }
@@ -2808,6 +2881,7 @@ function PartnerRegister({ goBack, type }) {
   const MAX_GALLERY = 20;
   const showsCompanyPhotos = type === "logistics_company" || type === "fleet_owner" || type === "food_partner";
   const showsCarPhotos = type === "rental_owner";
+  const showsReferralCode = type === "food_partner" || type === "fleet_owner" || type === "logistics_company";
 
   function handleLogoSelected(e) {
     const file = e.target.files?.[0];
@@ -2829,7 +2903,7 @@ function PartnerRegister({ goBack, type }) {
   }
 
   const step1Valid = name.trim() && phone.trim();
-  const needsRealAuth = type === "food_partner" || type === "logistics_company" || type === "rental_owner";
+  const needsRealAuth = type === "food_partner" || type === "logistics_company" || type === "rental_owner" || type === "agent";
   const step2Valid = cfg.detailFields.filter((f) => !f.optional).every((f) => (details[f.key] || "").trim())
     && (!needsRealAuth || (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && password.length >= 6));
   const step3Valid = cfg.documents.every((d) => checkedDocs[d]);
@@ -2838,6 +2912,17 @@ function PartnerRegister({ goBack, type }) {
 
   function toggleDoc(d) {
     setCheckedDocs((c) => ({ ...c, [d]: !c[d] }));
+  }
+
+  // Looks up an agent by referral code so their id + commission rate can be
+  // attached to the new restaurant/company/logistics company being created.
+  // Silently ignored if the code is blank or doesn't match — referral is optional.
+  async function resolveAgentFromCode() {
+    const code = referralCode.trim();
+    if (!code) return { agent_id: null, agent_commission_rate: null };
+    const { data: agent } = await supabase.from("agents").select("id, default_commission_rate").eq("referral_code", code.toUpperCase()).maybeSingle();
+    if (!agent) return { agent_id: null, agent_commission_rate: null };
+    return { agent_id: agent.id, agent_commission_rate: agent.default_commission_rate };
   }
 
   async function submitApplication() {
@@ -2914,6 +2999,7 @@ function PartnerRegister({ goBack, type }) {
         if (password.length < 6) throw new Error("Password must be at least 6 characters.");
         const authUserId = await signUpOrLinkExisting(email.trim(), password, { role: "restaurant_owner" });
         const { data: claimedId } = await supabase.rpc("claim_legacy_business", { p_table: "restaurants", p_phone_column: "owner_phone", p_phone: phone.trim() });
+        const { agent_id, agent_commission_rate } = await resolveAgentFromCode();
 
         let logoUrl = null;
         if (logoFile) {
@@ -2938,6 +3024,7 @@ function PartnerRegister({ goBack, type }) {
           const { error: updErr } = await supabase.from("restaurants").update({
             name: details.restaurantName || name, cuisine: details.cuisine || "Restaurant", city,
             logo_url: logoUrl, gallery_urls: galleryUrls, email: email.trim(), status: "active",
+            ...(agent_id ? { agent_id, agent_commission_rate } : {}),
           }).eq("id", claimedId);
           if (updErr) throw updErr;
         } else {
@@ -2951,10 +3038,13 @@ function PartnerRegister({ goBack, type }) {
             auth_user_id: authUserId,
             email: email.trim(),
             status: "active",
+            agent_id,
+            agent_commission_rate,
           });
           if (listingError) throw listingError;
         }
       } else if (type === "fleet_owner") {
+        const { agent_id, agent_commission_rate } = await resolveAgentFromCode();
         let logoUrl = null;
         if (logoFile) {
           const ext = logoFile.name.split(".").pop() || "jpg";
@@ -2984,6 +3074,8 @@ function PartnerRegister({ goBack, type }) {
           photo_urls: photoUrls,
           status: "active",
           verified: true,
+          agent_id,
+          agent_commission_rate,
         });
         if (companyError) throw companyError;
       } else if (type === "logistics_company") {
@@ -2991,6 +3083,7 @@ function PartnerRegister({ goBack, type }) {
         if (password.length < 6) throw new Error("Password must be at least 6 characters.");
         const authUserId = await signUpOrLinkExisting(email.trim(), password, { role: "logistics_company_owner" });
         const { data: claimedId } = await supabase.rpc("claim_legacy_business", { p_table: "logistics_companies", p_phone_column: "owner_phone", p_phone: phone.trim() });
+        const { agent_id: logisticsAgentId, agent_commission_rate: logisticsAgentRate } = await resolveAgentFromCode();
 
         let logoUrl = null;
         if (logoFile) {
@@ -3016,6 +3109,7 @@ function PartnerRegister({ goBack, type }) {
             company_name: details.companyName || name, owner_name: name, city,
             service_area: details.serviceArea || city, fleet_size: parseInt(details.fleetSize, 10) || 0,
             logo_url: logoUrl, gallery_urls: galleryUrls, email: email.trim(), status: "active",
+            ...(logisticsAgentId ? { agent_id: logisticsAgentId, agent_commission_rate: logisticsAgentRate } : {}),
           }).eq("id", claimedId);
           if (updErr) throw updErr;
         } else {
@@ -3032,15 +3126,32 @@ function PartnerRegister({ goBack, type }) {
             gallery_urls: galleryUrls,
             status: "active",
             verified: false,
+            agent_id: logisticsAgentId,
+            agent_commission_rate: logisticsAgentRate,
           });
           if (logisticsCoError) throw logisticsCoError;
         }
+      } else if (type === "agent") {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) throw new Error("Please enter a valid email — this is how you'll log in to your agent dashboard.");
+        if (password.length < 6) throw new Error("Password must be at least 6 characters.");
+        const authUserId = await signUpOrLinkExisting(email.trim(), password, { role: "agent" });
+        const namePart = (name.trim().split(/\s+/)[0] || "AGENT").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6) || "AGENT";
+        const code = `SAY-${namePart}${Math.floor(10000 + Math.random() * 90000)}`;
+        const { error: agentError } = await supabase.from("agents").insert({
+          full_name: name.trim(),
+          phone: phone.trim(),
+          email: email.trim(),
+          city,
+          referral_code: code,
+          auth_user_id: authUserId,
+        });
+        if (agentError) throw agentError;
       }
 
       await supabase.from("notifications").insert({
         recipient_type: "admin",
-        title: ["rental_owner", "seller", "food_partner", "fleet_owner", "logistics_company"].includes(type) ? "New listing published" : "New application received",
-        body: `${name} ${["rental_owner", "seller", "food_partner", "fleet_owner", "logistics_company"].includes(type) ? "published a listing as a" : "applied as a"} ${type.replace(/_/g, " ")}`,
+        title: type === "agent" ? "New agent joined" : ["rental_owner", "seller", "food_partner", "fleet_owner", "logistics_company"].includes(type) ? "New listing published" : "New application received",
+        body: type === "agent" ? `${name} joined as an agent and can now refer restaurants and companies.` : `${name} ${["rental_owner", "seller", "food_partner", "fleet_owner", "logistics_company"].includes(type) ? "published a listing as a" : "applied as a"} ${type.replace(/_/g, " ")}`,
       });
       setStep(4);
     } catch (e) {
@@ -3134,7 +3245,23 @@ function PartnerRegister({ goBack, type }) {
             ))}
           </div>
 
-          {(type === "food_partner" || type === "logistics_company" || type === "rental_owner") && (
+          {showsReferralCode && (
+            <div className="mb-6">
+              <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>REFERRAL (OPTIONAL)</p>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <Users2 size={14} color={GOLD} />
+                <input
+                  value={referralCode}
+                  onChange={(e) => setReferralCode(e.target.value)}
+                  placeholder="Agent referral code, if someone signed you up"
+                  className="bg-transparent outline-none text-sm w-full uppercase"
+                  style={{ color: TEXT }}
+                />
+              </div>
+            </div>
+          )}
+
+          {(type === "food_partner" || type === "logistics_company" || type === "rental_owner" || type === "agent") && (
             <>
               <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>YOUR LOGIN</p>
               <div className="flex flex-col gap-3 mb-6">
@@ -4247,6 +4374,214 @@ function StoreDashboard({ goBack, navigate, currentStore, onLogout }) {
   );
 }
 
+/* ---------- AGENT LOGIN ---------- */
+function AgentLoginScreen({ goBack, navigate, onLoggedIn }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function login() {
+    setError("");
+    if (!email.trim() || !password) { setError("Please enter your email and password."); return; }
+    setLoading(true);
+    try {
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (loginError) throw loginError;
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: agent } = await supabase.from("agents").select("*").eq("auth_user_id", user.id).maybeSingle();
+      if (!agent) throw new Error("No agent account is linked to this login yet.");
+      if (onLoggedIn) onLoggedIn(agent);
+      navigate("agent_dashboard");
+    } catch (e) {
+      setError(e.message || "Invalid email or password.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Agent login" onBack={goBack} />
+      <div className="px-5">
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Mail size={14} color={GOLD} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} autoFocus />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Key size={14} color={GOLD} />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} placeholder="Password" type="password" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
+          </div>
+        </div>
+        {error && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{error}</p>}
+        <button onClick={login} disabled={loading} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: loading ? BORDER : GOLD, color: loading ? "#5C736D" : BG }}>
+          {loading ? "Logging in…" : "Log in"}
+        </button>
+        <button onClick={() => navigate("register_agent")} className="w-full mt-3 rounded-full py-3 text-sm font-semibold" style={{ background: "transparent", color: MUTE }}>Don't have one yet? Become an agent</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- AGENT DASHBOARD ---------- */
+function AgentDashboard({ goBack, currentAgent, onLogout }) {
+  const [referrals, setReferrals] = useState({ restaurants: [], companies: [], logistics: [] });
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    async function loadReferrals() {
+      if (!currentAgent?.id) return;
+      const [{ data: restaurants }, { data: companies }, { data: logistics }] = await Promise.all([
+        supabase.from("restaurants").select("id, name, status, city, created_at, agent_commission_rate").eq("agent_id", currentAgent.id).order("created_at", { ascending: false }),
+        supabase.from("companies").select("id, name, status, created_at, agent_commission_rate").eq("agent_id", currentAgent.id).order("created_at", { ascending: false }),
+        supabase.from("logistics_companies").select("id, company_name, status, city, created_at, agent_commission_rate").eq("agent_id", currentAgent.id).order("created_at", { ascending: false }),
+      ]);
+      setReferrals({ restaurants: restaurants || [], companies: companies || [], logistics: logistics || [] });
+      setLoading(false);
+    }
+    loadReferrals();
+  }, [currentAgent?.id]);
+
+  function copyCode() {
+    navigator.clipboard?.writeText(currentAgent.referral_code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const allReferrals = [
+    ...referrals.restaurants.map((r) => ({ ...r, displayName: r.name, kind: "Restaurant" })),
+    ...referrals.companies.map((r) => ({ ...r, displayName: r.name, kind: "Transport company" })),
+    ...referrals.logistics.map((r) => ({ ...r, displayName: r.company_name, kind: "Cargo company" })),
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const activeCount = allReferrals.filter((r) => r.status === "active").length;
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Agent dashboard" onBack={goBack} />
+      <div className="px-5">
+        <div className="rounded-2xl px-5 py-5 mb-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <p className="text-xs font-semibold" style={{ color: GREEN }}>WELCOME, {currentAgent?.full_name?.toUpperCase()}</p>
+          <p className="text-[11px] mt-1 mb-3" style={{ color: FAINT }}>Share your code with restaurants and companies — every partner who signs up with it is linked to you.</p>
+          <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: BG, border: `1px dashed ${GOLD}` }}>
+            <span className="text-sm font-bold tracking-wider" style={{ color: GOLD }}>{currentAgent?.referral_code}</span>
+            <button onClick={copyCode} className="text-[11px] font-semibold px-3 py-1.5 rounded-full" style={{ background: "rgba(217,166,83,0.14)", color: GOLD }}>
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-6" style={{ background: "rgba(217,166,83,0.10)", border: `1px solid rgba(217,166,83,0.3)` }}>
+          <Info size={14} color={GOLD} className="shrink-0 mt-0.5" />
+          <p className="text-[11px] leading-relaxed" style={{ color: MUTE }}>SayyaraDrive doesn't charge commission and doesn't pay agents directly. This dashboard tracks who you've referred — any commission arrangement with a restaurant or company is between you and them.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <div className="rounded-2xl px-4 py-4 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <p className="text-xl font-bold" style={{ color: GOLD }}>{allReferrals.length}</p>
+            <p className="text-[10px] mt-1" style={{ color: FAINT }}>Total referred</p>
+          </div>
+          <div className="rounded-2xl px-4 py-4 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <p className="text-xl font-bold" style={{ color: GREEN }}>{activeCount}</p>
+            <p className="text-[10px] mt-1" style={{ color: FAINT }}>Active</p>
+          </div>
+        </div>
+
+        <p className="text-xs font-semibold mb-3" style={{ color: GREEN }}>YOUR REFERRALS</p>
+        {loading ? (
+          <p className="text-[12px]" style={{ color: FAINT }}>Loading…</p>
+        ) : allReferrals.length === 0 ? (
+          <div className="rounded-2xl px-5 py-8 text-center mb-6" style={{ background: CARD, border: `1px dashed ${BORDER}` }}>
+            <Users2 size={22} color={FAINT} className="mx-auto mb-2" />
+            <p className="text-[12px]" style={{ color: FAINT }}>No referrals yet. Share your code with a restaurant or company owner when they sign up.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 mb-6">
+            {allReferrals.map((r) => (
+              <div key={`${r.kind}-${r.id}`} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold truncate">{r.displayName}</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: FAINT }}>{r.kind}{r.city ? ` · ${r.city}` : ""}</p>
+                </div>
+                <span className="shrink-0 text-[9px] font-semibold px-2 py-1 rounded-full" style={{ background: r.status === "active" ? "rgba(91,143,212,0.16)" : "rgba(217,166,83,0.14)", color: r.status === "active" ? GREEN : GOLD }}>
+                  {r.status === "active" ? "Active" : r.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold mb-8" style={{ background: "#C0755B", color: "#fff" }}>
+          <LogOut size={15} /> Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- ADMIN: EARNINGS TOGGLE ---------- */
+function AdminEarningsToggle({ goBack }) {
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    supabase.from("app_settings").select("earnings_enabled").eq("id", true).maybeSingle().then(({ data }) => {
+      setEnabled(!!data?.earnings_enabled);
+      setLoading(false);
+    });
+  }, []);
+
+  async function toggle() {
+    setSaving(true);
+    const next = !enabled;
+    const { error } = await supabase.from("app_settings").update({ earnings_enabled: next, updated_at: new Date().toISOString() }).eq("id", true);
+    if (!error) setEnabled(next);
+    setSaving(false);
+    setConfirming(false);
+  }
+
+  return (
+    <div style={{ color: TEXT }}>
+      <Header title="Earnings" onBack={goBack} />
+      <div className="px-5">
+        <div className="rounded-2xl px-5 py-5 mb-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-semibold">Real payment methods</p>
+            <span className="text-[9px] font-semibold px-2 py-1 rounded-full" style={{ background: enabled ? "rgba(91,143,212,0.16)" : "rgba(217,166,83,0.14)", color: enabled ? GREEN : GOLD }}>
+              {loading ? "…" : enabled ? "ON" : "OFF"}
+            </span>
+          </div>
+          <p className="text-[12px] leading-relaxed mb-4" style={{ color: MUTE }}>
+            When this is off, checkout only offers <b>Cash</b> — the app is completely free, exactly as it is today. Turning this on unlocks the Card, Apple Pay, and STC Pay options across every checkout screen platform-wide.
+          </p>
+          <div className="flex items-start gap-2.5 rounded-xl px-4 py-3 mb-4" style={{ background: "rgba(217,166,83,0.10)", border: `1px solid rgba(217,166,83,0.3)` }}>
+            <Info size={14} color={GOLD} className="shrink-0 mt-0.5" />
+            <p className="text-[11px] leading-relaxed" style={{ color: MUTE }}>
+              This switch alone doesn't process real charges — Card, Apple Pay, and STC Pay will still show as placeholders until a real payment gateway (like Moyasar or Tap) is integrated. Flip this on only once that's ready.
+            </p>
+          </div>
+          {!confirming ? (
+            <button onClick={() => setConfirming(true)} disabled={loading || saving} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: enabled ? "#C0755B" : GOLD, color: enabled ? "#fff" : BG }}>
+              {enabled ? "Turn off — back to Cash only" : "Turn on earnings"}
+            </button>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <p className="text-[12px] text-center mb-1" style={{ color: MUTE }}>Are you sure? This affects every checkout on the platform.</p>
+              <button onClick={toggle} disabled={saving} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: enabled ? "#C0755B" : GOLD, color: enabled ? "#fff" : BG }}>
+                {saving ? "Saving…" : enabled ? "Yes, turn off" : "Yes, turn on"}
+              </button>
+              <button onClick={() => setConfirming(false)} className="w-full rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Cancel</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- BUSINESS LOGIN (restaurants & cargo companies) ---------- */
 function BusinessLoginScreen({ goBack, navigate, businessType, onLoggedIn }) {
   const config = {
@@ -4903,6 +5238,7 @@ function StoreProfileModal({ store, onClose }) {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
   const [placing, setPlacing] = useState(false);
   const [orderError, setOrderError] = useState("");
   const [bookingRef, setBookingRef] = useState(null);
@@ -4954,6 +5290,7 @@ function StoreProfileModal({ store, onClose }) {
         items: cartItems.map((c) => ({ id: c.item.id, title: c.item.title, price: c.item.price, qty: c.qty })),
         total: cartTotal,
         status: "placed",
+        payment_method: paymentMethod,
       });
       if (error) throw error;
       setBookingRef(ref);
@@ -5022,6 +5359,7 @@ function StoreProfileModal({ store, onClose }) {
               <input value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="Delivery address" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} />
             </div>
           </div>
+          <PaymentMethodSelector value={paymentMethod} onChange={setPaymentMethod} />
           {orderError && <p className="text-[12px] mb-3" style={{ color: "#C0755B" }}>{orderError}</p>}
           <button onClick={placeOrder} disabled={placing} className="w-full mb-6 rounded-full py-3 text-sm font-semibold" style={{ background: placing ? BORDER : GOLD, color: placing ? "#5C736D" : BG }}>
             {placing ? "Placing order…" : `Place order — ${cartTotal} SAR`}
@@ -5534,7 +5872,7 @@ function FoodDelivery({ goBack, navigate }) {
   const [dbRestaurants, setDbRestaurants] = useState([]);
   const [bookingRef, setBookingRef] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
-  const [customerName, setCustomerName] = useState(""); const [customerPhone, setCustomerPhone] = useState("");
+  const [customerName, setCustomerName] = useState(""); const [customerPhone, setCustomerPhone] = useState(""); const [paymentMethod, setPaymentMethod] = useState("cash");
   const [saving, setSaving] = useState(false);
   useEffect(() => { if (stage === "browse") setBookingRef(null); }, [stage]);
 
@@ -5608,6 +5946,7 @@ function FoodDelivery({ goBack, navigate }) {
         items: cartItems.map((m) => ({ name: m.name, qty: cart[m.id], price: m.price })),
         total: cartTotal,
         status: "placed",
+        payment_method: paymentMethod,
       });
       if (orderError) throw orderError;
     } catch (e) {
@@ -5671,6 +6010,7 @@ function FoodDelivery({ goBack, navigate }) {
               <div className="flex items-center gap-3 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}><User size={14} color={GREEN} /><input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Your full name" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
               <div className="flex items-center gap-3 py-3"><Phone size={14} color={GOLD} /><input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Your mobile number" className="bg-transparent outline-none text-sm w-full" style={{ color: TEXT }} /></div>
             </div>
+            <PaymentMethodSelector value={paymentMethod} onChange={setPaymentMethod} />
             <div className="rounded-xl px-4 py-3 mb-4 flex items-center justify-between" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <p className="text-sm font-semibold" style={{ color: MUTE }}>Total</p>
               <p className="text-lg font-semibold" style={{ color: GOLD }}>{cartTotal} SAR</p>
@@ -12149,6 +12489,7 @@ const ADMIN_SECTIONS = [
   { id: "stores", label: "Stores", table: "stores", icon: ShoppingBag },
   { id: "store_orders", label: "Store Orders", table: "store_orders", icon: ShoppingBag },
   { id: "logistics_companies", label: "Cargo Companies", table: "logistics_companies", icon: Truck },
+  { id: "agents", label: "Agents", table: "agents", icon: Users2 },
   { id: "call_logs", label: "Calls", table: "call_logs", icon: PhoneCall },
   { id: "violations", label: "Violations", table: "violations", icon: Shield },
   { id: "audit_logs", label: "Audit Logs", table: "audit_logs", icon: Package },
@@ -12232,6 +12573,9 @@ function AdminOverview({ navigate, goBack, onLogout }) {
           </button>
           <button onClick={() => navigate("admin_data_cleanup")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
             <RefreshCw size={13} /> Data Cleanup
+          </button>
+          <button onClick={() => navigate("admin_earnings")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: CARD, border: `1px solid ${BORDER}`, color: TEXT }}>
+            <DollarSign size={13} /> Earnings
           </button>
           <button onClick={() => navigate("admin_broadcast")} className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-full shrink-0" style={{ background: GOLD, color: BG }}>
             <Bell size={13} /> Announce
@@ -12324,6 +12668,7 @@ export default function SayyaraDriveApp() {
   const [currentStore, setCurrentStore] = useState(null);
   const [currentBusiness, setCurrentBusiness] = useState(null);
   const [currentListings, setCurrentListings] = useState(null);
+  const [currentAgent, setCurrentAgent] = useState(null);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   useEffect(() => {
     function handleOnline() { setIsOffline(false); }
@@ -12426,6 +12771,24 @@ export default function SayyaraDriveApp() {
                 if (companyRow) {
                   setCurrentCompany({ email, profile: companyRow });
                   setHistory(["company_dashboard"]);
+                } else {
+                  const { data: restaurantRow } = await supabase.from("restaurants").select("*").eq("auth_user_id", session.user.id).maybeSingle();
+                  if (restaurantRow) {
+                    setCurrentBusiness({ email, profile: restaurantRow, table: "restaurants", nameField: "name" });
+                    setHistory(["restaurant_dashboard"]);
+                  } else {
+                    const { data: logisticsRow } = await supabase.from("logistics_companies").select("*").eq("auth_user_id", session.user.id).maybeSingle();
+                    if (logisticsRow) {
+                      setCurrentBusiness({ email, profile: logisticsRow, table: "logistics_companies", nameField: "company_name" });
+                      setHistory(["cargo_company_dashboard"]);
+                    } else {
+                      const { data: agentRow } = await supabase.from("agents").select("*").eq("auth_user_id", session.user.id).maybeSingle();
+                      if (agentRow) {
+                        setCurrentAgent(agentRow);
+                        setHistory(["agent_dashboard"]);
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -12524,6 +12887,9 @@ export default function SayyaraDriveApp() {
     register_logistics: <PartnerRegister goBack={goBack} type="logistics_partner" />,
     register_logistics_company: <PartnerRegister goBack={goBack} type="logistics_company" />,
     register_fleet: <PartnerRegister goBack={goBack} type="fleet_owner" />,
+    register_agent: <PartnerRegister goBack={goBack} type="agent" />,
+    agent_login: <AgentLoginScreen goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAgent} />,
+    agent_dashboard: <AgentDashboard goBack={goBack} currentAgent={currentAgent} onLogout={() => { supabase.auth.signOut(); setCurrentAgent(null); navigate("home"); }} />,
     restaurant_login: <BusinessLoginScreen goBack={goBack} navigate={navigate} businessType="restaurant" onLoggedIn={setCurrentBusiness} />,
     restaurant_dashboard: <BusinessDashboard goBack={goBack} navigate={navigate} currentBusiness={currentBusiness} onLogout={businessLogout} />,
     cargo_company_login: <BusinessLoginScreen goBack={goBack} navigate={navigate} businessType="logistics_company" onLoggedIn={setCurrentBusiness} />,
@@ -12568,6 +12934,8 @@ export default function SayyaraDriveApp() {
     admin_stores: <AdminListPage goBack={goBack} title="Stores" table="stores" deletable blockable columns={[{key:"store_name",label:"Store"},{key:"store_type",label:"Type"},{key:"owner_name",label:"Owner"},{key:"owner_phone",label:"Phone"},{key:"city",label:"City"}]} />,
     admin_store_orders: <AdminListPage goBack={goBack} title="Store Orders" table="store_orders" deletable blockable columns={[{key:"store_name",label:"Store"},{key:"customer_name",label:"Customer"},{key:"customer_phone",label:"Phone"},{key:"total",label:"Total"},{key:"status",label:"Status"}]} />,
     admin_logistics_companies: <AdminListPage goBack={goBack} title="Cargo Companies" table="logistics_companies" deletable blockable columns={[{key:"company_name",label:"Company"},{key:"owner_name",label:"Owner"},{key:"owner_phone",label:"Phone"},{key:"city",label:"City"},{key:"fleet_size",label:"Fleet size"}]} />,
+    admin_agents: <AdminListPage goBack={goBack} title="Agents" table="agents" deletable blockable columns={[{key:"full_name",label:"Name"},{key:"referral_code",label:"Code"},{key:"phone",label:"Phone"},{key:"email",label:"Email"},{key:"city",label:"City"},{key:"default_commission_rate",label:"Rate %"}]} />,
+    admin_earnings: <AdminEarningsToggle goBack={goBack} />,
     admin_violations: <AdminListPage goBack={goBack} title="Violations" table="violations" deletable columns={[{key:"reason",label:"Reason"},{key:"driver_id",label:"Driver ID"}]} />,
   };
 
