@@ -1143,6 +1143,11 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
           </button>
           <div className="flex-1 min-w-0 text-center text-[9px] uppercase truncate hidden sm:block" style={{ color: GREEN, letterSpacing: "0.12em" }}>Riyadh, Saudi Arabia</div>
           <div className="flex items-center gap-2 shrink-0">
+            {showInstallButton && (
+              <button onClick={handleInstallClick} aria-label="Install app" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: GOLD }}>
+                <Download size={16} color={BG} />
+              </button>
+            )}
             <button
               onClick={() => setShowLangPicker(true)}
               className="px-2.5 h-9 rounded-full flex items-center justify-center text-[11px] font-semibold"
@@ -1153,17 +1158,10 @@ function Home({ navigate, lang, setLang, t, currentDriver, driverLogout }) {
             <button onClick={() => navigate("friends")} aria-label="Friends & family chat" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: CARD }}>
               <MessageCircle size={17} color={TEXT} />
             </button>
-            <div className="flex flex-col items-center gap-1">
-              <button onClick={() => navigate("notifications")} aria-label="Notifications" className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
-                <Bell size={17} color={TEXT} />
-                {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />}
-              </button>
-              {showInstallButton && (
-                <button onClick={handleInstallClick} aria-label="Install app" className="flex items-center gap-1 px-2 h-5 rounded-full text-[9px] font-semibold" style={{ background: GOLD, color: BG }}>
-                  <Download size={9} /> Install
-                </button>
-              )}
-            </div>
+            <button onClick={() => navigate("notifications")} aria-label="Notifications" className="w-9 h-9 rounded-full flex items-center justify-center relative" style={{ background: CARD }}>
+              <Bell size={17} color={TEXT} />
+              {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: GOLD }} />}
+            </button>
           </div>
         </div>
         {showIOSInstallHint && <IOSInstallHint onClose={() => setShowIOSInstallHint(false)} />}
