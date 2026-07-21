@@ -1,3 +1,7 @@
+self.addEventListener("fetch", function (event) {
+  // Pass requests straight through — this app doesn't need offline caching,
+  // but Chrome's installability check looks for an active fetch handler.
+});
 self.addEventListener("push", function (event) {
   let data = {};
   try {
