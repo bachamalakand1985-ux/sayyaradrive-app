@@ -5885,6 +5885,7 @@ function FoodDelivery({ goBack, navigate }) {
       if (data) {
         setDbRestaurants(data.map((r) => ({
           id: `db-${r.id}`,
+          dbId: r.id,
           name: r.name,
           cuisine: r.cuisine || "Restaurant",
           rating: r.rating || 4.5,
@@ -5909,7 +5910,7 @@ function FoodDelivery({ goBack, navigate }) {
     let cancelled = false;
     async function loadMenu() {
       setMenuLoading(true);
-      const { data } = await supabase.from("menu_items").select("*").eq("restaurant_id", openRestaurant.id).eq("status", "active").order("created_at", { ascending: false });
+      const { data } = await supabase.from("menu_items").select("*").eq("restaurant_id", openRestaurant.dbId).eq("status", "active").order("created_at", { ascending: false });
       if (!cancelled) {
         setRealMenu((data || []).map((m) => ({ id: m.id, category: m.category || "Mains", name: m.name, desc: m.description || "", price: m.price, photoUrl: m.photo_url })));
         setMenuLoading(false);
@@ -5964,7 +5965,7 @@ function FoodDelivery({ goBack, navigate }) {
       <CheckCircle2 size={44} color={GREEN} /><h2 className="mt-4 text-lg font-semibold">Order placed</h2>
       <p className="mt-1 text-sm" style={{ color: MUTE }}>{openRestaurant.name} is preparing your order.</p>
       <div className="w-full">
-        <RatingPrompt ratingType="restaurant" targetId={openRestaurant.id} targetLabel={openRestaurant.name} bookingRef={bookingRef} prompt={`Rate ${openRestaurant.name}`} />
+        <RatingPrompt ratingType="restaurant" targetId={openRestaurant.dbId || openRestaurant.id} targetLabel={openRestaurant.name} bookingRef={bookingRef} prompt={`Rate ${openRestaurant.name}`} />
       </div>
       <button onClick={() => setChatOpen(true)} className="w-full mt-6 flex items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold" style={{ background: "rgba(91,143,212,0.16)", color: GREEN }}><MessageCircle size={15} /> Chat about this order</button>
       <button onClick={goBack} className="w-full mt-2 rounded-full py-3 text-sm font-semibold" style={{ background: BORDER, color: TEXT }}>Back home</button>
