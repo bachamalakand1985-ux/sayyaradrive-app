@@ -2882,6 +2882,33 @@ function PartnerRegister({ goBack, type }) {
   const showsCompanyPhotos = type === "logistics_company" || type === "fleet_owner" || type === "food_partner";
   const showsCarPhotos = type === "rental_owner";
   const showsReferralCode = type === "food_partner" || type === "fleet_owner" || type === "logistics_company";
+  const showsLocation = type === "food_partner";
+  const [coords, setCoords] = useState(SAUDI_CITY_COORDS.Riyadh);
+  const [address, setAddress] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [locError, setLocError] = useState("");
+
+  async function reverseGeocodeCoords(lat, lng) {
+    try {
+      const res = await hereFetch(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${lat},${lng}&lang=en-US`);
+      const data = await res.json();
+      return data?.items?.[0]?.address?.label || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    } catch (e) { return `${lat.toFixed(4)}, ${lng.toFixed(4)}`; }
+  }
+
+  async function onPinMove(newCoords) {
+    setCoords(newCoords);
+    const label = await reverseGeocodeCoords(newCoords.lat, newCoords.lng);
+    setAddress(label);
+  }
+
+  function useMyLocationForPartner() {
+    detectLocation({
+      onStart: () => { setLocating(true); setLocError(""); },
+      onSuccess: ({ label, lat, lng }) => { setAddress(label); setCoords({ lat, lng }); setLocating(false); },
+      onError: (msg) => { setLocating(false); setLocError(msg); },
+    });
+  }
 
   function handleLogoSelected(e) {
     const file = e.target.files?.[0];
@@ -3024,6 +3051,7 @@ function PartnerRegister({ goBack, type }) {
           const { error: updErr } = await supabase.from("restaurants").update({
             name: details.restaurantName || name, cuisine: details.cuisine || "Restaurant", city,
             logo_url: logoUrl, gallery_urls: galleryUrls, email: email.trim(), status: "active",
+            lat: coords.lat, lng: coords.lng, address: address || null,
             ...(agent_id ? { agent_id, agent_commission_rate } : {}),
           }).eq("id", claimedId);
           if (updErr) throw updErr;
@@ -3038,6 +3066,9 @@ function PartnerRegister({ goBack, type }) {
             auth_user_id: authUserId,
             email: email.trim(),
             status: "active",
+            lat: coords.lat,
+            lng: coords.lng,
+            address: address || null,
             agent_id,
             agent_commission_rate,
           });
@@ -3244,6 +3275,23 @@ function PartnerRegister({ goBack, type }) {
               </div>
             ))}
           </div>
+
+          {showsLocation && (
+            <div className="mb-6">
+              <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>EXACT LOCATION</p>
+              {address && <p className="text-[11px] mb-2 flex items-center gap-1.5" style={{ color: MUTE }}><MapPin size={12} color={GOLD} /> {address}</p>}
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px]" style={{ color: FAINT }}>Drag the pin to your exact location</p>
+                <button onClick={useMyLocationForPartner} disabled={locating} className="flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: GOLD }}>
+                  <Navigation size={12} /> {locating ? "Detecting…" : "Use my current location"}
+                </button>
+              </div>
+              {locError && <p className="text-[11px] mb-2" style={{ color: "#C0755B" }}>{locError}</p>}
+              <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
+                <PinMapPicker coords={coords} onMove={onPinMove} height={170} />
+              </div>
+            </div>
+          )}
 
           {showsReferralCode && (
             <div className="mb-6">
@@ -4049,6 +4097,14 @@ function StoreRegister({ goBack, navigate, onLoggedIn }) {
   const logoInputRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  async function reverseGeocodeCoords(lat, lng) {
+    try {
+      const res = await hereFetch(`https://revgeocode.search.hereapi.com/v1/revgeocode?at=${lat},${lng}&lang=en-US`);
+      const data = await res.json();
+      return data?.items?.[0]?.address?.label || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    } catch (e) { return `${lat.toFixed(4)}, ${lng.toFixed(4)}`; }
+  }
 
   async function onStorePinMove(newCoords) {
     setCoords(newCoords);
@@ -5895,6 +5951,9 @@ function FoodDelivery({ goBack, navigate }) {
           foodCategory: r.food_category || "rice",
           logoUrl: r.logo_url || null,
           galleryUrls: Array.isArray(r.gallery_urls) ? r.gallery_urls : [],
+          lat: r.lat || null,
+          lng: r.lng || null,
+          address: r.address || null,
           isReal: true,
         })));
       }
@@ -6027,8 +6086,17 @@ function FoodDelivery({ goBack, navigate }) {
   if (stage === "menu" && openRestaurant) return (
     <div style={{ color: TEXT }}>
       <Header title={openRestaurant.name} onBack={() => { setOpenRestaurant(null); setStage("browse"); }} />
-      <div className="mx-5 mb-4 rounded-2xl overflow-hidden" style={{ height: 140, background: CARD, border: `1px solid ${BORDER}` }}>
-        <FoodPhoto category={openRestaurant.foodCategory} alt={openRestaurant.name} className="w-full h-full object-cover" />
+      <div className="mx-5 mb-4 rounded-2xl overflow-hidden flex items-center justify-center" style={{ height: 140, background: CARD, border: `1px solid ${BORDER}` }}>
+        {openRestaurant.isReal && (openRestaurant.logoUrl || openRestaurant.galleryUrls?.[0]) ? (
+          <img
+            src={openRestaurant.logoUrl || openRestaurant.galleryUrls?.[0]}
+            alt={openRestaurant.name}
+            className="w-full h-full object-cover"
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
+          />
+        ) : (
+          <FoodPhoto category={openRestaurant.foodCategory} alt={openRestaurant.name} className="w-full h-full object-cover" />
+        )}
       </div>
       <div className="px-5 mb-2">
         <p className="text-xs" style={{ color: GOLD }}>{openRestaurant.cuisine}</p>
@@ -6039,6 +6107,24 @@ function FoodDelivery({ goBack, navigate }) {
           <span className="flex items-center gap-1"><Truck size={11} color={GREEN} /> Delivery available</span>
         </div>
       </div>
+
+      {openRestaurant.isReal && openRestaurant.lat && openRestaurant.lng && (
+        <div className="px-5 mb-4">
+          <p className="text-xs font-semibold mb-2" style={{ color: GREEN }}>LOCATION</p>
+          {openRestaurant.address && <p className="text-[11px] mb-2 flex items-center gap-1.5" style={{ color: MUTE }}><MapPin size={12} color={GOLD} /> {openRestaurant.address}</p>}
+          <div className="rounded-2xl overflow-hidden mb-2.5" style={{ border: `1px solid ${BORDER}` }}>
+            <PinMapPicker coords={{ lat: openRestaurant.lat, lng: openRestaurant.lng }} onMove={() => {}} height={150} />
+          </div>
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${openRestaurant.lat},${openRestaurant.lng}`}
+            target="_blank" rel="noopener noreferrer"
+            className="w-full flex items-center justify-center gap-2 rounded-full py-2.5 text-xs font-semibold"
+            style={{ background: GOLD, color: BG }}
+          >
+            <Navigation size={13} /> Get directions
+          </a>
+        </div>
+      )}
 
       <div className="px-5 flex flex-col gap-5 mt-4 pb-6">
         {menuLoading ? (
