@@ -8349,6 +8349,20 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
 
   const isDriver = type === "driver";
 
+  async function handleGoogleSignIn() {
+    setError("");
+    try {
+      // Remember which role the person intended (driver vs passenger) so that
+      // once Google redirects back, CompleteProfile knows which form to show.
+      localStorage.setItem("sayyara_google_signup_type", type);
+    } catch (e) { /* localStorage unavailable, not critical */ }
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin + window.location.pathname },
+    });
+    if (oauthError) setError(oauthError.message || "Could not start Google sign-in.");
+  }
+
   async function handlePhoneContinue() {
     setError("");
     if (!mobileLogin.trim()) { setError("Please enter your mobile number."); return; }
@@ -8699,6 +8713,25 @@ function AuthScreen({ goBack, type, navigate, onLoggedIn }) {
             </button>
             <button onClick={() => { setPhase("email_fallback"); setLoginMethod("email"); setError(""); }} className="w-full mt-4 text-[12px]" style={{ color: MUTE }}>
               Have an account under an email instead?
+            </button>
+            <div className="flex items-center gap-3 my-5">
+              <div className="flex-1 h-px" style={{ background: BORDER }} />
+              <span className="text-[11px]" style={{ color: FAINT }}>OR</span>
+              <div className="flex-1 h-px" style={{ background: BORDER }} />
+            </div>
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2.5 rounded-full py-3 text-sm font-semibold"
+              style={{ background: "#FFFFFF", color: "#3C4043", border: "1px solid #DADCE0" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 48 48">
+                <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.1 8 3l5.7-5.7C34.5 5.1 29.5 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.4-.1-2.7-.4-3.5z"/>
+                <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.9 1.1 8 3l5.7-5.7C34.5 7.1 29.5 5 24 5c-7.6 0-14.1 4.3-17.4 10.7z"/>
+                <path fill="#4CAF50" d="M24 45c5.4 0 10.3-2 14-5.4l-6.5-5.5C29.4 35.6 26.9 36.5 24 36.5c-5.3 0-9.7-3.4-11.3-8.1l-6.5 5C9.8 40.5 16.3 45 24 45z"/>
+                <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.3 5.6l6.5 5.5C40.9 37.1 44 31.1 44 24c0-1.4-.1-2.7-.4-3.5z"/>
+              </svg>
+              Continue with Google
             </button>
           </>
         )}
@@ -12873,6 +12906,15 @@ export default function SayyaraDriveApp() {
                       if (agentRow) {
                         setCurrentAgent(agentRow);
                         setHistory(["agent_dashboard"]);
+                      } else {
+                        // Signed in (e.g. via Google) but no profile row exists yet in any
+                        // table — this is a first-time Google sign-in that still needs a
+                        // mobile number and (for drivers) Iqama/vehicle details.
+                        const signedInWithGoogle = (session.user.app_metadata?.provider === "google")
+                          || (session.user.identities || []).some((i) => i.provider === "google");
+                        if (signedInWithGoogle) {
+                          setHistory(["complete_profile"]);
+                        }
                       }
                     }
                   }
@@ -12989,6 +13031,7 @@ export default function SayyaraDriveApp() {
     company_dashboard: <CompanyDashboard goBack={goBack} navigate={navigate} currentCompany={currentCompany} onLogout={companyLogout} />,
     reset_password: <ResetPassword navigate={navigate} />,
     passenger_login: <AuthScreen goBack={goBack} type="passenger" navigate={navigate} onLoggedIn={setCurrentDriver} />,
+    complete_profile: <CompleteProfile type={(typeof window !== "undefined" && localStorage.getItem("sayyara_google_signup_type")) || "passenger"} navigate={navigate} onLoggedIn={setCurrentDriver} />,
     admin_login: <AdminLogin goBack={goBack} navigate={navigate} onLoggedIn={setCurrentAdmin} />,
     admin_drivers: <AdminListPage goBack={goBack} title="Drivers" table="drivers" showDriverActions deletable columns={[{key:"full_name",label:"Name"},{key:"iqama_number",label:"Iqama"},{key:"vehicle_number",label:"Vehicle"},{key:"mobile_number",label:"Mobile"},{key:"city_type",label:"City type"}]} />,
     admin_passengers: <AdminListPage goBack={goBack} title="Passengers" table="passengers" passengerActions columns={[{key:"full_name",label:"Name"},{key:"mobile_number",label:"Mobile"}]} />,
